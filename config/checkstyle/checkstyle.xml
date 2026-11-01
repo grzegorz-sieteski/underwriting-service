@@ -1,0 +1,98 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  Architecture gate that ArchUnit cannot cover.
+
+  ArchUnit reasons about *declared types*: it can forbid you from declaring a class that
+  extends Throwable, but it cannot see a `throw new IllegalArgumentException(...)` statement,
+  because IllegalArgumentException is a JDK class nobody declared here. That is the exact
+  hole through which the "zero exceptions" rule was broken twice while this architecture
+  was being designed. Checkstyle reads the syntax tree, so it closes it.
+
+  Applies to src/main/java only (includeTestSourceDirectory=false in pom.xml).
+-->
+<module name="Checker">
+    <property name="severity" value="error"/>
+    <property name="charset" value="UTF-8"/>
+    <property name="fileExtensions" value="java"/>
+
+    <module name="TreeWalker">
+
+        <!--
+          Railway Oriented Programming: business failures are values, not control flow.
+
+          Allowed:    Objects.requireNonNull(x, "...")  - guards a programmer error
+          Forbidden:  throw new AnythingException(...)  - that is a business branch,
+                                                          so it belongs in Result.failure(...)
+        -->
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="noThrowNew"/>
+            <property name="format" value="\bthrow\s+new\b"/>
+            <property name="ignoreComments" value="true"/>
+            <property name="message"
+                      value="Zero-Exception rule: do not 'throw new ...'. Return Result.failure(new SomeError(...)) instead. Objects.requireNonNull is still allowed for programmer errors."/>
+        </module>
+
+        <!--
+          ScopedValue.callWhere / runWhere were REMOVED from the JDK (JDK 24); the final
+          Java 25 API is ScopedValue.where(KEY, value).call(op). Models reproduce the old
+          form from memory constantly, so fail the build on it and point at the helper.
+        -->
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="noScopedValueCallWhere"/>
+            <property name="format" value="ScopedValue\.(callWhere|runWhere)\b"/>
+            <property name="ignoreComments" value="true"/>
+            <property name="message"
+                      value="ScopedValue.callWhere/runWhere do not exist in Java 25. Use ActorContext.callWith(actor, op) / ActorContext.runWith(actor, op)."/>
+        </module>
+
+        <!--
+          Wrong-library imports. Each of these was generated at least once while this
+          architecture was being designed, and each one fails only at compile time
+          (or worse, at runtime) without this check.
+        -->
+        <module name="IllegalImport">
+            <property name="id" value="forbiddenLibraries"/>
+            <property name="illegalPkgs"
+                      value="com.fasterxml.jackson,
+                             org.springframework.retry,
+                             jakarta.persistence,
+                             javax.persistence,
+                             org.hibernate,
+                             com.querydsl,
+                             org.jooq"/>
+            <property name="illegalClasses" value="java.lang.ThreadLocal"/>
+        </module>
+
+        <!-- Virtual threads: ScopedValue replaces ThreadLocal. -->
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="noThreadLocal"/>
+            <property name="format" value="\bnew\s+ThreadLocal\s*&lt;"/>
+            <property name="ignoreComments" value="true"/>
+            <property name="message"
+                      value="ThreadLocal pins state to a carrier thread. On virtual threads use java.lang.ScopedValue."/>
+        </module>
+
+        <!-- Suffixes that smuggle a procedural layer back into a facade-based design. -->
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="noServiceSuffixDeclaration"/>
+            <property name="format" value="\b(class|interface|record)\s+\w+(Service|Manager|Helper|Util|Utils)\b"/>
+            <property name="ignoreComments" value="true"/>
+            <property name="message"
+                      value="No *Service / *Manager / *Helper / *Util types. Entry points are *CommandFacade and *QueryFacade."/>
+        </module>
+
+        <module name="IllegalCatch">
+            <property name="id" value="noCatchAll"/>
+            <property name="illegalClassNames" value="java.lang.Exception, java.lang.Throwable, java.lang.RuntimeException"/>
+        </module>
+
+        <module name="UnusedImports"/>
+        <module name="RedundantImport"/>
+        <module name="EqualsHashCode"/>
+        <module name="StringLiteralEquality"/>
+    </module>
+</module>

@@ -1,0 +1,101 @@
+---
+description: "TDD standards: JUnit 5, AssertJ, in-memory fakes, Testcontainers, Awaitility"
+applyTo: "src/test/**/*.java"
+---
+
+# Test standards
+
+## Two kinds of test, two plugins
+
+| Suffix | Runner | Speed | Use for |
+|---|---|---|---|
+| `*Test.java` | Surefire (`./mvnw test`) | milliseconds | facades, aggregates, projections — in-memory fakes only |
+| `*IT.java` | Failsafe (`./mvnw verify`) | seconds | real PostgreSQL / Kafka through Testcontainers |
+
+Naming decides which plugin runs the file. A slow test named `*Test` poisons the fast loop.
+
+## Unit tests: fakes, not mocks
+
+Do not use Mockito for `domain/` or `query/`. Write a deterministic fake in the test tree:
+
+```java
+final class InMemorySubmissionCommandRepository implements SubmissionCommandRepository {
+    private final Map<SubmissionId, SubmissionSnapshot> store = new ConcurrentHashMap<>();
+    // plus given*/ then* helpers to arrange and inspect state
+}
+```
+
+A fake tests behaviour; a mock tests that you called a method you already decided to call. Mocks
+are acceptable only at an adapter boundary you do not own.
+
+## Assert on the whole `Result`
+
+```java
+// NO — passes while the error is completely wrong
+assertThat(result.isFailure()).isTrue();
+
+// YES — pins the exact failure
+assertThat(result).isEqualTo(Result.failure(new RegisterSubmissionError.ExternalReferenceTooLong(64, 80)));
+```
+
+Never use `assertThatThrownBy` for a business rule. Business rules do not throw here; if one does,
+that is the bug.
+
+## Cover every variant of every `*Error`
+
+For each record in a `sealed interface *Error` there must be at least one test that produces it.
+The sealed hierarchy is the checklist — if you cannot reach a variant, it should not exist.
+
+Use `@ParameterizedTest` for boundaries: empty string, `"   "`, one under and one over a length
+limit, `BigDecimal.ZERO`, `-0.01`, and the maximum.
+
+## Structure
+
+`@DisplayName` in plain business language on every test. Given / When / Then comments.
+One behaviour per test.
+
+## Integration tests
+
+```java
+@DataJdbcTest
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Testcontainers
+class SubmissionPersistenceAdapterIT {
+    @Container
+    @ServiceConnection
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17-alpine");
+}
+```
+
+`@ServiceConnection` wires the container to Spring — no `@DynamicPropertySource` needed.
+
+**Dependency names (Testcontainers 2.x renamed every module):**
+`org.testcontainers:testcontainers-junit-jupiter`, `:testcontainers-postgresql`,
+`:testcontainers-kafka`. The 1.x names `junit-jupiter`, `postgresql`, `kafka` do not resolve.
+
+An integration test for a Spring Data JDBC adapter must cover the insert-versus-update case: save
+a brand-new aggregate whose UUID was generated in the domain, and assert a row was inserted and
+`version` was set. That is the trap this architecture is most likely to hit.
+
+## Asynchrony
+
+Never `Thread.sleep(...)`. Use Awaitility:
+
+```java
+await().atMost(Duration.ofSeconds(10))
+       .pollInterval(Duration.ofMillis(200))
+       .untilAsserted(() -> assertThat(repository.findById(id))
+               .hasValueSatisfying(s -> assertThat(s.status()).isEqualTo(APPROVED)));
+```
+
+Every Kafka consumer needs a duplicate-delivery test: publish the identical event twice, assert
+the effect happened once and nothing blew up.
+
+## Binding an actor in tests
+
+```java
+var actor = new ActorContext(TENANT_1, "uw-01", ActorRole.UNDERWRITER);
+var result = ActorContext.callWith(actor, () -> facade.approve(command));
+```
+
+Not `ScopedValue.callWhere(...)` — that was removed from the JDK and will not compile.
