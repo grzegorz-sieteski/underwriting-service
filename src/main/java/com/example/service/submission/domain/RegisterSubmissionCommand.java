@@ -2,6 +2,8 @@ package com.example.service.submission.domain;
 
 import module java.base;
 
+import com.example.service.shared.kernel.LogSafeText;
+
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -13,7 +15,7 @@ import org.jspecify.annotations.Nullable;
  * <p>Both components are {@code @Nullable} <strong>on purpose</strong>, and this record carries no
  * compact constructor running {@code Objects.requireNonNull}. Absence of either input is a
  * business refusal the specification names (BR-04, BR-10); turning it into a programmer-error
- * guard would convert a named refusal reason into a crash and make two of the eight variants of
+ * guard would convert a named refusal reason into a crash and make two of the nine variants of
  * {@link RegisterSubmissionError} unreachable.
  *
  * @param externalRef  the reference the submitting party already uses, compared byte-exactly
@@ -41,7 +43,7 @@ public record RegisterSubmissionCommand(@Nullable String externalRef,
      */
     @Override
     public String toString() {
-        return "RegisterSubmissionCommand[externalRef=" + externalRef
+        return "RegisterSubmissionCommand[externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                 + ", insuredLimit=" + MASKED + "]";
     }
 }

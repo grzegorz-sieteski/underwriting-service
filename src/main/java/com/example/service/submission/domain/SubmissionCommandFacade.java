@@ -35,7 +35,7 @@ public final class SubmissionCommandFacade {
 
     /**
      * Registers a submission for the identified caller's own organisation (BR-15), or returns one
-     * of the eight refusal reasons in {@link RegisterSubmissionError}.
+     * of the nine refusal reasons in {@link RegisterSubmissionError}.
      */
     public Result<SubmissionId, RegisterSubmissionError> register(RegisterSubmissionCommand command) {
         Objects.requireNonNull(command, "command");

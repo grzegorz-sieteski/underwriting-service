@@ -30,9 +30,12 @@ CREATE TABLE submissions
     -- Defence in depth for the domain invariants. Each one mirrors a business rule that is
     -- already refused in the aggregate; a row that violates one of them is a bug, not a refusal.
     CONSTRAINT ck_submissions_external_ref_not_empty CHECK (length(external_ref) > 0),          -- BR-04
-    -- BR-29. Mirrors the domain check, and cannot fully mirror it: see ADR §8.3.
+    -- BR-29. Mirrors the domain check, and cannot fully mirror it: see ADR §8.3. [[:cntrl:]]
+    -- is intended to match category Cc; whether it covers U+0080-U+009F depends on the
+    -- database locale. UNVERIFIED against a live PostgreSQL server
+    -- (no Docker on the machine that wrote it), so the IT suite is the first real check.
     CONSTRAINT ck_submissions_external_ref_no_control_chars
-        CHECK (external_ref !~ '[\x01-\x1F\x7F-\x9F]'),                                         -- BR-29
+        CHECK (external_ref !~ '[[:cntrl:]]'),                                       -- BR-29
     CONSTRAINT ck_submissions_insured_limit_positive CHECK (insured_limit > 0),                 -- BR-11
     CONSTRAINT ck_submissions_insured_limit_scale CHECK (scale(insured_limit) = 2)              -- BR-12
 );

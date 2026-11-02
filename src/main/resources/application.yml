@@ -7,9 +7,10 @@ spring:
       enabled: true
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/service
-    username: service
-    password: service
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/service}
+    username: ${DATABASE_USERNAME:service}
+    # No default: a missing password must fail startup, not fall back to a known credential.
+    password: ${DATABASE_PASSWORD}
 
   flyway:
     enabled: true
@@ -35,3 +36,8 @@ app:
 logging:
   level:
     org.springframework.jdbc.core: INFO
+
+server:
+  error:
+    include-message: never
+    include-stacktrace: never

@@ -2,6 +2,8 @@ package com.example.service.submission.query;
 
 import module java.base;
 
+import com.example.service.shared.kernel.LogSafeText;
+
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -48,7 +50,7 @@ public record SearchSubmissionsQuery(@Nullable String externalRef,
      */
     @Override
     public String toString() {
-        return "SearchSubmissionsQuery[externalRef=" + externalRef
+        return "SearchSubmissionsQuery[externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                 + ", insuredLimitFrom=" + MASKED
                 + ", insuredLimitTo=" + MASKED
                 + ", registeredFrom=" + registeredFrom

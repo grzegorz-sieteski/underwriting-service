@@ -8,7 +8,7 @@ public interface SubmissionEventPublisher {
      * nothing about — no transport, no topic, no message key, no wire contract.
      *
      * <p>Returns {@code void} and not a {@code Result} because the specification lists no refusal
-     * reason for announcing a fact; a {@code Result} here would force a ninth error variant for
+     * reason for announcing a fact; a {@code Result} here would force a tenth error variant for
      * something the business never described as an outcome.
      */
     void publish(SubmissionDomainEvent event);

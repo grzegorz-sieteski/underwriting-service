@@ -2,6 +2,8 @@ package com.example.service.submission.domain;
 
 import module java.base;
 
+import com.example.service.shared.kernel.LogSafeText;
+
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -36,7 +38,7 @@ public record SubmissionSnapshot(UUID id,
     public String toString() {
         return "SubmissionSnapshot[id=" + id
                 + ", tenantId=" + tenantId
-                + ", externalRef=" + externalRef
+                + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                 + ", insuredLimit=" + MASKED
                 + ", registeredBy=" + MASKED
                 + ", registeredAt=" + registeredAt

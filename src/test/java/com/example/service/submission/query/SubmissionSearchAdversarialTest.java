@@ -488,20 +488,21 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("neither read-side nor write-side refusal reason carries a value forbidden "
-                + "in a log, by component NAME as well as by type")
-        void shouldEnsureNoRefusalReasonCarriesForbiddenValueWhenComponentsInspected() {
-            // Given & When
-            var components = Arrays.stream(SearchSubmissionsError.class.getPermittedSubclasses())
+        @DisplayName("the search refusal hierarchy is exactly one variant carrying no component at "
+                + "all, so it cannot carry a value forbidden in a log")
+        void shouldHaveExactlyOneSearchRefusalReasonCarryingNoComponents() {
+            // C-3: this test used to claim a read-side AND write-side sweep while inspecting only
+            // SearchSubmissionsError, and asserted allSatisfy over an EMPTY list, which passes
+            // vacuously whatever it contains. The write side is swept by
+            // SubmissionRegistrationAdversarialTest. Here the size and the emptiness are asserted
+            // outright, so a second variant or a first component fails this instead of slipping by.
+            var variants = SearchSubmissionsError.class.getPermittedSubclasses();
+            var components = Arrays.stream(variants)
                     .flatMap(variant -> Arrays.stream(variant.getRecordComponents()))
                     .toList();
 
-            // Then
-            assertThat(components).allSatisfy(component -> {
-                assertThat(component.getType()).isNotIn(BigDecimal.class, Number.class);
-                assertThat(component.getName().toLowerCase(java.util.Locale.ROOT))
-                        .doesNotContain("limit", "amount", "actor", "registeredby");
-            });
+            assertThat(variants).hasSize(1);
+            assertThat(components).isEmpty();
         }
     }
 

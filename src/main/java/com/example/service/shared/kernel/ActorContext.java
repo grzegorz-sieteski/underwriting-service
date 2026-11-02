@@ -58,6 +58,16 @@ public record ActorContext(UUID tenantId, String actorId, ActorRole role) {
         return CURRENT.isBound() ? Optional.of(CURRENT.get()) : Optional.empty();
     }
 
+    /**
+     * Masks {@code actorId} (OPEN-01): this record is the first, upstream holder of the caller's
+     * identity, so masking every downstream record was not enough. The organisation and the role
+     * stay visible; neither identifies a person.
+     */
+    @Override
+    public String toString() {
+        return "ActorContext[tenantId=" + tenantId + ", actorId=***, role=" + role + "]";
+    }
+
     /** True when this actor may read data belonging to {@code otherTenantId}. */
     public boolean belongsToTenant(UUID otherTenantId) {
         return tenantId.equals(otherTenantId);

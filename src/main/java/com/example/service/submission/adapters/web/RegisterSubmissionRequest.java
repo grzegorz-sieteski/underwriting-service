@@ -11,7 +11,7 @@ import org.jspecify.annotations.Nullable;
  * <p><strong>No Bean Validation annotations.</strong> {@code spring-boot-starter-validation} is on
  * the classpath, but {@code @NotNull} / {@code @Positive} / {@code @Digits} would intercept BR-04,
  * BR-10, BR-11 and BR-12 and answer with a framework-shaped 400, bypassing the named refusal
- * reasons and making four of the eight error variants unreachable. Business inputs are validated
+ * reasons and making four of the nine error variants unreachable. Business inputs are validated
  * in the aggregate.
  *
  * <p><strong>{@code insuredLimit} must be {@code BigDecimal}.</strong> Any {@code double} or

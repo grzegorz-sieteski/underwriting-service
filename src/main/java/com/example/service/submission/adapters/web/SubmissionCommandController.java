@@ -2,6 +2,8 @@ package com.example.service.submission.adapters.web;
 
 import module java.base;
 
+import com.example.service.shared.kernel.LogSafeText;
+
 import com.example.service.shared.kernel.ActorContext;
 import com.example.service.shared.kernel.Result;
 import com.example.service.submission.domain.RegisterSubmissionCommand;
@@ -29,7 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
  * and non-web callers alike. The controller does not decide BR-01.
  *
  * <p><strong>The fold is an exhaustive switch with no {@code default} branch,</strong> so the
- * compiler reports a future ninth refusal reason instead of a 500 appearing in production.
+ * compiler reports a future tenth refusal reason instead of a 500 appearing in production.
  */
 @RestController
 @RequestMapping("/api/submissions")
@@ -93,19 +95,14 @@ class SubmissionCommandController {
                     problemDetail(HttpStatus.BAD_REQUEST, "reference-too-long",
                             "externalRef must be at most " + maxLength
                                     + " characters, but was " + actualLength + ".");
-            // ADDED BY @test-designer, 2026-11-02, OUTSIDE ITS WRITE BOUNDARY — see the report.
-            // BR-29's ninth variant made this switch non-exhaustive and therefore made the whole
-            // module uncompilable, which is the no-default design working as intended. This branch
-            // is the minimum needed to restore compilation; it invents no mapping, since 400 is
-            // what every other malformed-reference refusal already answers. @developer owns it and
-            // should review the wording. The code point is rendered as a NUMBER (U+XXXX): putting
-            // the character itself in a ProblemDetail is what the variant exists to prevent.
+            // BR-29: 400 like every other malformed-reference refusal. The code point is rendered as
+            // a number (U+XXXX) and the position as a code point index, never the raw character.
             case RegisterSubmissionError.ReferenceContainsControlCharacter(
                     var codePoint, var index) -> problemDetail(
                             HttpStatus.BAD_REQUEST, "reference-contains-control-character",
                             "externalRef must not contain a control character, but "
-                                    + String.format("U+%04X", codePoint)
-                                    + " was found at index " + index + ".");
+                                    + String.format(Locale.ROOT, "U+%04X", codePoint)
+                                    + " was found at code point index " + index + ".");
             case RegisterSubmissionError.InsuredLimitMissing _ -> problemDetail(
                     HttpStatus.BAD_REQUEST, "insured-limit-missing",
                     "insuredLimit is required.");
@@ -119,7 +116,7 @@ class SubmissionCommandController {
                                     + " decimal places, but had " + actualScale + ".");
             case RegisterSubmissionError.ReferenceAlreadyUsed(var externalRef) -> problemDetail(
                     HttpStatus.CONFLICT, "reference-already-used",
-                    "The reference '" + externalRef + "' is already used by a submission of your "
+                    "The reference '" + LogSafeText.escapeControlCharacters(externalRef) + "' is already used by a submission of your "
                             + "organisation.");
         };
         return ResponseEntity.status(problem.getStatus())

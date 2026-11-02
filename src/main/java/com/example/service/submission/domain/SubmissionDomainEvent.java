@@ -2,6 +2,8 @@ package com.example.service.submission.domain;
 
 import module java.base;
 
+import com.example.service.shared.kernel.LogSafeText;
+
 /**
  * The business facts this module announces. One today, because the specification names one.
  *
@@ -45,7 +47,7 @@ public sealed interface SubmissionDomainEvent {
             return "SubmissionRegistered[eventId=" + eventId
                     + ", aggregateId=" + aggregateId
                     + ", tenantId=" + tenantId
-                    + ", externalRef=" + externalRef
+                    + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                     + ", insuredLimit=" + MASKED
                     + ", registeredBy=" + MASKED
                     + ", occurredAt=" + occurredAt + "]";

@@ -2,6 +2,8 @@ package com.example.service.submission.query;
 
 import module java.base;
 
+import com.example.service.shared.kernel.LogSafeText;
+
 /**
  * One row of a search result: the four fields the specification lists — reference, insured limit,
  * registering caller, registration moment — plus the submission's identity.
@@ -24,7 +26,7 @@ public record SubmissionSummaryView(UUID submissionId,
     @Override
     public String toString() {
         return "SubmissionSummaryView[submissionId=" + submissionId
-                + ", externalRef=" + externalRef
+                + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                 + ", insuredLimit=" + MASKED
                 + ", registeredBy=" + MASKED
                 + ", registeredAt=" + registeredAt + "]";
