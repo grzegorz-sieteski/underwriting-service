@@ -287,7 +287,7 @@ Notes:
 | **Insured limit** | Financially sensitive — confirmed by the business | **Never.** Not in a success log, not in a refusal log, not in a diagnostic message, not partially, not rounded (`BR-22`) |
 | **Submission reference** | Business identifier — confirmed readable by the business | **Yes**, in full and readable, because audit needs it to correlate submissions (`BR-23`) |
 | **Organisation** | Isolation boundary. No sensitivity decision exists | Follow this repository's existing audit practice. Not classified here |
-| **Registering caller's identity** | Attributable to an individual, and already needed in audit fields. The business has **not** been asked whether it may appear in a log | No decision exists. Raise with the data owner before release; this document does not decide it |
+| **Registering caller's identity** | Attributable to an individual. Recorded in audit fields, but confirmed by the product owner (2026-11-02, OPEN-01) as **never loggable** | **Never.** Not in a success log, not in a refusal log, not in any diagnostic message. It is stored for audit and read from storage, never from logs |
 | **Registration moment** | Not sensitive on its own | No decision exists. Not classified here |
 
 ---

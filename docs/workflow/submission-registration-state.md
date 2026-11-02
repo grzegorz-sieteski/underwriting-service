@@ -548,4 +548,4 @@ start on a checksum mismatch.
 ### Release conditions still open
 
 3. No identity source — every request answers 401.
-4. OPEN-01 — business answer on whether `actorId` may be logged.
+4. ~~OPEN-01~~ — **closed 2026-11-02.** Product owner: `actorId` must never appear in logs. The masking already implemented is now a confirmed rule, not a cautious default. Consequence accepted: logs cannot show who registered a submission; that comes from the audit columns.
