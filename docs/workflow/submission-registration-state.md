@@ -539,11 +539,12 @@ The same probe disproved a claim that had passed **two reviews and a commit**: t
 coherent and wrong; nobody had run it. The V2 comment now gives the true reason for keeping
 explicit ranges (they state the rule literally and do not depend on the regex implementation).
 
-### Note on V2 from now on
+### Note on V2
 
-V2 has now been **applied** to a local database (container `service-postgres`). Any further
-change to V2 needs either a V3 migration or that container recreated, or Flyway will refuse to
-start on a checksum mismatch.
+V2 was applied to a local container (`service-postgres`) on 2026-11-02 and that container was
+**removed the same day**. V2 is therefore applied nowhere persistent: Testcontainers creates a
+fresh database per run. Editing V2 in place is safe again — until it is first applied to a
+database that is kept. From then on, any change needs a V3 migration.
 
 ### Release conditions still open
 
