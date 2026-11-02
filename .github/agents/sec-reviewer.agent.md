@@ -21,8 +21,13 @@ This codebase writes native SQL everywhere, so this is the highest-frequency ris
 
 ### A01 — Broken access control (BOLA / IDOR)
 - `[BLOCKER]` a lookup or mutation by id that does not also filter by the actor's tenant
-- `[BLOCKER]` an authority or role check performed in the controller rather than the domain —
-  a second caller of the use case bypasses it
+- `[BLOCKER]` a use case reachable by an inbound adapter WITHOUT passing the authorisation guard.
+  Who may invoke which use case is decided at the adapter boundary, before any input is parsed.
+  Look for a second inbound path (another controller, a consumer, a scheduled job) that injects
+  the raw use case and skips the guard, and for a guard that runs after parsing.
+- `[CRITICAL]` a rule that depends on the DATA (an amount-based authority limit, a state
+  transition) decided in an adapter. Permission to call an operation is an adapter concern;
+  a business limit is a domain rule, because it needs the aggregate.
 - `[CRITICAL]` returning `403` where another tenant's record should be `404`. The distinction
   confirms the record exists, which is the whole information an enumeration attack needs.
 

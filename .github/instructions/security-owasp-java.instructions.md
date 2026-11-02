@@ -44,8 +44,15 @@ repository.findByIdAndTenantId(submissionId, actor.tenantId());
 A record belonging to another tenant returns **`NotFound`**, never `Forbidden`. Distinguishing the
 two confirms to an attacker that the id exists.
 
-Authority checks (role, limits) belong in `domain/`, not in the controller. The controller only
-supplies `ActorContext`; it never decides.
+**Who may call a use case is decided in the adapter, before any input is parsed.** The adapter
+knows which caller may invoke which operation: identify the caller (401), check the permission for
+that use case (403), and only then parse the request into value objects. An unauthorised caller's
+input is never examined. Keep the guard in one place, so a second inbound path cannot forget it.
+
+A rule that depends on the data is different: an authority limit that depends on an amount, or a
+state transition, is a business rule and stays in `domain/`, because it needs the aggregate.
+The test is "could I decide this from the caller and the operation alone?" — if yes, it is a
+permission and belongs at the edge.
 
 ## A08 — Deserialization and payload integrity
 
