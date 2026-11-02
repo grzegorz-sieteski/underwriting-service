@@ -1,6 +1,6 @@
 # submission-registration
 
-Stage: 6 · Status: **Repairs applied — awaiting re-review.** Not approved: no reviewer has re-run.
+Stage: 6 · Status: **APPROVED by both reviewers at `566b76e`** — with the release conditions below
 Updated: 2026-11-02
 
 Scope: register an insurance submission, and search submissions by filter.
@@ -47,8 +47,8 @@ An unbounded page is a denial-of-service vector regardless of what the business 
 | 3 | test-designer | contracts + failing tests | `test-compile` passes, `test` **fails** | **PASSED** (231 tests) |
 | 4 | developer | `src/main/` | `verify` passes, `src/test/` untouched | **PASSED** |
 | 5 | qa-explorer | `requests/`, extra tests | `src/main/` untouched | **PASSED** (QA-01 & QA-02 closed) |
-| 6 | code-reviewer | report | `[APPROVED]` | **CHANGES REQUIRED** — C-1..C-5 |
-| 7 | sec-reviewer | report | `[APPROVED]` | **CHANGES REQUIRED** — SEC-01..SEC-08 |
+| 6 | code-reviewer | report | `[APPROVED]` | **PASSED** at `566b76e` (re-review) |
+| 7 | sec-reviewer | report | `[APPROVED]` | **PASSED** at `566b76e` (re-review) |
 
 ## Architectural correction from the product owner, 2026-11-01
 
@@ -481,3 +481,35 @@ Honest caveats the developer volunteered:
 
 **Status: NOT APPROVED.** These fixes have not been re-reviewed. Approval is written here only by
 a reviewer who actually ran, never in advance.
+
+## Stage 6 — final verdicts, written after the reviewers ran
+
+Both reviewers re-checked every finding in the code, ran `./mvnw -B verify -DskipITs`
+themselves (251 tests, 0 failures, 0 Checkstyle violations), and returned **`[APPROVED]`** at
+`566b76e`. This section was written only after both verdicts arrived.
+
+The re-review earned its cost. The first repair round introduced a regression: following SEC-08,
+the V2 CHECK was changed to `[[:cntrl:]]`, which under `COLLATE "C"` misses U+0080–U+009F. Both
+reviewers caught it independently, the security reviewer withdrew its own earlier recommendation
+and explained why, and the explicit ranges were restored. Unit tests could not have caught it: no
+unit test executes that SQL.
+
+### Release conditions — NOT met, and the approval does not cover them
+
+1. **Integration tests have never run** (no Docker here). Tenant predicates in SQL, the V2 CHECK,
+   the U+0000 refusal and the insert/version trap are verified by reading only. Run
+   `./mvnw -B verify` with Docker, and add an IT inserting U+0085 and U+009F.
+2. **The Spring context has never started.** Wiring and request-parameter conversion are
+   compile-verified only.
+3. **No identity source exists.** `ActorContextResolver` is fail-closed, so every request answers
+   401. The real source must establish tenant, actor and role from a validated credential.
+4. **OPEN-01 needs a business answer.** Masking `actorId` everywhere means logs never show who
+   registered a submission.
+
+### Open warnings (non-blocking)
+
+- SEC-07: no request-body size limit; Jackson's default is the only bound.
+- N-2: `ReferenceLogInjectionTest` and `LogSafeTextTest` break the test naming convention.
+- W-2: the ADR still shows `ReferenceContainsControlCharacter` with one field; the code has two.
+- W-4: the Kafka ArchUnit rule exempts `..adapters.messaging..`, which does not exist.
+- FU-01: the repository still presupposes Kafka in several places.
