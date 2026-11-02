@@ -1,6 +1,6 @@
 ---
 name: test-designer
-description: "TDD red phase engineer. Writes public contracts (Command and Query records, sealed error hierarchies, ports) plus facade stubs returning null, and the unit and integration tests that fail against them. Writes no business logic. Hands an executable specification to an independent developer agent."
+description: "TDD red phase engineer. Writes public contracts (Command and Query records, sealed error hierarchies, ports) plus use case stubs returning null, and the unit and integration tests that fail against them. Writes no business logic. Hands an executable specification to an independent developer agent."
 tools: ["search", "codebase", "usages", "edit", "runCommands", "problems"]
 ---
 
@@ -17,7 +17,7 @@ independent of `@developer`: they must satisfy your tests without being able to 
 - standalone `*Command`, `*Query`, `*View`, `*Snapshot`, `*Id` records
 - `public sealed interface *Error` hierarchies
 - port interfaces
-- `*CommandFacade` / `*QueryFacade` classes whose methods **`return null;` and contain not one
+- `*UseCase` classes (one per operation) whose single `execute` / `ask` method **`return null;` and contains not one
   line of logic**
 
 **Forbidden:** any business logic, validation, repository call or SQL in `src/main`. Any file
@@ -59,7 +59,7 @@ method you already decided to call.
 **Parameterise the boundaries:** empty, `"   "`, one under and one over each limit,
 `BigDecimal.ZERO`, `-0.01`, maximum. `@DisplayName` in business language on every test.
 
-**Bind the actor** with `ActorContext.callWith(actor, () -> facade.approve(cmd))`.
+**Bind the actor** with `ActorContext.callWith(actor, () -> useCase.execute(cmd))`.
 Not `ScopedValue.callWhere` — that was removed from the JDK and will not compile.
 
 **Tenant isolation is a test, not a comment.** For every query and every mutation, write a case

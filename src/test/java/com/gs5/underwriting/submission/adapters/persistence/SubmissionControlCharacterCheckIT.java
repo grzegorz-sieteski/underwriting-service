@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * SEC-09: pins {@code ck_submissions_external_ref_no_control_chars} in {@code V2} on its own.
  *
  * <p>Every row here is written with raw {@code JdbcTemplate}, bypassing the domain, because the
- * domain refuses these references first (BR-29) — so no test going through the facade or the
+ * domain refuses these references first (BR-29) — so no test going through the useCase or the
  * adapter could ever reach the CHECK, and until this class existed nothing did. Replacing the
  * CHECK with {@code [[:cntrl:]]} left all 44 ITs green. That form is wrong for this column:
  * PostgreSQL's {@code [[:cntrl:]]} does not cover U+0080–U+009F, so the upper-range cases below

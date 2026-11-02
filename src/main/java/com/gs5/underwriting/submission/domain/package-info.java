@@ -1,5 +1,5 @@
 /**
- * Submission write side: the command facade, its command record, its refusal reasons and its
+ * Submission write side: the command useCase, its command record, its refusal reasons and its
  * outbound ports.
  *
  * <p>Pure Java. The only dependencies permitted here are {@code java.*},
@@ -9,7 +9,7 @@
  *
  * <p>The aggregate itself is deliberately absent from the contracts in this package: it is
  * package-private, so nothing outside this package can reach past
- * {@code SubmissionCommandFacade}.
+ * {@code RegisterSubmissionUseCase}.
  */
 @NullMarked
 package com.gs5.underwriting.submission.domain;

@@ -50,11 +50,11 @@ compiler proves nothing is missing.
 
 | Visibility | Types |
 |---|---|
-| `public` | `*CommandFacade`, `*Command` records, `*Error`, ports, domain events, `*Id`, `*Snapshot` |
+| `public` | `*UseCase`, `*Command` records, `*Error`, ports, domain events, `*Id`, `*Snapshot` |
 | **package-private** | the aggregate itself and every internal collaborator |
 
 The aggregate being package-private is not a style preference — it is what stops a controller or a
-JDBC adapter from reaching past the facade. The compiler enforces it for free.
+JDBC adapter from reaching past the use case. The compiler enforces it for free.
 
 - No public constructors on an aggregate. Use named factories: `Submission.register(...)` for a
   new one, `Submission.reconstitute(...)` for one loaded from the database.
@@ -90,14 +90,15 @@ JDBC adapter from reaching past the facade. The compiler enforces it for free.
 blocked by ArchUnit, and the package-private aggregate blocks it at compile time anyway.
 
 - A query returns a projection record (`*View`), never an aggregate.
-- A `*QueryFacade` validates the query (pagination bounds, tenant) and returns
+- A `*UseCase` validates the query (pagination bounds, tenant) and returns
   `Result<View, *QueryError>`.
 - Read ports return `*View` records directly; the SQL that fills them lives in the adapter.
 
 ## Commands and queries are standalone records
 
-No shared `Command` interface, no `handle(Command)`. Each operation is a named method on the
-facade taking its own record and returning its own `Result`. A command may carry a masking
+No shared `Command` interface, no `handle(Command)`, no facade. Each operation is its own
+`*UseCase` class with exactly one public method — `execute` in `domain/`, `ask` in `query/` —
+taking its own record and returning its own `Result`. A command may carry a masking
 `toString()` when it holds sensitive data:
 
 ```java

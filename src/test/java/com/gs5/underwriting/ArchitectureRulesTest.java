@@ -1,9 +1,15 @@
 package com.gs5.underwriting;
 
+import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaMethod;
+import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
@@ -104,14 +110,14 @@ class ArchitectureRulesTest {
             noClasses()
                     .that().haveSimpleNameEndingWith("CommandController")
                     .should().dependOnClassesThat().resideInAPackage("..query..")
-                    .because("a command endpoint talks to *CommandFacade and nothing else");
+                    .because("a command endpoint talks to its *UseCase in domain/ and nothing else");
 
     @ArchTest
     static final ArchRule query_controllers_touch_only_the_read_side =
             noClasses()
                     .that().haveSimpleNameEndingWith("QueryController")
                     .should().dependOnClassesThat().resideInAPackage("..domain..")
-                    .because("a query endpoint talks to *QueryFacade and nothing else");
+                    .because("a query endpoint talks to its *UseCase in query/ and nothing else");
 
     @ArchTest
     static final ArchRule commands_and_queries_are_standalone_records =
@@ -126,11 +132,49 @@ class ArchitectureRulesTest {
     // ------------------------------------------------------- no hidden layers
 
     @ArchTest
-    static final ArchRule no_procedural_service_layer =
+    static final ArchRule no_procedural_service_or_facade_layer =
             noClasses()
                     .should().haveSimpleNameEndingWith("Service")
-                    .because("entry points are *CommandFacade and *QueryFacade; a *Service class is how "
+                    .orShould().haveSimpleNameEndingWith("Facade")
+                    .because("entry points are single-operation *UseCase classes; a *Service or *Facade "
+                            + "collects unrelated operations, every new feature edits the same file, and "
                             + "an anaemic model and a god object grow back");
+
+    /*
+     * One UseCase = one business operation = one public method.
+     *
+     * A facade can grow from two methods to fifty and no structural rule can say where it went
+     * wrong. A UseCase cannot: this rule fails the build the moment a second public method appears,
+     * so a new operation has to arrive as a new class with its own constructor holding only the
+     * ports that operation needs.
+     *
+     * The method name is pinned too, because the count alone would accept `run` or `handle`:
+     * `execute` on the write side (it changes state), `ask` on the read side (it does not). The
+     * name tells a reader which one they are calling without opening the class.
+     */
+    @ArchTest
+    static final ArchRule use_cases_have_exactly_one_public_method_named_for_their_side =
+            classes()
+                    .that().haveSimpleNameEndingWith("UseCase")
+                    .should(new ArchCondition<JavaClass>(
+                            "have exactly one public method: execute in domain/, ask in query/") {
+                        @Override
+                        public void check(JavaClass useCase, ConditionEvents events) {
+                            var publicMethods = useCase.getMethods().stream()
+                                    .filter(method -> method.getModifiers().contains(JavaModifier.PUBLIC))
+                                    .toList();
+                            var expectedName = useCase.getPackageName().endsWith(".query") ? "ask" : "execute";
+                            var conforms = publicMethods.size() == 1
+                                    && publicMethods.getFirst().getName().equals(expectedName);
+                            if (!conforms) {
+                                events.add(SimpleConditionEvent.violated(useCase,
+                                        useCase.getName() + " must expose exactly one public method named '"
+                                                + expectedName + "', but has "
+                                                + publicMethods.stream().map(JavaMethod::getName).toList()));
+                            }
+                        }
+                    })
+                    .because("each UseCase is a single business operation with one reason to change");
 
     @ArchTest
     static final ArchRule no_grab_bag_classes =

@@ -1,6 +1,6 @@
 ---
 name: hexagonal-cqrs-slice
-description: "Builds a complete CQRS module slice on Java 25 and Spring Boot 4: pure domain package with a package-private aggregate and a CommandFacade, a separate query package with projections, plain Spring Data JDBC adapters using native SQL mapped to records, REST controllers, and the tests for all of it. USE FOR: implementing a new business module, adding a command or query to an existing module, adding a persistence adapter, wiring a facade into Spring. DO NOT USE FOR: JPA or Hibernate projects, Kafka and event publishing (use hexagonal-kafka-eda), CI or build configuration."
+description: "Builds a complete CQRS module slice on Java 25 and Spring Boot 4: pure domain package with a package-private aggregate and a UseCase, a separate query package with projections, plain Spring Data JDBC adapters using native SQL mapped to records, REST controllers, and the tests for all of it. USE FOR: implementing a new business module, adding a command or query to an existing module, adding a persistence adapter, wiring a use case into Spring. DO NOT USE FOR: JPA or Hibernate projects, Kafka and event publishing (use hexagonal-kafka-eda), CI or build configuration."
 ---
 
 # CQRS slice: pure core, plain JDBC adapters
@@ -18,7 +18,7 @@ Read `src/main/resources/db/migration/*.sql` before writing any SQL.
 com.gs5.underwriting.<module>/
 ├── domain/                                   WRITE SIDE — pure Java 25
 │   ├── package-info.java                     @NullMarked
-│   ├── <M>CommandFacade.java                 public — named business methods
+│   ├── <Operation>UseCase.java               public — ONE operation, one public execute(...)
 │   ├── <M>Id.java                            public record wrapping UUID
 │   ├── Register<M>Command.java               public record, standalone
 │   ├── Register<M>Error.java                 public sealed interface, this operation only
@@ -28,7 +28,7 @@ com.gs5.underwriting.<module>/
 │   └── <M>.java                              PACKAGE-PRIVATE aggregate
 ├── query/                                    READ SIDE — cannot see domain/
 │   ├── package-info.java
-│   ├── <M>QueryFacade.java
+│   ├── <Query>UseCase.java                   public — ONE read, one public ask(...)
 │   ├── <M>SearchQuery.java                   public record
 │   ├── <M>QueryError.java                    public sealed interface
 │   ├── <M>QueryRepository.java               public — returns *View directly
@@ -37,12 +37,12 @@ com.gs5.underwriting.<module>/
     ├── web/        <M>CommandController, <M>QueryController
     ├── persistence/ <M>JdbcEntity, <M>CommandJdbcRepository, <M>CommandSqlAdapter,
     │                <M>QuerySqlAdapter, <M>PersistenceMapper   (all package-private)
-    └── config/     <M>Configuration — registers the facades as beans
+    └── config/     <M>Configuration — registers the use cases as beans
 ```
 
 ## Step 1 (RED): contracts and failing tests
 
-Write the public records and interfaces, plus facade methods whose bodies `return null`. Then
+Write the public records and interfaces, plus use case methods whose bodies `return null`. Then
 write the tests that prove the behaviour, which fail because the bodies are empty.
 
 `./mvnw test-compile` must succeed. `./mvnw test` must fail. If the tests pass at this point,
@@ -50,7 +50,7 @@ they are not testing anything.
 
 In-memory fakes for the ports, in the test tree, backed by `ConcurrentHashMap`. No Mockito here.
 
-## Step 2 (GREEN): the aggregate and the facade
+## Step 2 (GREEN): the aggregate and the use case
 
 The aggregate is package-private with a private constructor and named factories:
 
@@ -89,15 +89,18 @@ final class Submission {
 }
 ```
 
-The facade exposes named methods and composes on the railway:
+Each operation is its own class with exactly one public method — `execute` on the write side,
+`ask` on the read side — and a constructor holding only the ports that operation needs. A second
+operation is a second class, never a second method; ArchUnit fails the build otherwise. The
+method composes on the railway:
 
 ```java
-public final class SubmissionCommandFacade {
+public final class RegisterSubmissionUseCase {
 
     private final SubmissionCommandRepository repository;
     private final Clock clock;
 
-    public Result<SubmissionId, RegisterSubmissionError> register(RegisterSubmissionCommand command) {
+    public Result<SubmissionId, RegisterSubmissionError> execute(RegisterSubmissionCommand command) {
         return ActorContext.current()
                 .map(actor -> Submission
                         .register(actor.tenantId(), command.externalRef(), command.insuredLimit())
@@ -166,13 +169,13 @@ be used to save. Every parameter is bound; nothing is concatenated. Every query 
 class SubmissionConfiguration {
 
     @Bean
-    SubmissionCommandFacade submissionCommandFacade(SubmissionCommandRepository repository, Clock clock) {
-        return new SubmissionCommandFacade(repository, clock);
+    RegisterSubmissionUseCase registerSubmissionUseCase(SubmissionCommandRepository repository, Clock clock) {
+        return new RegisterSubmissionUseCase(repository, clock);
     }
 }
 ```
 
-The controller binds `ActorContext` from the security context, calls the facade, and folds the
+The controller binds `ActorContext` from the security context, calls the use case, and folds the
 `Result` into a response with an exhaustive `switch` and no `default` branch. Failures become
 RFC 7807 `ProblemDetail`, carrying a stable code and a user-safe message — never a stack trace,
 a SQL fragment or an internal id.

@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>No business rule is asserted with {@code assertThatThrownBy}: in this architecture a business
  * rule returns a failure, and a rule that throws is the bug.
  */
-class SubmissionCommandFacadeTest {
+class RegisterSubmissionUseCaseTest {
 
     private static final UUID TENANT_A = UUID.fromString("0a000000-0000-0000-0000-00000000000a");
     private static final UUID TENANT_B = UUID.fromString("0b000000-0000-0000-0000-00000000000b");
@@ -59,13 +59,13 @@ class SubmissionCommandFacadeTest {
 
     private InMemorySubmissionCommandRepository repository;
     private InMemorySubmissionEventPublisher eventPublisher;
-    private SubmissionCommandFacade facade;
+    private RegisterSubmissionUseCase useCase;
 
     @BeforeEach
     void setUp() {
         repository = new InMemorySubmissionCommandRepository();
         eventPublisher = new InMemorySubmissionEventPublisher();
-        facade = new SubmissionCommandFacade(repository, eventPublisher,
+        useCase = new RegisterSubmissionUseCase(repository, eventPublisher,
                 new FixedSubmissionIdGenerator(), Clock.fixed(REGISTERED_AT, ZoneOffset.UTC));
     }
 
@@ -73,7 +73,7 @@ class SubmissionCommandFacadeTest {
                                                                      String externalRef,
                                                                      BigDecimal insuredLimit) {
         return ActorContext.callWith(actor,
-                () -> facade.register(new RegisterSubmissionCommand(externalRef, insuredLimit)));
+                () -> useCase.execute(new RegisterSubmissionCommand(externalRef, insuredLimit)));
     }
 
     private static Result<SubmissionId, RegisterSubmissionError> accepted() {
@@ -98,7 +98,7 @@ class SubmissionCommandFacadeTest {
             var command = new RegisterSubmissionCommand("ABC-1", VALID_LIMIT);
 
             // When
-            var result = facade.register(command);
+            var result = useCase.execute(command);
 
             // Then
             assertThat(result).isEqualTo(refused(new RegisterSubmissionError.CallerNotIdentified()));
@@ -111,7 +111,7 @@ class SubmissionCommandFacadeTest {
             var command = new RegisterSubmissionCommand("ABC-1", VALID_LIMIT);
 
             // When
-            facade.register(command);
+            useCase.execute(command);
 
             // Then
             assertThat(repository.storedSubmissions()).isEmpty();
@@ -724,7 +724,7 @@ class SubmissionCommandFacadeTest {
 
             // When
             ActorContext.callWith(actor,
-                    () -> facade.register(new RegisterSubmissionCommand("ABC-1", VALID_LIMIT)));
+                    () -> useCase.execute(new RegisterSubmissionCommand("ABC-1", VALID_LIMIT)));
 
             // Then
             assertThat(repository.storedSubmission(TENANT_A, "ABC-1"))

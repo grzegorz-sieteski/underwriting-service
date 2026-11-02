@@ -1,5 +1,5 @@
 /**
- * Submission read side: the query facade, its query record, its single refusal reason, the
+ * Submission read side: the query useCase, its query record, its single refusal reason, the
  * projection records it returns and the read port that fills them.
  *
  * <p>This package imports nothing from {@code ..submission.domain} — not {@code SubmissionId},

@@ -13,7 +13,7 @@ Architecture: package-by-feature, Hexagonal boundaries, CQRS, Railway Oriented P
    the dependency to make your first idea work.
 2. **Ground in the source of truth before writing.** Read `src/main/resources/db/migration/*.sql`
    before writing any SQL, so table and column names are real. Read the existing signature before
-   calling anything on `Result`, `*CommandFacade` or `*QueryFacade`.
+   calling anything on `Result` or a `*UseCase`.
 3. **Pick one answer, the one you are most sure of.** When several approaches exist, prefer the one
    the Java compiler can verify (exhaustive `switch` over a `sealed` type beats a runtime check).
    Present that one. Do not offer a menu, and do not propose anything that depends on undocumented
@@ -37,7 +37,7 @@ Architecture: package-by-feature, Hexagonal boundaries, CQRS, Railway Oriented P
 |---|---|---|
 | `throw new ...` anywhere in `src/main` | `Result.failure(new SomeError(...))` | Checkstyle `noThrowNew` |
 | Custom `*Exception` classes | `sealed interface *Error` | ArchUnit `no_custom_throwables` |
-| `*Service`, `*Manager`, `*Helper`, `*Util` | `*CommandFacade`, `*QueryFacade` | ArchUnit + Checkstyle |
+| `*Service`, `*Facade`, `*Manager`, `*Helper`, `*Util` | one `*UseCase` per operation (`execute` / `ask`) | ArchUnit + Checkstyle |
 | JPA / Hibernate (`@Entity`, `@OneToMany`, `EntityManager`) | Spring Data JDBC + native SQL | ArchUnit + Checkstyle |
 | QueryDSL, jOOQ | native SQL in `@Query("""...""")` or `JdbcClient` | ArchUnit + Checkstyle |
 | Jackson 2 (`com.fasterxml.jackson.*`) | Jackson 3 (`tools.jackson.*`) | Checkstyle `forbiddenLibraries` |
@@ -60,7 +60,7 @@ com.gs5.underwriting
 ├── shared/kernel/              Result, ActorContext, ActorRole — keep this tiny
 └── <module>/                   one business capability, e.g. submission/
     ├── domain/                 WRITE side. Pure Java. Aggregate is package-private.
-    │                           Public: *CommandFacade, *Command records, *Error, ports, events
+    │                           Public: *UseCase, *Command records, *Error, ports, events
     ├── query/                  READ side. Projections only. Cannot see domain/ (compiler-enforced)
     └── adapters/               web/ persistence/ messaging/ config/
 ```
@@ -71,11 +71,21 @@ and `org.jspecify.*`.
 ## 3. Commands and queries
 
 Each is a **standalone `public record`**. There is no shared `Command` interface and no
-`handle(Command)` method on a facade. A common interface forces every operation into one return
-type and one bag of errors, so a caller registering a submission has to handle errors that can
-only happen when approving one. The facade exposes named business methods instead:
-`facade.register(cmd)`, `facade.approve(cmd)` — each returning its own
-`Result<T, SpecificOperationError>`.
+`handle(Command)` dispatcher. A common interface forces every operation into one return type and
+one bag of errors, so a caller registering a submission has to handle errors that can only happen
+when approving one.
+
+**One operation = one `*UseCase` class = one public method.** There are no `*Facade` and no
+`*Service` classes: a facade grows from two methods to fifty, every new feature edits the same
+file, and its constructor collects every port any method needs. Instead:
+
+- write side, in `domain/`: `RegisterSubmissionUseCase.execute(RegisterSubmissionCommand)`
+- read side, in `query/`: `SearchSubmissionsUseCase.ask(SearchSubmissionsQuery)`
+
+Each returns its own `Result<T, ThatOperationsError>`, and its constructor takes only the ports
+that one operation needs. A new operation is a new class, never a new method on an existing one.
+ArchUnit (`use_cases_have_exactly_one_public_method_named_for_their_side`) fails the build on a
+second public method or a method not named `execute` / `ask`.
 
 ## 4. Which file governs what
 

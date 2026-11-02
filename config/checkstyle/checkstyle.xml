@@ -76,13 +76,13 @@
                       value="ThreadLocal pins state to a carrier thread. On virtual threads use java.lang.ScopedValue."/>
         </module>
 
-        <!-- Suffixes that smuggle a procedural layer back into a facade-based design. -->
+        <!-- Suffixes that smuggle a procedural layer back into a single-operation UseCase design. -->
         <module name="RegexpSinglelineJava">
             <property name="id" value="noServiceSuffixDeclaration"/>
-            <property name="format" value="\b(class|interface|record)\s+\w+(Service|Manager|Helper|Util|Utils)\b"/>
+            <property name="format" value="\b(class|interface|record)\s+\w+(Service|Facade|Manager|Helper|Util|Utils)\b"/>
             <property name="ignoreComments" value="true"/>
             <property name="message"
-                      value="No *Service / *Manager / *Helper / *Util types. Entry points are *CommandFacade and *QueryFacade."/>
+                      value="No *Service / *Facade / *Manager / *Helper / *Util types. Entry points are single-operation *UseCase classes (execute in domain/, ask in query/)."/>
         </module>
 
         <module name="IllegalCatch">

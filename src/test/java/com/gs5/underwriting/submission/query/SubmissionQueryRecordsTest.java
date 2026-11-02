@@ -15,11 +15,11 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The read side's records, independently of the facade.
+ * The read side's records, independently of the useCase.
  *
  * <p>The page request is normalised <strong>inside</strong> {@link SearchSubmissionsQuery}, not in
- * the facade and not in the adapter. That is deliberate: the record then cannot hold an
- * out-of-range page request at all, so the facade, the adapter and the response body cannot
+ * the useCase and not in the adapter. That is deliberate: the record then cannot hold an
+ * out-of-range page request at all, so the useCase, the adapter and the response body cannot
  * disagree about what was applied — and the size echoed to the caller is by construction the size
  * actually used.
  */

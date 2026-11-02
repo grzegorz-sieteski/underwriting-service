@@ -45,12 +45,12 @@ class SubmissionSearchAdversarialTest {
     private static final String SECRET_AMOUNT = "1234567.89";
 
     private InMemorySubmissionQueryRepository repository;
-    private SubmissionQueryFacade facade;
+    private SearchSubmissionsUseCase useCase;
 
     @BeforeEach
     void setUp() {
         repository = new InMemorySubmissionQueryRepository();
-        facade = new SubmissionQueryFacade(repository);
+        useCase = new SearchSubmissionsUseCase(repository);
     }
 
     private static UUID uuid(int n) {
@@ -67,7 +67,7 @@ class SubmissionSearchAdversarialTest {
 
     private Result<SubmissionPageView, SearchSubmissionsError> searchAs(ActorContext caller,
                                                                         SearchSubmissionsQuery q) {
-        return ActorContext.callWith(caller, () -> facade.search(q));
+        return ActorContext.callWith(caller, () -> useCase.ask(q));
     }
 
     private static SearchSubmissionsQuery unfiltered(int page, int size) {
@@ -175,7 +175,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("the caller cannot name an organisation: the only tenant the facade can use "
+        @DisplayName("the caller cannot name an organisation: the only tenant the useCase can use "
                 + "is the actor's own, because the query record has no tenant component at all")
         void shouldEnsureQueryRecordHasNoTenantFieldWhenInspectingRecordStructure() {
             // Given & When
@@ -201,11 +201,11 @@ class SubmissionSearchAdversarialTest {
         void shouldComputePositiveLongOffsetWhenPageNumberIsMaxInt() {
             // Given
             var recorder = new RecordingQueryRepository();
-            var recordingFacade = new SubmissionQueryFacade(recorder);
+            var recordingUseCase = new SearchSubmissionsUseCase(recorder);
 
             // When
             ActorContext.runWith(actor(TENANT_A, ActorRole.UNDERWRITER),
-                    () -> recordingFacade.search(unfiltered(Integer.MAX_VALUE, 100)));
+                    () -> recordingUseCase.ask(unfiltered(Integer.MAX_VALUE, 100)));
 
             // Then
             assertThat(recorder.lastOffset).isEqualTo(214_748_364_700L).isPositive();
@@ -217,11 +217,11 @@ class SubmissionSearchAdversarialTest {
         void shouldFitWithinLongLimitsWhenOffsetCalculatedAtMaxPageAndClamp() {
             // Given
             var recorder = new RecordingQueryRepository();
-            var recordingFacade = new SubmissionQueryFacade(recorder);
+            var recordingUseCase = new SearchSubmissionsUseCase(recorder);
 
             // When
             ActorContext.runWith(actor(TENANT_A, ActorRole.UNDERWRITER),
-                    () -> recordingFacade.search(
+                    () -> recordingUseCase.ask(
                             unfiltered(Integer.MAX_VALUE, SearchSubmissionsQuery.MAX_PAGE_SIZE)));
 
             // Then
@@ -506,7 +506,7 @@ class SubmissionSearchAdversarialTest {
         }
     }
 
-    /** Captures the limit and offset the facade computes, which no fake in the suite exposes. */
+    /** Captures the limit and offset the useCase computes, which no fake in the suite exposes. */
     private static final class RecordingQueryRepository implements SubmissionQueryRepository {
 
         private int lastLimit;

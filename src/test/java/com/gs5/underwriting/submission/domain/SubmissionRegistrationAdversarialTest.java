@@ -50,13 +50,13 @@ class SubmissionRegistrationAdversarialTest {
 
     private InMemorySubmissionCommandRepository repository;
     private InMemorySubmissionEventPublisher eventPublisher;
-    private SubmissionCommandFacade facade;
+    private RegisterSubmissionUseCase useCase;
 
     @BeforeEach
     void setUp() {
         repository = new InMemorySubmissionCommandRepository();
         eventPublisher = new InMemorySubmissionEventPublisher();
-        facade = new SubmissionCommandFacade(repository, eventPublisher,
+        useCase = new RegisterSubmissionUseCase(repository, eventPublisher,
                 new FixedSubmissionIdGenerator(), Clock.fixed(REGISTERED_AT, ZoneOffset.UTC));
     }
 
@@ -68,7 +68,7 @@ class SubmissionRegistrationAdversarialTest {
                                                                       String externalRef,
                                                                       BigDecimal insuredLimit) {
         return ActorContext.callWith(caller,
-                () -> facade.register(new RegisterSubmissionCommand(externalRef, insuredLimit)));
+                () -> useCase.execute(new RegisterSubmissionCommand(externalRef, insuredLimit)));
     }
 
     private Result<SubmissionId, RegisterSubmissionError> register(String externalRef,
@@ -490,7 +490,7 @@ class SubmissionRegistrationAdversarialTest {
                         .join();
 
                 var unbound = CompletableFuture.supplyAsync(
-                        () -> facade.register(
+                        () -> useCase.execute(
                                 new RegisterSubmissionCommand("UNBOUND-1", VALID_LIMIT)), pool)
                         .join();
 

@@ -3,7 +3,7 @@
  * actor resolver.
  *
  * <p>Every type here is package-private. Nothing in this package decides a business rule: the
- * controllers bind the caller, call a facade, and fold the {@code Result} into a response with an
+ * controllers bind the caller, call a useCase, and fold the {@code Result} into a response with an
  * exhaustive {@code switch} and no {@code default} branch.
  */
 @NullMarked

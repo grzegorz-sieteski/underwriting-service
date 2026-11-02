@@ -130,11 +130,11 @@ class SubmissionAdversarialPersistenceIT {
          * the ADAPTER must turn a NUL-bearing reference into a Result rather than let PgJDBC's
          * "Zero bytes may not occur in string parameters" escape. That requirement no longer
          * exists: BR-29 refuses every category-Cc character in the domain, so a NUL reference is
-         * now rejected before any port is called and cannot reach this adapter through the facade
+         * now rejected before any port is called and cannot reach this adapter through the useCase
          * at all. Asserting it here would pin a requirement nobody has, and the old test bypassed
          * the domain to construct a snapshot the domain can no longer produce.
          *
-         * The refusal is owned by SubmissionCommandFacadeTest$ControlCharactersInTheReference and
+         * The refusal is owned by RegisterSubmissionUseCaseTest$ControlCharactersInTheReference and
          * SubmissionRegistrationAdversarialTest$ReferenceCharacterSet. What is still worth
          * asserting HERE is the integration-level half of the same promise, below.
          */
@@ -300,7 +300,7 @@ class SubmissionAdversarialPersistenceIT {
                 + "row: the unique index, not the application, is what settles it")
         void shouldLeaveExactlyOneRowWhenRacingInsertsForSameReferenceWithinTenant() {
             // Given
-            // The facade-level test proves the pipeline. Only a real index can show that
+            // The useCase-level test proves the pipeline. Only a real index can show that
             // ON CONFLICT DO NOTHING under genuine contention returns zero rows to every loser
             // rather than deadlocking or raising a 23505 that escapes as an exception.
 
@@ -406,7 +406,7 @@ class SubmissionAdversarialPersistenceIT {
 
             // When
             // An int OFFSET would have been -100 here, which PostgreSQL rejects outright. This is
-            // the test that the facade's (long) cast is not merely a comment.
+            // the test that the useCase's (long) cast is not merely a comment.
             var page = queryAdapter.findPage(own, 100, 214_748_364_700L);
             var totalCount = queryAdapter.countMatching(own);
 

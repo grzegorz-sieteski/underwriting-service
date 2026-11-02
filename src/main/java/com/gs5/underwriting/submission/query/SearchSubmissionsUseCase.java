@@ -8,7 +8,7 @@ import com.gs5.underwriting.shared.kernel.Result;
 /**
  * The application boundary of the submission read side.
  *
- * <p>This facade must <strong>never</strong> read the actor's role — BR-16: a role neither narrows
+ * <p>This useCase must <strong>never</strong> read the actor's role — BR-16: a role neither narrows
  * nor widens a search. It must read the actor's tenant, which is the only thing BR-17 allows to
  * decide what comes back.
  *
@@ -16,11 +16,11 @@ import com.gs5.underwriting.shared.kernel.Result;
  * and an offset past the end returns none while the count stays true — so a short-circuit for any
  * of the three would be a second implementation of the same rule.
  */
-public final class SubmissionQueryFacade {
+public final class SearchSubmissionsUseCase {
 
     private final SubmissionQueryRepository repository;
 
-    public SubmissionQueryFacade(SubmissionQueryRepository repository) {
+    public SearchSubmissionsUseCase(SubmissionQueryRepository repository) {
         this.repository = Objects.requireNonNull(repository, "repository");
     }
 
@@ -28,7 +28,7 @@ public final class SubmissionQueryFacade {
      * Returns one page of the caller's own organisation's submissions, plus the total match count
      * of the whole matching set — or the single refusal reason Search has.
      */
-    public Result<SubmissionPageView, SearchSubmissionsError> search(SearchSubmissionsQuery query) {
+    public Result<SubmissionPageView, SearchSubmissionsError> ask(SearchSubmissionsQuery query) {
         Objects.requireNonNull(query, "query");
         return Result.<ActorContext, SearchSubmissionsError>fromOptional(
                         ActorContext.current(),

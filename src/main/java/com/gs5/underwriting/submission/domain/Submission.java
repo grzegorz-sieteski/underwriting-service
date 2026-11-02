@@ -8,7 +8,7 @@ import org.jspecify.annotations.Nullable;
 
 /**
  * The submission aggregate: <strong>package-private</strong>, with a private constructor and named
- * factories. Nothing outside this package can reach past {@link SubmissionCommandFacade}.
+ * factories. Nothing outside this package can reach past {@link RegisterSubmissionUseCase}.
  *
  * <p>Every invariant the specification states about registering a submission is checked in
  * {@link #register} and nowhere else. There are deliberately <em>no state transitions and no

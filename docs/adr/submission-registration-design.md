@@ -31,8 +31,8 @@ com.gs5.underwriting.submission
     └── config/
 ```
 
-There is **no `application` package and no `*Service` class.** The facade *is* the application
-boundary; a layer between a controller and a facade has nothing to do but delegate, and
+There is **no `application` package and no `*Service` class.** The use case *is* the application
+boundary; a layer between a controller and a use case has nothing to do but delegate, and
 Checkstyle `noServiceSuffixDeclaration` plus ArchUnit `no_procedural_service_layer` fail the
 build on the alternative.
 
@@ -50,7 +50,7 @@ submission/
 │   ├── SubmissionId.java                 public record
 │   ├── RegisterSubmissionCommand.java    public record, standalone
 │   ├── RegisterSubmissionError.java      public sealed interface — 9 variants
-│   ├── SubmissionCommandFacade.java      public final class — register(...)
+│   ├── RegisterSubmissionUseCase.java      public final class — execute(...)
 │   ├── SubmissionCommandRepository.java  public interface — outbound port
 │   ├── SubmissionEventPublisher.java     public interface — outbound port
 │   ├── SubmissionIdGenerator.java        public interface — outbound port
@@ -61,7 +61,7 @@ submission/
 │   ├── package-info.java                 @NullMarked
 │   ├── SearchSubmissionsQuery.java       public record (clamps its own page request)
 │   ├── SearchSubmissionsError.java       public sealed interface — 1 variant
-│   ├── SubmissionQueryFacade.java        public final class — search(...)
+│   ├── SearchSubmissionsUseCase.java        public final class — ask(...)
 │   ├── SubmissionSearchCriteria.java     public record — tenant + five filters
 │   ├── SubmissionSummaryView.java        public record — one result row
 │   ├── SubmissionPageView.java           public record — page + total count
@@ -82,7 +82,7 @@ submission/
 
 ## 3. Commands (write side)
 
-| Command record | Facade method | Return type | Event on success |
+| Command record | UseCase method | Return type | Event on success |
 |---|---|---|---|
 | `RegisterSubmissionCommand` | `register` | `Result<SubmissionId, RegisterSubmissionError>` | `SubmissionDomainEvent.SubmissionRegistered` |
 
@@ -195,7 +195,7 @@ Spec refusal reason → variant, one to one, all nine, in the spec's own enumera
 
 | # | Spec refusal reason | Variant | Rule | Raised in |
 |---|---|---|---|---|
-| 1 | Caller not identified | `CallerNotIdentified` | BR-01 | facade |
+| 1 | Caller not identified | `CallerNotIdentified` | BR-01 | use case |
 | 2 | Role may not register | `RoleMayNotRegister` | BR-02 | aggregate factory |
 | 3 | Reference missing | `ReferenceMissing` | BR-04 | aggregate factory |
 | 4 | Reference too long | `ReferenceTooLong` | BR-05 | aggregate factory |
@@ -240,22 +240,22 @@ refusal path is the one place it is guaranteed to be reachable. Two consequences
   together without either rule bending.
 - This is flagged for `@sec-reviewer` in [§11](#11-open-questions).
 
-### 3.3 Facade
+### 3.3 Use case
 
 ```java
-public final class SubmissionCommandFacade {
+public final class RegisterSubmissionUseCase {
 
     private final SubmissionCommandRepository repository;
     private final SubmissionEventPublisher eventPublisher;
     private final SubmissionIdGenerator idGenerator;
     private final Clock clock;
 
-    public SubmissionCommandFacade(SubmissionCommandRepository repository,
+    public RegisterSubmissionUseCase(SubmissionCommandRepository repository,
                                    SubmissionEventPublisher eventPublisher,
                                    SubmissionIdGenerator idGenerator,
                                    Clock clock) { /* requireNonNull each */ }
 
-    public Result<SubmissionId, RegisterSubmissionError> register(RegisterSubmissionCommand command);
+    public Result<SubmissionId, RegisterSubmissionError> execute(RegisterSubmissionCommand command);
 }
 ```
 
@@ -328,7 +328,7 @@ public interface SubmissionIdGenerator {
 publishing.** There is no transport, no topic, no message key, no wire contract and no relay
 anywhere in `domain/`, `query/` or this document's schema. `publish` returns `void` and not a
 `Result`, because the spec lists no refusal reason for announcing a fact: a `Result` there would
-force the facade to invent a tenth error variant for something the business never described as an
+force the use case to invent a tenth error variant for something the business never described as an
 outcome.
 
 `SubmissionIdGenerator` exists so the write side stays a pure function of its inputs: the aggregate
@@ -357,7 +357,7 @@ side effects, and the second can fail after the first has succeeded. If `publish
 
 - **The submission is registered.** The row is committed, it is findable by a search from the same
   organisation, and BR-15 is satisfied. The announcement is lost.
-- **The facade does not return a refusal.** There is no "could not announce" refusal reason in the
+- **The use case does not return a refusal.** There is no "could not announce" refusal reason in the
   spec, and the list is exhaustive by construction, so inventing a tenth variant to describe an
   infrastructure failure would contradict the specification. The adapter's failure surfaces as what
   it is — an infrastructure exception propagating out of `register` to the web edge, which answers
@@ -389,7 +389,7 @@ exactly-once announcement before anyone has decided whether this module needs it
 **And the split does not foreclose fixing it.** If the module later needs the event to be atomic
 with the state change, that is satisfied *behind* the publisher port by an adapter that writes the
 fact to a table in the same transaction as the insert — at which point the open question is where
-the transaction boundary lives, which is an adapter-and-wiring question with the facade unchanged.
+the transaction boundary lives, which is an adapter-and-wiring question with the use case unchanged.
 Recorded as part of the deferred decision in [§12](#12-events-and-the-publishing-port) rather than
 pre-empted here.
 
@@ -504,7 +504,7 @@ Other aggregates would be referenced by typed id only. None exists here.
 
 ## 5. Queries (read side)
 
-| Query record | Facade method | Return type | View records |
+| Query record | UseCase method | Return type | View records |
 |---|---|---|---|
 | `SearchSubmissionsQuery` | `search` | `Result<SubmissionPageView, SearchSubmissionsError>` | `SubmissionPageView`, `SubmissionSummaryView` |
 
@@ -550,7 +550,7 @@ Filter bounds are **not** re-validated against BR-11 or BR-12 — the spec says 
 are rules about what may be *registered*. A filter bound may be negative, zero, or carry any scale.
 
 **Normalising the page request inside the compact constructor is deliberate.** The record cannot
-hold an out-of-range page request, so the facade, the adapter and the response body cannot
+hold an out-of-range page request, so the use case, the adapter and the response body cannot
 disagree about what was applied, and `size` echoed back to the caller is by construction the size
 actually used. Page numbering is **0-based** (`offset = page * size`): the first page is `page=0`,
 **confirmed by the product owner** after this design proposed it, so it is settled and no longer an
@@ -627,25 +627,25 @@ public interface SubmissionQueryRepository {
 }
 ```
 
-**`tenantId` lives inside the criteria and only the facade can build one.** It is not a filter the
+**`tenantId` lives inside the criteria and only the use case can build one.** It is not a filter the
 caller supplies and not something an adapter may forget: BR-17 is a business rule, so the tenant
 predicate is part of the port's vocabulary. Two methods rather than one because BR-26 needs the
 count of the whole matching set while the page is bounded by `LIMIT`; they share one criteria value
 so the two predicates cannot drift apart.
 
 `offset` is `long`: `page * size` with `page` near `Integer.MAX_VALUE` overflows an `int` and would
-silently produce a negative offset. The facade computes `(long) query.page() * query.size()`.
+silently produce a negative offset. The use case computes `(long) query.page() * query.size()`.
 
-### 5.5 Query facade
+### 5.5 Query use case
 
 ```java
-public final class SubmissionQueryFacade {
+public final class SearchSubmissionsUseCase {
 
     private final SubmissionQueryRepository repository;
 
-    public SubmissionQueryFacade(SubmissionQueryRepository repository) { /* requireNonNull */ }
+    public SearchSubmissionsUseCase(SubmissionQueryRepository repository) { /* requireNonNull */ }
 
-    public Result<SubmissionPageView, SearchSubmissionsError> search(SearchSubmissionsQuery query);
+    public Result<SubmissionPageView, SearchSubmissionsError> ask(SearchSubmissionsQuery query);
 }
 ```
 
@@ -663,7 +663,7 @@ return Result.<ActorContext, SearchSubmissionsError>fromOptional(
         });
 ```
 
-The facade **never reads `actor.role()`** — BR-16: role neither narrows nor widens a search.
+The use case **never reads `actor.role()`** — BR-16: role neither narrows nor widens a search.
 
 **BR-20, BR-21 and BR-27 need no code branch at all.** A predicate of `>= 5000 AND <= 1000` matches
 no row, so the page is empty and the count is zero; an `OFFSET` past the end returns no rows while
@@ -794,7 +794,7 @@ This is the one number the business considered and consciously delegated (spec, 
   design to **one** page-size number instead of inventing a second default that the business never
   saw.
 
-A malformed page parameter (`size=abc`) is rejected by Spring's type conversion before the facade
+A malformed page parameter (`size=abc`) is rejected by Spring's type conversion before the use case
 is reached, as a transport-level 400. That is not a business refusal and does not belong in
 `SearchSubmissionsError`; it is noted in [§11](#11-open-questions).
 
@@ -1140,7 +1140,7 @@ Not an empty section, and none of these blocks stage 3.
    satisfy BR-28. A deterministic `id DESC` tie-break was added. Technical, but the product owner
    should know that submissions registered in the same microsecond have an order nobody specified.
 6. **Transport-level failures sit outside the spec's refusal model.** `size=abc` or
-   `insuredLimitFrom=xyz` is rejected by Spring's type conversion as a 400 before the facade runs.
+   `insuredLimitFrom=xyz` is rejected by Spring's type conversion as a 400 before the use case runs.
    That is not a business refusal and deliberately does not become a second
    `SearchSubmissionsError` variant, but it is a response shape the spec does not describe.
 7. **BR-13 leaves the amount field unbounded input.** "No maximum amount exists, and none may be
@@ -1252,7 +1252,7 @@ public sealed interface SubmissionDomainEvent {
 The sealed interface has one variant today because the spec says one business fact occurs in this
 feature. Searching announces nothing — a read is not a business fact — and the event is never raised
 for a refused registration, which this design makes structural through `Result.peek`, whose side
-effect runs on the success branch only (see [§3.3](#33-facade)).
+effect runs on the success branch only (see [§3.3](#33-use-case)).
 
 `eventId` is a property of the fact — a stable identity for "this announcement", which is what lets
 any eventual recipient recognise a repeat. It is not a transport artefact, so it stays on the record.
@@ -1262,7 +1262,7 @@ any eventual recipient recognise a repeat. It is not a transport artefact, so it
 **No decision is made here, and that is the design.** The domain publishes a business fact through
 a port. What sits behind that port is an adapter decision, and this module can be built, tested and
 reviewed without it: nothing in `domain/`, `query/`, the schema in [§8](#8-schema) or the two
-facades changes with the answer.
+use cases changes with the answer.
 
 Stage 4 chooses **the simplest adapter that satisfies the port and is genuinely testable.** The
 candidates, with no choice expressed between them:
@@ -1313,20 +1313,20 @@ class SubmissionConfiguration {
     SubmissionIdGenerator submissionIdGenerator();            // UUID.randomUUID() behind the port
 
     @Bean
-    SubmissionCommandFacade submissionCommandFacade(SubmissionCommandRepository repository,
+    RegisterSubmissionUseCase registerSubmissionUseCase(SubmissionCommandRepository repository,
                                                     SubmissionEventPublisher eventPublisher,
                                                     SubmissionIdGenerator idGenerator,
                                                     Clock clock);
 
     @Bean
-    SubmissionQueryFacade submissionQueryFacade(SubmissionQueryRepository repository);
+    SearchSubmissionsUseCase searchSubmissionsUseCase(SubmissionQueryRepository repository);
 }
 ```
 
 How it fits together:
 
 ```
-SubmissionCommandController ──> SubmissionCommandFacade (domain, no Spring)
+SubmissionCommandController ──> RegisterSubmissionUseCase (domain, no Spring)
                                       │ port: SubmissionCommandRepository
                                       │          └─> SubmissionCommandSqlAdapter  @Component
                                       │                  └─> SubmissionCommandJdbcRepository
@@ -1336,14 +1336,14 @@ SubmissionCommandController ──> SubmissionCommandFacade (domain, no Spring)
                                       ▼
                                  Result<SubmissionId, RegisterSubmissionError>
 
-SubmissionQueryController ───> SubmissionQueryFacade (query, no Spring)
+SubmissionQueryController ───> SearchSubmissionsUseCase (query, no Spring)
                                       │ port: SubmissionQueryRepository
                                       ▼
                        SubmissionQuerySqlAdapter  @Component
                                       └─> SubmissionQueryJdbcRepository  (native SQL -> views)
 ```
 
-The two facades are **plain classes constructed in the configuration**, not `@Component`-scanned:
+The two use cases are **plain classes constructed in the configuration**, not `@Component`-scanned:
 that is what keeps `domain/` and `query/` free of Spring imports. The adapters are package-private
 `@Component`s; Spring Data repository interfaces are package-private and discovered automatically.
 
@@ -1369,8 +1369,8 @@ record RegisterSubmissionRequest(@Nullable String externalRef, @Nullable BigDeci
 - **`insuredLimit` must be declared `BigDecimal`.** Any `double` or `float` in the request record
   destroys the scale and makes BR-12 unenforceable. Nothing in the pipeline normalises it.
 - **Binding the actor, fail-closed.** `ActorContextResolver` returns `Optional<ActorContext>`; the
-  controller runs the facade call inside `ActorContext.callWith(actor, () -> facade.register(command))`
-  when present, and calls the facade **unbound** when absent, so that `CallerNotIdentified` is
+  controller runs the use case call inside `ActorContext.callWith(actor, () -> useCase.execute(command))`
+  when present, and calls the use case **unbound** when absent, so that `CallerNotIdentified` is
   produced in the domain, in one place, for web and non-web callers alike.
 
   **The resolver is fail-closed, confirmed by the product owner.** With no identity source
@@ -1393,7 +1393,7 @@ record RegisterSubmissionRequest(@Nullable String externalRef, @Nullable BigDeci
   `ActorContext.runWith`: `doFilter` declares `IOException` and `ServletException`, `runWith` takes
   a `Runnable`, and bridging the two means catching and re-raising a checked exception inside
   `src/main` — awkward at best, and a trap next to the Checkstyle `noThrowNew` gate. Binding the
-  scope around the facade call only means no checked exception ever crosses the scope.
+  scope around the use case call only means no checked exception ever crosses the scope.
 
 - **Folding the `Result`.** An exhaustive `switch` over the sealed error type with **no `default`
   branch**, so the compiler reports any future variant instead of a 500 appearing in production.

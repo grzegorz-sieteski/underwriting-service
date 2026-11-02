@@ -18,7 +18,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p><strong>The page request normalises itself here, in the compact constructor.</strong> Page
  * numbering is 0-based, {@code size} is clamped into {@code [MIN_PAGE_SIZE, MAX_PAGE_SIZE]} and
- * {@code page} to {@code >= 0}. Inside the record, so the facade, the adapter and the response
+ * {@code page} to {@code >= 0}. Inside the record, so the useCase, the adapter and the response
  * body cannot disagree about what was applied, and the {@code size} echoed to the caller is by
  * construction the size actually used. An out-of-range page request clamps and never refuses,
  * because Search has exactly one refusal reason.

@@ -8,7 +8,7 @@ import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.Result;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionCommand;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionError;
-import com.gs5.underwriting.submission.domain.SubmissionCommandFacade;
+import com.gs5.underwriting.submission.domain.RegisterSubmissionUseCase;
 import com.gs5.underwriting.submission.domain.SubmissionId;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -24,9 +24,9 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>Two things about the shape of this class are load-bearing.
  *
- * <p><strong>The actor is bound around the facade call, fail-closed.</strong> When
- * {@link ActorContextResolver} names a caller, the facade runs inside
- * {@code ActorContext.callWith(actor, ...)}; when it does not, the facade is called
+ * <p><strong>The actor is bound around the useCase call, fail-closed.</strong> When
+ * {@link ActorContextResolver} names a caller, the useCase runs inside
+ * {@code ActorContext.callWith(actor, ...)}; when it does not, the useCase is called
  * <em>unbound</em>, so {@code CallerNotIdentified} is produced in the domain, in one place, for web
  * and non-web callers alike. The controller does not decide BR-01.
  *
@@ -39,12 +39,12 @@ class SubmissionCommandController {
 
     private static final String PROBLEM_TYPE_PREFIX = "urn:problem-type:submission:";
 
-    private final SubmissionCommandFacade facade;
+    private final RegisterSubmissionUseCase useCase;
     private final ActorContextResolver actorContextResolver;
 
-    SubmissionCommandController(SubmissionCommandFacade facade,
+    SubmissionCommandController(RegisterSubmissionUseCase useCase,
                                 ActorContextResolver actorContextResolver) {
-        this.facade = Objects.requireNonNull(facade, "facade");
+        this.useCase = Objects.requireNonNull(useCase, "useCase");
         this.actorContextResolver =
                 Objects.requireNonNull(actorContextResolver, "actorContextResolver");
     }
@@ -60,8 +60,8 @@ class SubmissionCommandController {
     private Result<SubmissionId, RegisterSubmissionError> registerAsResolvedCaller(
             RegisterSubmissionCommand command) {
         return actorContextResolver.resolve()
-                .map(actor -> ActorContext.callWith(actor, () -> facade.register(command)))
-                .orElseGet(() -> facade.register(command));
+                .map(actor -> ActorContext.callWith(actor, () -> useCase.execute(command)))
+                .orElseGet(() -> useCase.execute(command));
     }
 
     private static ResponseEntity<Object> created(SubmissionId id) {

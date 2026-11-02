@@ -5,7 +5,7 @@ package com.gs5.underwriting.submission.domain;
  * aggregate's {@code reconstitute} factory.
  *
  * <p>{@code Submission} is package-private and must stay that way — that is what stops a
- * controller or a JDBC adapter reaching past the facade, and the compiler enforces it for free.
+ * controller or a JDBC adapter reaching past the useCase, and the compiler enforces it for free.
  * The persistence round trip nevertheless has to prove that a snapshot loaded from a real row
  * survives {@code reconstitute(...)} and {@code toSnapshot()} unchanged, {@code version}
  * included, and that assertion lives in {@code adapters/persistence} where the adapter is.

@@ -30,7 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * produce a refusal either. There is exactly one way to be refused, and it is in the first
  * nested class.
  */
-class SubmissionQueryFacadeTest {
+class SearchSubmissionsUseCaseTest {
 
     private static final UUID TENANT_A = UUID.fromString("0a000000-0000-0000-0000-00000000000a");
     private static final UUID TENANT_B = UUID.fromString("0b000000-0000-0000-0000-00000000000b");
@@ -41,7 +41,7 @@ class SubmissionQueryFacadeTest {
             new ActorContext(TENANT_A, "viewer-01", ActorRole.VIEWER);
 
     private InMemorySubmissionQueryRepository repository;
-    private SubmissionQueryFacade facade;
+    private SearchSubmissionsUseCase useCase;
 
     /** Own organisation, oldest first in declaration order; newest-first order is s5..s1. */
     private SubmissionSummaryView s1;
@@ -57,7 +57,7 @@ class SubmissionQueryFacadeTest {
     @BeforeEach
     void setUp() {
         repository = new InMemorySubmissionQueryRepository();
-        facade = new SubmissionQueryFacade(repository);
+        useCase = new SearchSubmissionsUseCase(repository);
 
         s1 = repository.givenSubmission(TENANT_A, uuid(1), "S-1", "100.00", at(0));
         s2 = repository.givenSubmission(TENANT_A, uuid(2), "S-2", "200.00", at(1));
@@ -76,7 +76,7 @@ class SubmissionQueryFacadeTest {
 
     private Result<SubmissionPageView, SearchSubmissionsError> searchAs(ActorContext actor,
                                                                         SearchSubmissionsQuery q) {
-        return ActorContext.callWith(actor, () -> facade.search(q));
+        return ActorContext.callWith(actor, () -> useCase.ask(q));
     }
 
     private static SearchSubmissionsQuery unfiltered(int page, int size) {
@@ -116,7 +116,7 @@ class SubmissionQueryFacadeTest {
             var query = unfiltered(0, 100);
 
             // When
-            var result = facade.search(query);
+            var result = useCase.ask(query);
 
             // Then
             assertThat(result).isEqualTo(

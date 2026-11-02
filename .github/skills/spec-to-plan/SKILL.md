@@ -35,7 +35,8 @@ For each state change, specify:
 
 - **Command record** — standalone `public record`, no shared interface. Every field with its hard
   constraint (length, range, precision, allowed characters).
-- **Named facade method** — `register`, `approve`, `reject`. Not `handle`.
+- **One `*UseCase` class per operation** — `RegisterSubmissionUseCase`, `ApproveSubmissionUseCase`,
+  each with a single public `execute(Command)`. Not a facade with many methods, not `handle`.
 - **`sealed interface *Error` for that one operation.** This is the critical step: list every way
   this specific operation can be refused, and nothing else. Errors that belong to a different
   operation do not go in this hierarchy.
@@ -46,7 +47,7 @@ For each state change, specify:
 
 For each information need:
 
-- **Query record** and the `*QueryFacade` method
+- **Query record** and its own `*UseCase` class with a single public `ask(Query)`
 - **`*View` projection record** — exactly the fields the caller needs, nothing more
 - The **SQL shape**: tables, filters, sort, pagination bounds, and the index that makes it fast
 - Tenant filter on every single query — it is a business rule, not a technical detail
@@ -70,10 +71,10 @@ Create `docs/adr/{feature}-design.md`:
 What this covers, and what it explicitly does not.
 
 ## Commands (write side)
-| Command record | Facade method | Fields and constraints | Error variants | Event on success |
+| Command record | UseCase method | Fields and constraints | Error variants | Event on success |
 
 ## Queries (read side)
-| Query record | Facade method | View record | SQL shape | Index |
+| Query record | UseCase method | View record | SQL shape | Index |
 
 ## Aggregate
 Fields, invariants, state transitions, factory methods.

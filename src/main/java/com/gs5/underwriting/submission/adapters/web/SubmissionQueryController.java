@@ -7,7 +7,7 @@ import com.gs5.underwriting.shared.kernel.Result;
 import com.gs5.underwriting.submission.query.SearchSubmissionsError;
 import com.gs5.underwriting.submission.query.SearchSubmissionsQuery;
 import com.gs5.underwriting.submission.query.SubmissionPageView;
-import com.gs5.underwriting.submission.query.SubmissionQueryFacade;
+import com.gs5.underwriting.submission.query.SearchSubmissionsUseCase;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -28,11 +28,11 @@ import org.springframework.web.bind.annotation.RestController;
  * again inside {@link SearchSubmissionsQuery}, so the response always echoes what was applied.
  *
  * <p>A malformed page parameter such as {@code size=abc} is rejected by Spring's type conversion
- * before the facade is reached, as a transport-level {@code 400}. That is not a business refusal
+ * before the useCase is reached, as a transport-level {@code 400}. That is not a business refusal
  * and deliberately does not become a second {@link SearchSubmissionsError} variant.
  *
  * <p>This controller touches nothing on the write side, which is an architecture rule and not a
- * convention: a query endpoint talks to a {@code *QueryFacade} and nothing else.
+ * convention: a query endpoint talks to a {@code *UseCase} and nothing else.
  */
 @RestController
 @RequestMapping("/api/submissions")
@@ -40,12 +40,12 @@ class SubmissionQueryController {
 
     private static final String PROBLEM_TYPE_PREFIX = "urn:problem-type:submission:";
 
-    private final SubmissionQueryFacade facade;
+    private final SearchSubmissionsUseCase useCase;
     private final ActorContextResolver actorContextResolver;
 
-    SubmissionQueryController(SubmissionQueryFacade facade,
+    SubmissionQueryController(SearchSubmissionsUseCase useCase,
                               ActorContextResolver actorContextResolver) {
-        this.facade = Objects.requireNonNull(facade, "facade");
+        this.useCase = Objects.requireNonNull(useCase, "useCase");
         this.actorContextResolver =
                 Objects.requireNonNull(actorContextResolver, "actorContextResolver");
     }
@@ -68,8 +68,8 @@ class SubmissionQueryController {
     private Result<SubmissionPageView, SearchSubmissionsError> searchAsResolvedCaller(
             SearchSubmissionsQuery query) {
         return actorContextResolver.resolve()
-                .map(actor -> ActorContext.callWith(actor, () -> facade.search(query)))
-                .orElseGet(() -> facade.search(query));
+                .map(actor -> ActorContext.callWith(actor, () -> useCase.ask(query)))
+                .orElseGet(() -> useCase.ask(query));
     }
 
     private static ResponseEntity<Object> found(SubmissionPageView page) {

@@ -50,7 +50,7 @@ underwriting-service/
 ## Architecture in one paragraph
 
 Each business module is self-contained: `domain/` is the write side in pure Java with a
-package-private aggregate behind a `*CommandFacade`; `query/` is the read side returning
+package-private aggregate behind a `*UseCase`; `query/` is the read side returning
 projection records and cannot see `domain/`; `adapters/` holds web, persistence, messaging and
 Spring wiring. Business failures are values — `Result<T, E>` with a `sealed interface *Error`
 per operation — so the compiler forces every caller to handle exactly the failures that operation

@@ -9,7 +9,7 @@ applyTo: "src/test/**/*.java"
 
 | Suffix | Runner | Speed | Use for |
 |---|---|---|---|
-| `*Test.java` | Surefire (`./mvnw test`) | milliseconds | facades, aggregates, projections — in-memory fakes only |
+| `*Test.java` | Surefire (`./mvnw test`) | milliseconds | use cases, aggregates, projections — in-memory fakes only |
 | `*IT.java` | Failsafe (`./mvnw verify`) | seconds | real PostgreSQL / Kafka through Testcontainers |
 
 Naming decides which plugin runs the file. A slow test named `*Test` poisons the fast loop.
@@ -59,7 +59,7 @@ The sealed hierarchy is the checklist — if you cannot reach a variant, it shou
    var command = new RegisterSubmissionCommand("REF-1", new BigDecimal("100.00"));
 
    // When
-   var result = ActorContext.callWith(actor, () -> facade.register(command));
+   var result = ActorContext.callWith(actor, () -> useCase.execute(command));
 
    // Then
    assertThat(result).isEqualTo(Result.success(expectedId));
@@ -132,7 +132,7 @@ the effect happened once and nothing blew up.
 
 ```java
 var actor = new ActorContext(TENANT_1, "uw-01", ActorRole.UNDERWRITER);
-var result = ActorContext.callWith(actor, () -> facade.approve(command));
+var result = ActorContext.callWith(actor, () -> useCase.execute(command));
 ```
 
 Not `ScopedValue.callWhere(...)` — that was removed from the JDK and will not compile.

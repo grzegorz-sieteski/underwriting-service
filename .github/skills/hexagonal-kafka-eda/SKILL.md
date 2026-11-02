@@ -64,7 +64,7 @@ public interface SubmissionEventPublisher {
 }
 ```
 
-In unit tests, a fake collecting into a `CopyOnWriteArrayList` proves the facade emitted the right
+In unit tests, a fake collecting into a `CopyOnWriteArrayList` proves the use case emitted the right
 event — no broker needed.
 
 ## Step 2: the outbox writer

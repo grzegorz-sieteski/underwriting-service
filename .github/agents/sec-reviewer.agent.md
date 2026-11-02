@@ -22,7 +22,7 @@ This codebase writes native SQL everywhere, so this is the highest-frequency ris
 ### A01 — Broken access control (BOLA / IDOR)
 - `[BLOCKER]` a lookup or mutation by id that does not also filter by the actor's tenant
 - `[BLOCKER]` an authority or role check performed in the controller rather than the domain —
-  a second caller of the facade bypasses it
+  a second caller of the use case bypasses it
 - `[CRITICAL]` returning `403` where another tenant's record should be `404`. The distinction
   confirms the record exists, which is the whole information an enumeration attack needs.
 

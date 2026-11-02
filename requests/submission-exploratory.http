@@ -113,7 +113,7 @@ GET {{host}}/api/submissions?tenantId=0b000000-0000-0000-0000-00000000000b&tenan
 
 
 ### =====================================================================================
-### 2. TRANSPORT-LEVEL REFUSALS — reachable today, because they happen before the facade
+### 2. TRANSPORT-LEVEL REFUSALS — reachable today, because they happen before the use case
 ###
 ### These are Spring's own 400s, deliberately NOT business refusal reasons. The thing to
 ### check is not the status but the BODY: a Jackson or binding message can carry a class
@@ -639,7 +639,7 @@ Authorization: Bearer {{tokenUwTenantA}}
 ### 5.6 page=2147483647 (Integer.MAX_VALUE) → expect 200, [], the TRUE total count.
 ###     The offset is (long) page * size = 214 748 364 700. An int multiplication would
 ###     give -100, and a negative OFFSET is a SQL error — so a 500 here means the long cast
-###     in SubmissionQueryFacade.pageFor was lost.
+###     in SearchSubmissionsUseCase.pageFor was lost.
 GET {{host}}/api/submissions?page=2147483647&size=100
 Authorization: Bearer {{tokenUwTenantA}}
 

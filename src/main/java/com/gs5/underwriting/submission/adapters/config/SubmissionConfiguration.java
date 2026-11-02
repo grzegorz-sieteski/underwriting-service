@@ -2,12 +2,12 @@ package com.gs5.underwriting.submission.adapters.config;
 
 import module java.base;
 
-import com.gs5.underwriting.submission.domain.SubmissionCommandFacade;
+import com.gs5.underwriting.submission.domain.RegisterSubmissionUseCase;
 import com.gs5.underwriting.submission.domain.SubmissionCommandRepository;
 import com.gs5.underwriting.submission.domain.SubmissionEventPublisher;
 import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.gs5.underwriting.submission.domain.SubmissionIdGenerator;
-import com.gs5.underwriting.submission.query.SubmissionQueryFacade;
+import com.gs5.underwriting.submission.query.SearchSubmissionsUseCase;
 import com.gs5.underwriting.submission.query.SubmissionQueryRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Where the submission module becomes a set of Spring beans.
  *
- * <p>The two facades are <strong>plain classes constructed here</strong>, not
+ * <p>The two useCases are <strong>plain classes constructed here</strong>, not
  * {@code @Component}-scanned: that is what keeps {@code domain/} and {@code query/} free of every
  * Spring import, which in turn is what lets every business rule be tested in milliseconds without
  * a container. The adapters are package-private {@code @Component}s in their own packages, and the
@@ -56,15 +56,15 @@ class SubmissionConfiguration {
     }
 
     @Bean
-    SubmissionCommandFacade submissionCommandFacade(SubmissionCommandRepository repository,
+    RegisterSubmissionUseCase registerSubmissionUseCase(SubmissionCommandRepository repository,
                                                     SubmissionEventPublisher eventPublisher,
                                                     SubmissionIdGenerator idGenerator,
                                                     Clock clock) {
-        return new SubmissionCommandFacade(repository, eventPublisher, idGenerator, clock);
+        return new RegisterSubmissionUseCase(repository, eventPublisher, idGenerator, clock);
     }
 
     @Bean
-    SubmissionQueryFacade submissionQueryFacade(SubmissionQueryRepository repository) {
-        return new SubmissionQueryFacade(repository);
+    SearchSubmissionsUseCase searchSubmissionsUseCase(SubmissionQueryRepository repository) {
+        return new SearchSubmissionsUseCase(repository);
     }
 }

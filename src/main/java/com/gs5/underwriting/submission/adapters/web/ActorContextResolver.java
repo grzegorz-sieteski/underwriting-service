@@ -29,7 +29,7 @@ import org.springframework.stereotype.Component;
  * {@code chain.doFilter} in {@code ActorContext.runWith}: {@code doFilter} declares
  * {@code IOException} and {@code ServletException}, {@code runWith} takes a {@code Runnable}, and
  * bridging the two means catching and re-raising a checked exception in {@code src/main} — awkward
- * at best, and a trap next to the Checkstyle zero-throw gate. Binding the scope around the facade
+ * at best, and a trap next to the Checkstyle zero-throw gate. Binding the scope around the useCase
  * call only means no checked exception ever crosses the scope.
  */
 @Component
