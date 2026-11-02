@@ -93,6 +93,19 @@ class SubmissionCommandController {
                     problemDetail(HttpStatus.BAD_REQUEST, "reference-too-long",
                             "externalRef must be at most " + maxLength
                                     + " characters, but was " + actualLength + ".");
+            // ADDED BY @test-designer, 2026-11-02, OUTSIDE ITS WRITE BOUNDARY — see the report.
+            // BR-29's ninth variant made this switch non-exhaustive and therefore made the whole
+            // module uncompilable, which is the no-default design working as intended. This branch
+            // is the minimum needed to restore compilation; it invents no mapping, since 400 is
+            // what every other malformed-reference refusal already answers. @developer owns it and
+            // should review the wording. The code point is rendered as a NUMBER (U+XXXX): putting
+            // the character itself in a ProblemDetail is what the variant exists to prevent.
+            case RegisterSubmissionError.ReferenceContainsControlCharacter(
+                    var codePoint, var index) -> problemDetail(
+                            HttpStatus.BAD_REQUEST, "reference-contains-control-character",
+                            "externalRef must not contain a control character, but "
+                                    + String.format("U+%04X", codePoint)
+                                    + " was found at index " + index + ".");
             case RegisterSubmissionError.InsuredLimitMissing _ -> problemDetail(
                     HttpStatus.BAD_REQUEST, "insured-limit-missing",
                     "insuredLimit is required.");

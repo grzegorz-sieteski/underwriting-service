@@ -7,6 +7,7 @@ import com.tngtech.archunit.lang.ArchRule;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 
 /**
  * The structural half of the architecture gate.
@@ -139,6 +140,16 @@ class ArchitectureRulesTest {
                     .orShould().haveSimpleNameEndingWith("Helper")
                     .orShould().haveSimpleNameEndingWith("Manager")
                     .because("behaviour belongs on the type that owns the data");
+
+    // ---------------------------------------------------- dependency injection
+
+    @ArchTest
+    static final ArchRule no_field_injection =
+            noFields()
+                    .should().beAnnotatedWith("org.springframework.beans.factory.annotation.Autowired")
+                    .orShould().beAnnotatedWith("jakarta.inject.Inject")
+                    .because("dependencies must be injected through constructors; "
+                            + "field injection hides dependencies and bypasses compile-time checks");
 
     // ------------------------------------------------------- failures as data
 

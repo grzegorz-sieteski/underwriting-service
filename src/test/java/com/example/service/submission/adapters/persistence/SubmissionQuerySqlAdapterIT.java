@@ -128,28 +128,41 @@ class SubmissionQuerySqlAdapterIT {
         @Test
         @DisplayName("every filter left null binds, which is what the CAST(... AS type) wrappers "
                 + "are for: PostgreSQL cannot infer the type of a bare parameter in IS NULL")
-        void all_null_filters_bind() {
-            var page = adapter.findPage(ownSubmissions(), 100, 0);
+        void shouldBindSuccessfullyWhenAllFiltersAreNull() {
+            // Given
+            var criteria = ownSubmissions();
 
+            // When
+            var page = adapter.findPage(criteria, 100, 0);
+            var totalCount = adapter.countMatching(criteria);
+
+            // Then
             assertThat(page).hasSize(5);
-            assertThat(adapter.countMatching(ownSubmissions())).isEqualTo(5L);
+            assertThat(totalCount).isEqualTo(5L);
         }
 
         @Test
         @DisplayName("every filter supplied at once binds, so each cast is correct for its own "
                 + "column type: VARCHAR, NUMERIC and TIMESTAMPTZ")
-        void all_filters_supplied_bind() {
+        void shouldBindSuccessfullyWhenAllFiltersAreSupplied() {
+            // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, "S-3",
                     new BigDecimal("100.00"), new BigDecimal("500.00"), at(0), at(4));
 
-            assertThat(referencesOnPage(criteria, 100, 0)).containsExactly("S-3");
-            assertThat(adapter.countMatching(criteria)).isEqualTo(1L);
+            // When
+            var pageReferences = referencesOnPage(criteria, 100, 0);
+            var totalCount = adapter.countMatching(criteria);
+
+            // Then
+            assertThat(pageReferences).containsExactly("S-3");
+            assertThat(totalCount).isEqualTo(1L);
         }
 
         @Test
         @DisplayName("a filter bound of a different scale than the column still compares "
                 + "numerically, because the cast is to unconstrained NUMERIC")
-        void a_bound_of_another_scale_still_compares() {
+        void shouldCompareNumericallyWhenFilterBoundHasDifferentScale() {
+            // Given
             // BR-11 and BR-12 are rules about what may be REGISTERED; a comparison value may
             // carry any scale, so "250" and "250.000" must behave identically here.
             var wholeNumber = new SubmissionSearchCriteria(TENANT_A, null,
@@ -157,19 +170,29 @@ class SubmissionQuerySqlAdapterIT {
             var manyDecimals = new SubmissionSearchCriteria(TENANT_A, null,
                     new BigDecimal("250.000"), null, null, null);
 
-            assertThat(adapter.countMatching(wholeNumber)).isEqualTo(3L);
-            assertThat(adapter.countMatching(manyDecimals)).isEqualTo(3L);
+            // When
+            var countWholeNumber = adapter.countMatching(wholeNumber);
+            var countManyDecimals = adapter.countMatching(manyDecimals);
+
+            // Then
+            assertThat(countWholeNumber).isEqualTo(3L);
+            assertThat(countManyDecimals).isEqualTo(3L);
         }
 
         @Test
         @DisplayName("id AS submission_id binds the projection record, so the identity comes back "
                 + "populated rather than null")
-        void the_alias_binds_the_projection() {
+        void shouldBindProjectionRecordWithAliasWhenQuerying() {
+            // Given
             // Without the alias, Spring Data JDBC has no column named submission_id to bind the
             // record component to. Every other field would still populate, which is what makes
             // this failure quiet enough to need its own test.
-            var page = adapter.findPage(ownSubmissions(), 100, 0);
+            var criteria = ownSubmissions();
 
+            // When
+            var page = adapter.findPage(criteria, 100, 0);
+
+            // Then
             assertThat(page).allSatisfy(view ->
                     assertThat(view.submissionId()).isNotNull());
             assertThat(page).extracting(SubmissionSummaryView::submissionId)
@@ -178,10 +201,15 @@ class SubmissionQuerySqlAdapterIT {
 
         @Test
         @DisplayName("every other projected column binds too, with the amount's scale intact")
-        void every_projected_column_binds() {
+        void shouldBindEveryProjectedColumnWhenQuerying() {
+            // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, "S-3",
                     null, null, null, null);
 
+            // When
+            var page = adapter.findPage(criteria, 100, 0);
+
+            // Then
             assertThat(adapter.findPage(criteria, 100, 0)).containsExactly(
                     new SubmissionSummaryView(uuid(3), "S-3", new BigDecimal("300.00"),
                             "uw-01", at(2)));
@@ -195,26 +223,42 @@ class SubmissionQuerySqlAdapterIT {
         @Test
         @DisplayName("another organisation's row is absent from the page, although it is the "
                 + "newest row in the table")
-        void absent_from_the_page() {
-            assertThat(referencesOnPage(ownSubmissions(), 100, 0))
+        void shouldExcludeOtherOrganisationsRowFromPage() {
+            // Given
+            var criteria = ownSubmissions();
+
+            // When
+            var pageReferences = referencesOnPage(criteria, 100, 0);
+
+            // Then
+            assertThat(pageReferences)
                     .containsExactly("S-5", "S-4", "S-3", "S-2", "S-1");
         }
 
         @Test
         @DisplayName("another organisation's row is absent from the total count too: the two "
                 + "statements carry the tenant predicate independently, so both are tested")
-        void absent_from_the_count() {
+        void shouldExcludeOtherOrganisationsRowFromTotalCount() {
+            // Given
             // The count is a separate statement with its own WHERE clause. A tenant predicate
             // dropped from only one of the two would leak a number while the page looked right.
-            assertThat(adapter.countMatching(ownSubmissions())).isEqualTo(5L);
-            assertThat(jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM submissions", Long.class)).isEqualTo(6L);
+            var criteria = ownSubmissions();
+
+            // When
+            var ownCount = adapter.countMatching(criteria);
+            var rawDatabaseCount = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM submissions", Long.class);
+
+            // Then
+            assertThat(ownCount).isEqualTo(5L);
+            assertThat(rawDatabaseCount).isEqualTo(6L);
         }
 
         @Test
         @DisplayName("a reference only another organisation holds returns nothing and counts zero, "
                 + "never anything that distinguishes it from a reference nobody holds")
-        void another_organisations_reference_is_indistinguishable_from_absent() {
+        void shouldReturnEmptyAndZeroCountWhenReferenceBelongsToAnotherOrganisation() {
+            // Given
             insertRow(TENANT_B, uuid(8), "ONLY-IN-B", "999.00", at(6));
 
             var existsElsewhere = new SubmissionSearchCriteria(TENANT_A, "ONLY-IN-B",
@@ -222,20 +266,32 @@ class SubmissionQuerySqlAdapterIT {
             var existsNowhere = new SubmissionSearchCriteria(TENANT_A, "NOWHERE",
                     null, null, null, null);
 
-            assertThat(adapter.findPage(existsElsewhere, 100, 0))
-                    .isEqualTo(adapter.findPage(existsNowhere, 100, 0))
+            // When
+            var pageElsewhere = adapter.findPage(existsElsewhere, 100, 0);
+            var pageNowhere = adapter.findPage(existsNowhere, 100, 0);
+            var countElsewhere = adapter.countMatching(existsElsewhere);
+            var countNowhere = adapter.countMatching(existsNowhere);
+
+            // Then
+            assertThat(pageElsewhere)
+                    .isEqualTo(pageNowhere)
                     .isEmpty();
-            assertThat(adapter.countMatching(existsElsewhere))
-                    .isEqualTo(adapter.countMatching(existsNowhere))
+            assertThat(countElsewhere)
+                    .isEqualTo(countNowhere)
                     .isEqualTo(0L);
         }
 
         @Test
         @DisplayName("each organisation resolves a shared reference to its own row only")
-        void a_shared_reference_resolves_per_organisation() {
+        void shouldResolveSharedReferenceToOwnOrganisationRowOnly() {
+            // Given
             var ownS1 = new SubmissionSearchCriteria(TENANT_A, "S-1", null, null, null, null);
 
-            assertThat(adapter.findPage(ownS1, 100, 0))
+            // When
+            var page = adapter.findPage(ownS1, 100, 0);
+
+            // Then
+            assertThat(page)
                     .extracting(SubmissionSummaryView::submissionId)
                     .containsExactly(uuid(1));
         }
@@ -247,55 +303,85 @@ class SubmissionQuerySqlAdapterIT {
 
         @Test
         @DisplayName("the insured limit range includes both of its bounds")
-        void amount_bounds_are_inclusive() {
+        void shouldIncludeAmountBoundsWhenFilteringByInsuredLimitRange() {
+            // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, null,
                     new BigDecimal("200.00"), new BigDecimal("400.00"), null, null);
 
-            assertThat(referencesOnPage(criteria, 100, 0)).containsExactly("S-4", "S-3", "S-2");
-            assertThat(adapter.countMatching(criteria)).isEqualTo(3L);
+            // When
+            var pageReferences = referencesOnPage(criteria, 100, 0);
+            var totalCount = adapter.countMatching(criteria);
+
+            // Then
+            assertThat(pageReferences).containsExactly("S-4", "S-3", "S-2");
+            assertThat(totalCount).isEqualTo(3L);
         }
 
         @Test
         @DisplayName("an insured limit range of one exact amount returns that one submission")
-        void a_degenerate_amount_range_is_inclusive() {
+        void shouldIncludeSingleAmountWhenInsuredLimitBoundsAreEqual() {
+            // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, null,
                     new BigDecimal("300.00"), new BigDecimal("300.00"), null, null);
 
-            assertThat(referencesOnPage(criteria, 100, 0)).containsExactly("S-3");
+            // When
+            var pageReferences = referencesOnPage(criteria, 100, 0);
+
+            // Then
+            assertThat(pageReferences).containsExactly("S-3");
         }
 
         @Test
         @DisplayName("the registration moment range includes both of its bounds")
-        void moment_bounds_are_inclusive() {
+        void shouldIncludeMomentBoundsWhenFilteringByRegisteredAtRange() {
+            // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, null, null, null,
                     at(1), at(3));
 
-            assertThat(referencesOnPage(criteria, 100, 0)).containsExactly("S-4", "S-3", "S-2");
-            assertThat(adapter.countMatching(criteria)).isEqualTo(3L);
+            // When
+            var pageReferences = referencesOnPage(criteria, 100, 0);
+            var totalCount = adapter.countMatching(criteria);
+
+            // Then
+            assertThat(pageReferences).containsExactly("S-4", "S-3", "S-2");
+            assertThat(totalCount).isEqualTo(3L);
         }
 
         @Test
         @DisplayName("a registration moment range of one exact instant returns that submission, "
                 + "which is also the sharpest test that TIMESTAMPTZ round-trips the value")
-        void a_degenerate_moment_range_is_inclusive() {
+        void shouldIncludeSingleMomentWhenRegisteredAtBoundsAreEqual() {
+            // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, null, null, null,
                     at(2), at(2));
 
-            assertThat(referencesOnPage(criteria, 100, 0)).containsExactly("S-3");
+            // When
+            var pageReferences = referencesOnPage(criteria, 100, 0);
+
+            // Then
+            assertThat(pageReferences).containsExactly("S-3");
         }
 
         @Test
         @DisplayName("a contradictory range matches nothing and is not an error at the SQL level "
                 + "either: the predicate is simply unsatisfiable (BR-21)")
-        void a_contradictory_range_is_simply_empty() {
+        void shouldReturnEmptyPageAndZeroCountWhenRangeBoundsAreContradictory() {
+            // Given
             var amount = new SubmissionSearchCriteria(TENANT_A, null,
                     new BigDecimal("5000.00"), new BigDecimal("1000.00"), null, null);
             var moment = new SubmissionSearchCriteria(TENANT_A, null, null, null, at(4), at(0));
 
-            assertThat(adapter.findPage(amount, 100, 0)).isEmpty();
-            assertThat(adapter.countMatching(amount)).isEqualTo(0L);
-            assertThat(adapter.findPage(moment, 100, 0)).isEmpty();
-            assertThat(adapter.countMatching(moment)).isEqualTo(0L);
+            // When
+            var pageAmount = adapter.findPage(amount, 100, 0);
+            var countAmount = adapter.countMatching(amount);
+            var pageMoment = adapter.findPage(moment, 100, 0);
+            var countMoment = adapter.countMatching(moment);
+
+            // Then
+            assertThat(pageAmount).isEmpty();
+            assertThat(countAmount).isEqualTo(0L);
+            assertThat(pageMoment).isEmpty();
+            assertThat(countMoment).isEqualTo(0L);
         }
     }
 
@@ -305,66 +391,107 @@ class SubmissionQuerySqlAdapterIT {
 
         @Test
         @DisplayName("rows come back newest first")
-        void newest_first() {
-            assertThat(referencesOnPage(ownSubmissions(), 100, 0))
+        void shouldReturnRowsInNewestFirstOrder() {
+            // Given
+            var criteria = ownSubmissions();
+
+            // When
+            var pageReferences = referencesOnPage(criteria, 100, 0);
+
+            // Then
+            assertThat(pageReferences)
                     .containsExactly("S-5", "S-4", "S-3", "S-2", "S-1");
         }
 
         @Test
         @DisplayName("LIMIT and OFFSET are bound parameters that actually page")
-        void limit_and_offset_page() {
-            assertThat(referencesOnPage(ownSubmissions(), 2, 0)).containsExactly("S-5", "S-4");
-            assertThat(referencesOnPage(ownSubmissions(), 2, 2)).containsExactly("S-3", "S-2");
-            assertThat(referencesOnPage(ownSubmissions(), 2, 4)).containsExactly("S-1");
+        void shouldPageResultsWhenLimitAndOffsetAreProvided() {
+            // Given
+            var criteria = ownSubmissions();
+
+            // When
+            var firstPage = referencesOnPage(criteria, 2, 0);
+            var secondPage = referencesOnPage(criteria, 2, 2);
+            var thirdPage = referencesOnPage(criteria, 2, 4);
+
+            // Then
+            assertThat(firstPage).containsExactly("S-5", "S-4");
+            assertThat(secondPage).containsExactly("S-3", "S-2");
+            assertThat(thirdPage).containsExactly("S-1");
         }
 
         @Test
         @DisplayName("an offset past the end returns no rows while the count stays true (BR-27)")
-        void offset_past_the_end_returns_nothing_but_counts_truly() {
-            assertThat(adapter.findPage(ownSubmissions(), 2, 20)).isEmpty();
-            assertThat(adapter.countMatching(ownSubmissions())).isEqualTo(5L);
+        void shouldReturnEmptyPageWhilePreservingTotalCountWhenOffsetIsPastTheEnd() {
+            // Given
+            var criteria = ownSubmissions();
+
+            // When
+            var page = adapter.findPage(criteria, 2, 20);
+            var totalCount = adapter.countMatching(criteria);
+
+            // Then
+            assertThat(page).isEmpty();
+            assertThat(totalCount).isEqualTo(5L);
         }
 
         @Test
         @DisplayName("the count ignores limit and offset entirely (BR-26)")
-        void the_count_ignores_the_page_request() {
+        void shouldIgnoreLimitAndOffsetWhenCountingTotalMatches() {
+            // Given
             // countMatching takes no limit or offset at all, which is the point: BR-26 counts the
             // whole matching set. This pins that the two statements share one predicate.
-            assertThat(adapter.countMatching(ownSubmissions())).isEqualTo(5L);
-            assertThat(adapter.findPage(ownSubmissions(), 1, 3)).hasSize(1);
-            assertThat(adapter.countMatching(ownSubmissions())).isEqualTo(5L);
+            var criteria = ownSubmissions();
+
+            // When
+            var initialCount = adapter.countMatching(criteria);
+            var paged = adapter.findPage(criteria, 1, 3);
+            var subsequentCount = adapter.countMatching(criteria);
+
+            // Then
+            assertThat(initialCount).isEqualTo(5L);
+            assertThat(paged).hasSize(1);
+            assertThat(subsequentCount).isEqualTo(5L);
         }
 
         @Test
         @DisplayName("rows sharing a registration moment page with no row skipped and none "
                 + "repeated, which registered_at DESC alone cannot guarantee (BR-28)")
-        void tied_registration_moments_page_without_skip_or_repeat() {
+        void shouldPageDeterministicWithoutSkipOrRepeatWhenRegistrationMomentsAreTied() {
+            // Given
             // "Newest first" is not a total order. Three rows now share at(2), and under
             // LIMIT/OFFSET over a non-total order PostgreSQL may return a tied row on two
             // different pages or on neither. The trailing id DESC is what makes it deterministic.
             insertRow(TENANT_A, uuid(6), "S-3A", "310.00", at(2));
             insertRow(TENANT_A, uuid(7), "S-3B", "320.00", at(2));
 
+            // When
             var wholeSet = referencesOnPage(ownSubmissions(), 100, 0);
             var pagedByTwo = Stream.of(0L, 2L, 4L, 6L)
                     .flatMap(offset -> referencesOnPage(ownSubmissions(), 2, offset).stream())
                     .toList();
+            var totalCount = adapter.countMatching(ownSubmissions());
 
+            // Then
             assertThat(wholeSet).hasSize(7);
             assertThat(pagedByTwo).doesNotHaveDuplicates().isEqualTo(wholeSet);
-            assertThat(adapter.countMatching(ownSubmissions())).isEqualTo(7L);
+            assertThat(totalCount).isEqualTo(7L);
         }
 
         @Test
         @DisplayName("the tie-break is id DESC, so the order of tied rows is defined rather than "
                 + "merely stable by luck")
-        void the_tie_break_is_id_descending() {
+        void shouldOrderTiedRowsByIdDescending() {
+            // Given
             insertRow(TENANT_A, uuid(6), "S-3A", "310.00", at(2));
             insertRow(TENANT_A, uuid(7), "S-3B", "320.00", at(2));
-
             var tied = new SubmissionSearchCriteria(TENANT_A, null, null, null, at(2), at(2));
 
-            assertThat(adapter.findPage(tied, 100, 0))
+            // When
+            var page = adapter.findPage(tied, 100, 0);
+
+            // Then
+            assertThat(page)
                     .extracting(SubmissionSummaryView::submissionId)
                     .containsExactly(uuid(7), uuid(6), uuid(3));
         }

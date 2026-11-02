@@ -126,11 +126,15 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("the row is inserted and its version is NOT NULL afterwards, which is the "
                 + "trap the @Version @Nullable Long design exists for")
-        void inserts_the_row_and_sets_the_version() {
+        void shouldInsertRowAndSetVersionWhenAggregateIsNew() {
+            // Given
             var id = UUID.randomUUID();
+            var snapshot = newSnapshot(id, TENANT_A, "ABC-1", "1200.00");
 
-            var result = adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
+            // When
+            var result = adapter.insert(snapshot);
 
+            // Then
             assertThat(result).isEqualTo(
                     Result.<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>success(
                             new SubmissionId(id)));
@@ -143,11 +147,15 @@ class SubmissionCommandSqlAdapterIT {
 
         @Test
         @DisplayName("every supplied field reaches the row exactly as supplied, scale included")
-        void stores_every_field_exactly_as_supplied() {
+        void shouldStoreEveryFieldExactlyAsSuppliedWhenInsertingNewAggregate() {
+            // Given
             var id = UUID.randomUUID();
+            var snapshot = newSnapshot(id, TENANT_A, "ABC-1", "1200.00");
 
-            adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
+            // When
+            adapter.insert(snapshot);
 
+            // Then
             assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored -> {
                 assertThat(stored.id()).isEqualTo(id);
                 assertThat(stored.tenantId()).isEqualTo(TENANT_A);
@@ -164,11 +172,15 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("a whitespace-only reference reaches the row untouched, because BR-07 applies "
                 + "no trimming and the CHECK only forbids a reference of length zero")
-        void stores_a_whitespace_only_reference_untouched() {
+        void shouldStoreWhitespaceOnlyReferenceUntouchedWhenInserting() {
+            // Given
             var id = UUID.randomUUID();
+            var snapshot = newSnapshot(id, TENANT_A, "   ", "1200.00");
 
-            var result = adapter.insert(newSnapshot(id, TENANT_A, "   ", "1200.00"));
+            // When
+            var result = adapter.insert(snapshot);
 
+            // Then
             assertThat(result.isSuccess()).isTrue();
             assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored ->
                     assertThat(stored.externalRef()).isEqualTo("   "));
@@ -182,31 +194,36 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("the version survives both directions: out through the mapper into the row, "
                 + "back through the mapper, and through reconstitute()")
-        void version_survives_both_directions() {
+        void shouldPreserveVersionInBothDirectionsWhenRoundTrippingSnapshot() {
+            // Given
             var id = UUID.randomUUID();
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
+            // When
             var loaded = adapter.findOwn(TENANT_A, id).orElseThrow();
+            var reconstituted = SubmissionRoundTrip.reconstituteAndSnapshot(loaded);
 
+            // Then
             // Loaded, so the version must now be present — the opposite of the null it went in as.
             assertThat(loaded.version()).isNotNull();
 
             // And reconstituting must not rewrite or drop it on the way through the aggregate.
-            var reconstituted = SubmissionRoundTrip.reconstituteAndSnapshot(loaded);
-
             assertThat(reconstituted).isEqualTo(loaded);
             assertThat(reconstituted.version()).isEqualTo(loaded.version());
         }
 
         @Test
         @DisplayName("the whole snapshot survives the round trip, not merely the version")
-        void whole_snapshot_survives_the_round_trip() {
+        void shouldPreserveWholeSnapshotWhenRoundTrippingThroughMapperAndAggregate() {
+            // Given
             var id = UUID.randomUUID();
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
+            // When
             var loaded = adapter.findOwn(TENANT_A, id).orElseThrow();
             var reconstituted = SubmissionRoundTrip.reconstituteAndSnapshot(loaded);
 
+            // Then
             assertThat(reconstituted).isEqualTo(new SubmissionSnapshot(id, TENANT_A, "ABC-1",
                     new BigDecimal("1200.00"), "uw-01", REGISTERED_AT, loaded.version()));
         }
@@ -214,11 +231,16 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("a row of another organisation is not loadable, so the read-back is tenant "
                 + "filtered like every other statement (BR-17)")
-        void another_organisations_row_is_not_loadable() {
+        void shouldNotLoadRowWhenTenantBelongsToAnotherOrganisation() {
+            // Given
             var id = UUID.randomUUID();
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
-            assertThat(adapter.findOwn(TENANT_B, id)).isEmpty();
+            // When
+            var result = adapter.findOwn(TENANT_B, id);
+
+            // Then
+            assertThat(result).isEmpty();
         }
     }
 
@@ -229,12 +251,15 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("a duplicate (tenant_id, external_ref) inserts nothing and is refused as "
                 + "already used")
-        void duplicate_inserts_nothing() {
+        void shouldRefuseInsertionAndReturnAlreadyUsedWhenDuplicateReferenceInserted() {
+            // Given
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "1200.00"));
+            var duplicate = newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "77.00");
 
-            var second = adapter.insert(
-                    newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "77.00"));
+            // When
+            var second = adapter.insert(duplicate);
 
+            // Then
             assertThat(second).isEqualTo(
                     Result.<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>failure(
                             new RegisterSubmissionError.ReferenceAlreadyUsed("ABC-1")));
@@ -244,27 +269,33 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("the earlier row is left completely untouched by the refused duplicate: "
                 + "ON CONFLICT DO NOTHING must not become DO UPDATE")
-        void duplicate_leaves_the_earlier_row_untouched() {
+        void shouldLeaveEarlierRowUntouchedWhenDuplicateReferenceRefused() {
+            // Given
             var firstId = UUID.randomUUID();
             adapter.insert(newSnapshot(firstId, TENANT_A, "ABC-1", "1200.00"));
             var before = adapter.findOwn(TENANT_A, firstId).orElseThrow();
 
+            // When
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "77.00"));
 
+            // Then
             assertThat(adapter.findOwn(TENANT_A, firstId)).hasValue(before);
         }
 
         @Test
         @DisplayName("a refused duplicate leaves the session usable, which a caught "
                 + "DuplicateKeyException inside a transaction would not")
-        void a_refused_duplicate_leaves_the_session_usable() {
+        void shouldKeepSessionUsableWhenDuplicateReferenceIsRefused() {
+            // Given
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "1200.00"));
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "77.00"));
+            var subsequentSnapshot = newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-2", "88.00");
 
+            // When
             // A poisoned transaction would fail this with "current transaction is aborted".
-            var afterwards = adapter.insert(
-                    newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-2", "88.00"));
+            var afterwards = adapter.insert(subsequentSnapshot);
 
+            // Then
             assertThat(afterwards.isSuccess()).isTrue();
             assertThat(rowCount()).isEqualTo(2);
         }
@@ -272,12 +303,15 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("the identical reference under a DIFFERENT tenant_id inserts normally: "
                 + "uniqueness never crosses organisations (BR-08)")
-        void same_reference_under_another_tenant_inserts() {
+        void shouldInsertSuccessfullyWhenSameReferenceUnderDifferentTenant() {
+            // Given
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "1200.00"));
+            var otherTenantSnapshot = newSnapshot(UUID.randomUUID(), TENANT_B, "ABC-1", "1200.00");
 
-            var otherTenant = adapter.insert(
-                    newSnapshot(UUID.randomUUID(), TENANT_B, "ABC-1", "1200.00"));
+            // When
+            var otherTenant = adapter.insert(otherTenantSnapshot);
 
+            // Then
             assertThat(otherTenant.isSuccess()).isTrue();
             assertThat(rowCount()).isEqualTo(2);
         }
@@ -285,12 +319,15 @@ class SubmissionCommandSqlAdapterIT {
         @Test
         @DisplayName("references differing only in letter case are different references, which is "
                 + "what COLLATE \"C\" on the column protects (BR-07)")
-        void case_differing_references_are_distinct() {
+        void shouldTreatReferencesDifferingOnlyInCaseAsDistinctWhenInserting() {
+            // Given
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "1200.00"));
+            var lowerCaseSnapshot = newSnapshot(UUID.randomUUID(), TENANT_A, "abc-1", "1200.00");
 
-            var lowerCase = adapter.insert(
-                    newSnapshot(UUID.randomUUID(), TENANT_A, "abc-1", "1200.00"));
+            // When
+            var lowerCase = adapter.insert(lowerCaseSnapshot);
 
+            // Then
             // A case-insensitive ICU collation on the column would silently refuse this one and
             // break BR-06 and BR-07 together.
             assertThat(lowerCase.isSuccess()).isTrue();

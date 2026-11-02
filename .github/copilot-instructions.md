@@ -24,6 +24,10 @@ Architecture: package-by-feature, Hexagonal boundaries, CQRS, Railway Oriented P
 5. **Verified means executed.** Nothing is done until `./mvnw verify` has actually run.
    **Paste the real terminal output.** Never write "BUILD SUCCESS" or "tests are green" from
    expectation — if you did not run it, say you did not run it.
+6. **Direct tools first; delegate to subagents only for context isolation.** Use direct tools
+   (`read_file`, `edit_file`, targeted searches) for simple operations. Delegate to subagents
+   only when autonomous work, heavy background execution (`./mvnw`), or broad exploration
+   would otherwise pollute the primary conversation context.
 
 ---
 
@@ -43,6 +47,8 @@ Architecture: package-by-feature, Hexagonal boundaries, CQRS, Railway Oriented P
 | `catch (Exception \| Throwable \| RuntimeException)` | catch the specific type | Checkstyle `noCatchAll` |
 | `KafkaTemplate` outside `adapters/messaging` | Transactional Outbox relay | ArchUnit |
 | Spring, Jackson, Kafka imports in `domain/` or `query/` | ports; adapters do the wiring | ArchUnit |
+| Magic numbers in business logic | Named constants (`public static final`) or Value Objects | Checkstyle `noMagicNumbers` |
+| Field injection (`@Autowired` / `@Inject` on fields) | Explicit constructor injection | ArchUnit `no_field_injection` + Checkstyle `noFieldAutowired` |
 
 Framework versions move. If you believe a rule above is wrong, say so and stop — do not quietly
 work around a gate.

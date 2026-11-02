@@ -3,7 +3,10 @@
 Feature: **register an insurance submission, and search submissions by filter.**
 
 Stage 1 artefact. Source of every business fact: the product owner's confirmed decisions recorded
-in `docs/workflow/submission-registration-state.md` (conversation of 2026-11-01).
+in `docs/workflow/submission-registration-state.md` — the conversations of 2026-11-01 (the
+original scope, and the search filter set and result order) and of 2026-11-02 (`BR-29`, refusing
+references that contain control characters, decided after exploratory testing showed the previous
+rule could not be honoured).
 
 Nothing in this document is an analyst invention. Every business fact here traces to a product
 owner answer; where the business has not decided something, this document says so and places it
@@ -28,8 +31,10 @@ nothing about, or — in the last case — something it has deliberately left to
 - amending, withdrawing, cancelling or deleting a registered submission
 - any authority limit attached to a role
 - any currency other than the single confirmed one
-- restrictions on which characters a submission reference may contain — none is confirmed, so
-  none is imposed
+- further restrictions on which characters a submission reference may contain. Control characters
+  are refused (`BR-29`) and that is the **only** character restriction; beyond it, no restriction
+  is confirmed and none is imposed. Letters of any script, digits, punctuation, symbols, emoji and
+  spaces are all acceptable characters
 - how long a submission is kept
 - the **maximum permitted page size**. Paging itself is in scope and specified below, but the
   upper bound on how large a single page may be is a resource-protection parameter, not a
@@ -51,6 +56,7 @@ nothing about, or — in the last case — something it has deliberately left to
 | **Role** | What a caller is permitted to do. Exactly three roles exist: **Viewer**, **Underwriter**, **Senior Underwriter**. No other role exists in this feature. |
 | **Registration** | The act of recording a submission for the first time. Registration either succeeds completely or changes nothing at all. |
 | **Registration Moment** | The point in time at which a submission was registered. Recorded because audit needs to know when the correlated submission entered the service, and because search results need a stable order. |
+| **Control Character** | A character in Unicode general category **Cc**: any character in the range U+0000–U+001F, or in the range U+007F–U+009F. This includes NUL (U+0000), TAB (U+0009) and NEWLINE (U+000A). It **excludes** SPACE (U+0020), which is an ordinary printable character and not a control character. "Control character" is a narrower idea than "whitespace" and the two must not be treated as interchangeable: TAB and NEWLINE are both, SPACE is only whitespace. |
 | **Duplicate Reference** | A submission reference that the caller's own organisation has already used on an earlier successfully registered submission. The same reference used by a *different* organisation is not a duplicate. |
 | **Submission Search** | A read-only enquiry that returns one page of the submissions of the caller's own organisation, narrowed by optional filter criteria, together with how many submissions matched in total. |
 | **Filter Criterion** | One optional narrowing condition supplied with a search. Omitting a criterion means "do not narrow on this". |
@@ -58,7 +64,7 @@ nothing about, or — in the last case — something it has deliberately left to
 | **Result Page** | One consecutive run of the matching set, taken in the confirmed result order, returned by a single search. A caller asks for one page at a time and reaches the rest of the matching set by asking for further pages. A page may be empty. |
 | **Page Request** | The part of a search that says which page is wanted and how large a page is. A page size is bounded above; the bound is a resource-protection parameter set in the technical design, not a business decision, and this document states no number for it. |
 | **Total Match Count** | How many submissions are in the matching set in total, reported with every page so the caller knows how much there is to page through. It counts the whole matching set, not the page. |
-| **Refusal Reason** | A named business outcome in which an operation does not happen. A refusal is a normal, expected answer, not a malfunction. Every refusal reason a command can produce is listed in this document; the list is exhaustive by construction. |
+| **Refusal Reason** | A named business outcome in which an operation does not happen. A refusal is a normal, expected answer, not a malfunction. Every refusal reason a command can produce is listed in this document; the list is exhaustive by construction. A caller must never receive an unexplained failure for an input this document calls valid — if that happens, the refusal catalogue is wrong and this document must be corrected, as it was for `BR-29`. |
 
 ---
 
@@ -74,7 +80,7 @@ Every row is testable exactly as written.
 | `BR-04` | A submission reference must be supplied | Reference is absent, or contains no characters at all | Registration refused: **reference missing** |
 | `BR-05` | A submission reference is at most 64 characters long | Reference is 65 characters or longer | Registration refused: **reference too long**. A reference of exactly 64 characters is accepted |
 | `BR-06` | A submission reference is unique within one organisation | The caller's organisation already has a successfully registered submission carrying the identical reference | Registration refused: **reference already used**. The earlier submission is unchanged |
-| `BR-07` | References are compared exactly as supplied | Two references differ in any character, including in letter case or in surrounding blank space | They are different references. No trimming, case folding or other normalisation is applied, because none is confirmed |
+| `BR-07` | An accepted reference is stored and compared exactly as supplied, never normalised | Two references differ in any character, including in letter case or in surrounding spaces | They are different references. No trimming, case folding, padding, re-encoding or other normalisation is ever applied, because none is confirmed. This rule governs **how** an accepted reference is treated, and says nothing about which characters are acceptable — that is `BR-04`, `BR-05` and `BR-29`. A reference that `BR-29` refuses is refused whole: no character is ever stripped or replaced to make it acceptable |
 | `BR-08` | The same reference may be used by different organisations | Another organisation has already registered a submission with the identical reference, and the caller's own organisation has not | Registration succeeds. Uniqueness never crosses organisations |
 | `BR-09` | Where two registrations race for the same reference in the same organisation, the first to be recorded wins | Two registrations with the identical reference and organisation are attempted and neither has completed yet | Exactly one is recorded; the other is refused: **reference already used**. Both are never recorded |
 | `BR-10` | An insured limit must be supplied | Insured limit is absent | Registration refused: **insured limit missing** |
@@ -96,6 +102,7 @@ Every row is testable exactly as written.
 | `BR-26` | Every search reports how large the whole matching set is | A search succeeds, including when the page returned is empty | The total match count of the whole matching set is returned alongside the page, so the caller can tell how many pages exist. The count ignores which page was asked for |
 | `BR-27` | Asking for a page beyond the end of the matching set is a success | The first submission of the requested page lies past the end of the matching set, including when the matching set is empty | A success carrying an empty page and the true total match count. It is **not** a refusal |
 | `BR-28` | Paging reaches the whole matching set, once each | Every page of a matching set is requested in turn while the matching set is unchanged | Each matching submission appears on exactly one page, no submission is skipped, none appears twice, and the sequence of pages follows the order of `BR-24` |
+| `BR-29` | A submission reference may not contain a control character | The reference contains, at any position, at least one character of Unicode general category **Cc** — that is, any character in U+0000–U+001F or in U+007F–U+009F. NUL (U+0000), TAB (U+0009) and NEWLINE (U+000A) are all such characters | Registration refused: **reference contains a control character**. The reference is refused whole; nothing is stripped or replaced (`BR-07`). **SPACE (U+0020) is not a control character**: a reference containing spaces, including one consisting only of spaces, is unaffected by this rule and stays valid |
 
 ---
 
@@ -112,13 +119,13 @@ Inputs and their hard constraints:
 
 | Input | Required | Constraint |
 |---|---|---|
-| Submission reference | Yes | Present and non-empty (`BR-04`); at most 64 characters (`BR-05`); not already used by the caller's organisation, compared exactly as supplied (`BR-06`, `BR-07`) |
+| Submission reference | Yes | Present and non-empty (`BR-04`); at most 64 characters (`BR-05`); contains no control character (`BR-29`); not already used by the caller's organisation, compared exactly as supplied (`BR-06`, `BR-07`) |
 | Insured limit | Yes | Present (`BR-10`); strictly greater than zero (`BR-11`); exactly two decimal places (`BR-12`); no maximum (`BR-13`); euro, with no currency supplied (`BR-14`) |
 
 Everything else about the submission — the organisation, the registering caller, the registration
 moment — is taken from the identified caller and from the clock. It is never accepted as input.
 
-**Every reason this command can be refused** (exhaustive):
+**Every reason this command can be refused** (exhaustive) — there are **nine**:
 
 | # | Refusal reason | Raised when | Rule |
 |---|---|---|---|
@@ -126,12 +133,68 @@ moment — is taken from the identified caller and from the clock. It is never a
 | 2 | **Role may not register** | The caller's role is Viewer | `BR-02` |
 | 3 | **Reference missing** | No reference supplied, or it contains no characters | `BR-04` |
 | 4 | **Reference too long** | Reference is longer than 64 characters | `BR-05` |
-| 5 | **Insured limit missing** | No insured limit supplied | `BR-10` |
-| 6 | **Insured limit not positive** | Insured limit is zero or negative | `BR-11` |
-| 7 | **Insured limit precision invalid** | Insured limit does not have exactly two decimal places | `BR-12` |
-| 8 | **Reference already used** | The caller's organisation has already registered this exact reference, including when a competing registration wins the race | `BR-06`, `BR-09` |
+| 5 | **Reference contains a control character** | The reference contains any character in U+0000–U+001F or U+007F–U+009F, NUL, TAB and NEWLINE among them | `BR-29` |
+| 6 | **Insured limit missing** | No insured limit supplied | `BR-10` |
+| 7 | **Insured limit not positive** | Insured limit is zero or negative | `BR-11` |
+| 8 | **Insured limit precision invalid** | Insured limit does not have exactly two decimal places | `BR-12` |
+| 9 | **Reference already used** | The caller's organisation has already registered this exact reference, including when a competing registration wins the race | `BR-06`, `BR-09` |
 
 No other refusal exists for this command. A refusal records nothing.
+
+#### Why references with control characters are refused
+
+This restriction was added on 2026-11-02, after the first eight refusal reasons were already
+agreed and tested. It is recorded here so that a reader a year from now does not have to
+rediscover the reason or mistake it for an arbitrary tightening.
+
+Exploratory testing registered a reference containing NUL (U+0000). The business rules of the day
+said it was valid, so the service accepted it — and the store the service keeps submissions in
+cannot hold that character, so recording it failed afterwards, below the level at which business
+refusals are decided. The caller received an unexplained server error. That error was not one of
+the refusal reasons this catalogue calls exhaustive, which means the promise made in this document
+was not being kept: a value the business had called valid could not in fact be registered, and the
+caller was told nothing useful.
+
+The product owner was offered the narrow fix — refuse only NUL, the one character that cannot be
+stored — and **deliberately chose the broader rule**: refuse every control character. A submission
+reference is an identifier that people read, quote in correspondence and use to correlate records
+in audit; characters that cannot be seen or printed have no legitimate place in one, and letting
+them in invites references that look identical but are not (`BR-07` makes such a pair two
+different references, permanently). Refusing the whole category is easier to explain to a
+submitting party than a single-character exception, and it closes the question rather than leaving
+a second control character to be discovered later.
+
+The business point, stated once: a caller who sends an unusable reference is owed a clear refusal
+naming what is wrong with it, not a server error.
+
+#### Behaviour this reverses, and behaviour it leaves alone
+
+`BR-29` **changes behaviour that was previously confirmed and is currently asserted by passing
+tests.** This is a deliberate reversal, not a clarification, and it is called out here rather than
+folded in quietly.
+
+Now **refused**, having previously been valid:
+
+| Reference | Previously | Now |
+|---|---|---|
+| A reference containing NUL (U+0000) | Valid by rule, unrecordable in practice | Refused: **reference contains a control character** |
+| A reference consisting of a single TAB (U+0009) | **Valid** | **Refused** |
+| A reference consisting of a single NEWLINE (U+000A) | **Valid** | **Refused** |
+| A reference such as `AB\tCD` or `AB\nCD`, containing a control character anywhere inside it | **Valid** | **Refused** |
+| Any other character of category Cc, anywhere in the reference | **Valid** | **Refused** |
+
+**Unchanged and still valid** — nothing here is affected, and no rule about it was reversed:
+
+| Reference | Status |
+|---|---|
+| A reference containing SPACE (U+0020) between other characters | **Valid**, as before |
+| A reference consisting only of spaces, for example `"   "` | **Valid**, as before. It is present, it is non-empty, it contains no control character, and it is not normalised away |
+| A reference with leading or trailing spaces | **Valid**, as before, and the spaces are preserved exactly (`BR-07`) |
+| Letters of any script, digits, punctuation, symbols, emoji | **Valid**; no restriction beyond `BR-29` exists |
+
+SPACE is not a control character, so no rule about spaces changed. `BR-07`'s prohibition on
+trimming stands exactly as it did, and a reference of spaces must still be accepted and stored
+with its spaces intact.
 
 **Business fact that follows success:** the submission is registered — it belongs to the caller's
 organisation, carries the supplied reference and insured limit, names the caller who registered
@@ -232,9 +295,15 @@ Notes:
 ## Hand-over checklist
 
 - [x] Every rule has an ID and is testable as written
-- [x] Every command and query lists **all** of its refusal reasons, exhaustively
+- [x] Every command and query lists **all** of its refusal reasons, exhaustively: **nine** for
+      Register a Submission, **one** for Submission Search
 - [x] Every number traces to the product owner's confirmed answer (64 characters, two decimal
-      places, strictly positive, no upper bound, three roles) or is absent
+      places, strictly positive, no upper bound, three roles, the Cc ranges U+0000–U+001F and
+      U+007F–U+009F) or is absent
+- [x] One previously confirmed behaviour is reversed by `BR-29` (TAB, NEWLINE, NUL and the rest
+      of category Cc move from valid to refused). The reversal, its reason, and the inputs that
+      are **not** affected are all stated explicitly under the Register command rather than
+      folded in silently — existing tests asserting the old behaviour must be changed
 - [x] No class name, table name, query language or framework term anywhere in this document
 - [x] **Every business fact is confirmed; nothing is left unconfirmed or pending.** The two open
       questions the first draft carried were answered by the product owner on 2026-11-01: the

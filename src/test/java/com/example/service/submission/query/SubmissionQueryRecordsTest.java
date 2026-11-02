@@ -44,37 +44,44 @@ class SubmissionQueryRecordsTest {
     @DisplayName("The page request normalises itself (BR-27, page-size bound)")
     class PageRequestNormalisation {
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] requested={0}, applied={1}")
         @CsvSource({"500, 100", "101, 100", "100, 100", "1, 1", "0, 1", "-1, 1", "-2147483648, 1"})
         @DisplayName("the page size is clamped into [1, 100] rather than refused")
-        void size_is_clamped(int requested, int applied) {
+        void shouldClampPageSizeWhenInstantiated(int requested, int applied) {
+            // Given & When
             var query = new SearchSubmissionsQuery(null, null, null, null, null, 0, requested);
 
+            // Then
             assertThat(query.size()).isEqualTo(applied);
         }
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] requested={0}, applied={1}")
         @CsvSource({"0, 0", "1, 1", "7, 7", "-1, 0", "-99, 0", "-2147483648, 0"})
         @DisplayName("the page number is clamped to zero or above, and zero is the first page")
-        void page_is_clamped(int requested, int applied) {
+        void shouldClampPageNumberWhenNegativeProvided(int requested, int applied) {
+            // Given & When
             var query = new SearchSubmissionsQuery(null, null, null, null, null, requested, 10);
 
+            // Then
             assertThat(query.page()).isEqualTo(applied);
         }
 
         @Test
         @DisplayName("the bound is 100 and the floor is 1, as the design records them")
-        void the_bound_is_declared_on_the_record() {
+        void shouldDeclarePageBoundConstantsWhenInspected() {
+            // Given & When & Then
             assertThat(SearchSubmissionsQuery.MIN_PAGE_SIZE).isEqualTo(1);
             assertThat(SearchSubmissionsQuery.MAX_PAGE_SIZE).isEqualTo(100);
         }
 
         @Test
         @DisplayName("the filters themselves are untouched by normalisation")
-        void filters_survive_normalisation() {
+        void shouldPreserveFiltersUntouchedWhenNormalisingPageParameters() {
+            // Given & When
             var query = new SearchSubmissionsQuery("S-1", new BigDecimal("-1"),
                     new BigDecimal("2.5"), MOMENT, MOMENT, 0, 500);
 
+            // Then
             assertThat(query.externalRef()).isEqualTo("S-1");
             assertThat(query.insuredLimitFrom()).isEqualTo(new BigDecimal("-1"));
             assertThat(query.insuredLimitTo()).isEqualTo(new BigDecimal("2.5"));
@@ -90,36 +97,50 @@ class SubmissionQueryRecordsTest {
         @Test
         @DisplayName("a result row does not disclose the insured limit when logged, although it "
                 + "still carries it for the caller")
-        void summary_view_masks_the_amount() {
+        void shouldMaskInsuredLimitInToStringWhenSummaryViewPrinted() {
+            // Given
             var view = new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT);
 
-            assertThat(view.toString()).doesNotContain("1234.56", "1234", "234.56");
+            // When
+            var printed = view.toString();
+
+            // Then
+            assertThat(printed).doesNotContain("1234.56", "1234", "234.56");
             assertThat(view.insuredLimit()).isEqualTo(AMOUNT);
         }
 
         @Test
         @DisplayName("a result row does not disclose the registering caller when logged (OPEN-01)")
-        void summary_view_masks_the_registering_caller() {
+        void shouldMaskRegisteringCallerInToStringWhenSummaryViewPrinted() {
+            // Given
             var view = new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT);
 
-            assertThat(view.toString()).doesNotContain("uw-01");
+            // When
+            var printed = view.toString();
+
+            // Then
+            assertThat(printed).doesNotContain("uw-01");
             assertThat(view.registeredBy()).isEqualTo("uw-01");
         }
 
         @Test
         @DisplayName("a result row prints the reference in full, because audit needs it (BR-23)")
-        void summary_view_prints_the_reference() {
+        void shouldPrintReferenceInFullWhenSummaryViewPrinted() {
+            // Given
             var view = new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT);
 
+            // When & Then
             assertThat(view.toString()).contains("S-1");
         }
 
         @Test
         @DisplayName("a logged search does not disclose its insured limit bounds: a logged search "
                 + "for one exact amount that returns one row would disclose that row's amount")
-        void query_masks_its_amount_bounds() {
+        void shouldMaskAmountBoundsWhenSearchSubmissionsQueryPrinted() {
+            // Given
             var query = new SearchSubmissionsQuery("S-1", AMOUNT, AMOUNT, MOMENT, MOMENT, 0, 10);
 
+            // When & Then
             assertThat(query.toString())
                     .doesNotContain("1234.56", "1234")
                     .contains("S-1");
@@ -133,21 +154,26 @@ class SubmissionQueryRecordsTest {
         @Test
         @DisplayName("a page copies the rows it is given, so a later change to the caller's list "
                 + "cannot alter what was returned")
-        void page_copies_its_rows() {
+        void shouldDefensivelyCopyRowsWhenSubmissionPageViewConstructed() {
+            // Given
             var rows = new ArrayList<SubmissionSummaryView>();
             rows.add(new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT));
             var pageView = new SubmissionPageView(rows, 1L, 0, 10);
 
+            // When
             rows.clear();
 
+            // Then
             assertThat(pageView.submissions()).hasSize(1);
         }
 
         @Test
         @DisplayName("an empty page still reports the total match count of the whole matching set")
-        void empty_page_still_reports_the_total() {
+        void shouldReportTotalMatchCountWhenPageIsEmpty() {
+            // Given & When
             var pageView = new SubmissionPageView(List.of(), 42L, 9, 10);
 
+            // Then
             assertThat(pageView.submissions()).isEmpty();
             assertThat(pageView.totalMatchCount()).isEqualTo(42L);
             assertThat(pageView.page()).isEqualTo(9);

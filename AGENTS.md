@@ -77,6 +77,24 @@ Stage 3 passing its build is a failure, not a success — green tests there asse
 When a reviewer rejects, work goes back to **stage 3**, not stage 4: a failing test is written
 for each defect before anything is fixed.
 
+## Execution heuristics (macro roles vs micro subagents)
+
+The eight roles above govern the **macro SDLC lifecycle**. Within any stage, agents must observe
+these micro-level execution heuristics:
+
+1. **Direct tools first:** Prefer direct tool calls (`read_file`, `edit_file`, targeted searches)
+   for simple operations. Spawning a subagent introduces overhead and latency; do not delegate
+   trivial tasks.
+2. **Subagents for context isolation (`explore` / `research`):** Spawn an isolated background
+   subagent only when an investigation spans many files or external sources and the raw output
+   would pollute the conversation context. The subagent must return a synthesized summary.
+3. **Deterministic tasks in isolation (`task`):** Run heavy build or verification cycles
+   (`./mvnw verify`, Testcontainers) as discrete execution tasks. Return the pass/fail outcome and
+   actionable failure output rather than dumping thousands of raw log lines into the conversation.
+4. **Read-only review isolation (`code-review` / `security-review`):** Review stages focus
+   strictly on git diffs, invariant adherence, and security attack surfaces (OWASP, BOLA, PII masking)
+   with write tools permanently disabled.
+
 ## How the boundaries are actually enforced
 
 Be honest about this, because the distinction matters:
@@ -98,14 +116,16 @@ Be honest about this, because the distinction matters:
 
 ## Known state of this repository
 
-- No business module yet. The first one should be built **through the agent workflow**, which is
-  also how the workflow itself gets tested.
+- The `submission` module exists: register a submission, and search submissions by filter. It was
+  built through the agent workflow, which is also how the workflow itself got tested.
+  `docs/workflow/submission-registration-state.md` records what each stage found, including four
+  defects in this repository's own rules that the separation of roles caught.
 - **ArchUnit must stay at 1.5.1 or newer.** Version 1.4.0 cannot read Java 25 class files: it logs
   `Unsupported class file major version 69` at WARN, skips every class, and then reports all rules
   as passing. The suite was green while analysing nothing until this was caught. Treat a downgrade
   as a breaking change, and after any ArchUnit or JDK upgrade, break a rule on purpose once and
   confirm the build fails.
-- `src/test/resources/archunit.properties` sets `archRule.failOnEmptyShould=false` because several
-  rules have nothing to match until that first module exists. **Set it back to `true` then.**
-  Left as-is, a typo in a package name turns a rule into a green test that checks nothing.
+- `src/test/resources/archunit.properties` sets `archRule.failOnEmptyShould=true`, and there is no
+  per-rule escape hatch left anywhere. Keep it that way: with it false, a typo in a package name
+  turns a rule into a green test that checks nothing, and you will trust it.
 - `openapi/` is empty: there is no contract to publish until there is an endpoint.

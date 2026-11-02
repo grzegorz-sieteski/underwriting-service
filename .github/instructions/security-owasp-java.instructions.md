@@ -67,9 +67,14 @@ supplies `ActorContext`; it never decides.
 - Log the error type, not the whole object:
   `log.warn("approve rejected: {}", error.getClass().getSimpleName())`.
 
-## A02 / A05 — Configuration
+## A02 / A05 — Configuration & Secret Management
 
-- No credentials in `application.yml`. Use environment variables or a secret store.
+- **Secrets strictly via environment variables:** API keys, database credentials, tokens, and passwords
+  must NEVER be hardcoded in repository code, `application.yml`, or test resources. Use environment
+  variables (`${DATABASE_PASSWORD}`, etc.) or a secret store.
+- **External service integration boundaries (Port & Adapter):** External API clients or SDKs must be
+  encapsulated in `adapters/` behind clean domain ports. Auth tokens and credentials must stay inside
+  the adapter configuration and never leak into domain or query interfaces.
 - Kafka producers: `acks=all` and `enable.idempotence=true`.
 - Postgres: the service's role gets `SELECT/INSERT/UPDATE` on its own tables; it is not the owner.
 

@@ -62,6 +62,28 @@ JDBC adapter from reaching past the facade. The compiler enforces it for free.
 - Reference other aggregates by typed id (`CustomerId`), never by object reference.
 - Keep the optimistic-lock `version` as a plain `Long` field with no annotation.
 
+## Pure Domain — No Side Effects
+
+- Pure business logic resides in the domain layer without framework dependencies or side effects.
+- Domain methods do not perform I/O, database access, or external network calls directly.
+- Orchestration between pure domain logic and external systems (database, messaging, external APIs)
+  happens through explicit **Ports** (interfaces declared in `domain/`) and implemented by **Adapters**
+  in `adapters/`.
+
+## Zero Magic Numbers & Explicit Domain Constants
+
+- **Strict prohibition of magic numbers:** never leave raw, unnamed numeric or string literals in
+  domain invariants or business logic.
+- Every threshold, scale, or limit must be declared as an explicit domain constant:
+  `public static final int MAX_EXTERNAL_REF_LENGTH = 64;` or encapsulated in a Value Object.
+- Checkstyle (`noMagicNumbers`) fails the build if unexplained literals are introduced.
+
+## Value Objects & Typed IDs
+
+- Prefer dedicated immutable domain records (Value Objects) over bare primitives or raw UUIDs
+  (e.g., `SubmissionId(UUID value)` instead of bare `UUID`).
+- Value Objects encapsulate validation and format rules at instantiation.
+
 ## `query/` is a separate world
 
 `query/` cannot import `domain/`, and `domain/` cannot import `query/` — both directions are

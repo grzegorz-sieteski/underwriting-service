@@ -46,13 +46,28 @@ that is the bug.
 For each record in a `sealed interface *Error` there must be at least one test that produces it.
 The sealed hierarchy is the checklist — if you cannot reach a variant, it should not exist.
 
-Use `@ParameterizedTest` for boundaries: empty string, `"   "`, one under and one over a length
-limit, `BigDecimal.ZERO`, `-0.01`, and the maximum.
+## Test Naming & BDD Scenario Structure
 
-## Structure
+1. **Naming**:
+   - Method name: camelCase with `should...When...` pattern, e.g. `shouldRefuseRegistrationWhenCallerIsUnidentified()`.
+   - Every test must have a descriptive `@DisplayName("...")` in clear business language describing the invariant.
+2. **BDD Structure**:
+   - Every test body must be divided and annotated with explicit comments:
+   ```java
+   // Given
+   var actor = new ActorContext(TENANT_1, "uw-01", ActorRole.UNDERWRITER);
+   var command = new RegisterSubmissionCommand("REF-1", new BigDecimal("100.00"));
 
-`@DisplayName` in plain business language on every test. Given / When / Then comments.
-One behaviour per test.
+   // When
+   var result = ActorContext.callWith(actor, () -> facade.register(command));
+
+   // Then
+   assertThat(result).isEqualTo(Result.success(expectedId));
+   ```
+3. **Parameterized Tests**:
+   - Use `@ParameterizedTest` for boundaries: empty string, `"   "`, one under and one over a length limit, `BigDecimal.ZERO`, `-0.01`, and the maximum.
+   - Provide a clear `name` template, e.g.:
+     `@ParameterizedTest(name = "[{index}] input={0}")` or `@ParameterizedTest(name = "[{index}] {displayName}")`.
 
 ## Integration tests
 

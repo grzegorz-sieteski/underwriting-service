@@ -1,0 +1,963 @@
+### =====================================================================================
+### Submission registration + search — exploratory / adversarial script
+###
+### Written by @qa-explorer for commit 663d028.
+###
+### *** NOT ONE REQUEST IN THIS FILE HAS BEEN EXECUTED. ***
+### The environment it was written in has no Docker daemon and no PostgreSQL, so Flyway
+### has never run and the Spring context has never started. Every "expect" below is a
+### prediction read out of the code, not an observed result. Treat a mismatch as
+### information, and tell @qa-explorer which line was wrong.
+###
+### ------------------------------------------------------------------------------------
+### READ THIS FIRST, OR EVERY REQUEST BELOW WILL CONFUSE YOU
+### ------------------------------------------------------------------------------------
+### `ActorContextResolver.resolve()` returns `Optional.empty()` unconditionally. There is
+### no identity source on the classpath (no spring-boot-starter-security), and the product
+### owner confirmed "no identity source configured means no actor". It is fail-closed on
+### purpose — BR-01.
+###
+### Consequence: **as committed, every request in this file answers 401
+### caller-not-identified.** Sections 1 and 2 are the only ones that can pass today.
+### Sections 3 to 9 cannot be exercised at all until an identity source exists, and are
+### written now so that they can be run unchanged on the day one does. Running section 4
+### and reporting "tenant isolation verified" on a service that 401s everything would be
+### worthless — if a request here returns 401 when the comment says otherwise, you have
+### not reached the business rule.
+###
+### WHEN AN IDENTITY SOURCE ARRIVES: set `tokenUwTenantA` and friends in the environment
+### file and add the scheme the chosen mechanism needs. Every request below already
+### carries an `Authorization` header so only the variable values change.
+###
+### ------------------------------------------------------------------------------------
+### CREDENTIALS
+### ------------------------------------------------------------------------------------
+### There is not one real credential in this file and there must never be. Every token is
+### a variable resolved from `http-client.private.env.json`, which is git-ignored. If you
+### find yourself pasting a bearer token inline, stop.
+###
+### Put this in `requests/http-client.env.json` (committed, no secrets):
+###   { "local": { "host": "http://localhost:8080" } }
+###
+### Put this in `requests/http-client.private.env.json` (NEVER committed):
+###   { "local": {
+###       "tokenUwTenantA":     "...",   // UNDERWRITER        of organisation A
+###       "tokenSeniorTenantA": "...",   // SENIOR_UNDERWRITER of organisation A
+###       "tokenViewerTenantA": "...",   // VIEWER             of organisation A
+###       "tokenUwTenantB":     "..."    // UNDERWRITER        of organisation B
+###   } }
+###
+### ------------------------------------------------------------------------------------
+### WHAT TO WATCH FOR IN EVERY RESPONSE, regardless of status
+### ------------------------------------------------------------------------------------
+###  - a stack trace, an exception class name, a package name, or a SQL fragment
+###  - the string `insured` or any amount in a refusal that is ABOUT the amount  (BR-22)
+###  - any sign that another organisation's data exists                          (BR-17)
+###  - a `totalMatchCount` larger than the rows you can actually reach            (BR-26)
+###  - `Content-Type` other than `application/problem+json` on a refusal
+### Any one of those is a finding in its own right. Capture the whole response body.
+### =====================================================================================
+
+
+### =====================================================================================
+### 1. FAIL-CLOSED — the only section that can pass on commit 663d028
+### =====================================================================================
+
+### 1.1 Register with no credential at all → expect 401, type urn:problem-type:submission:caller-not-identified
+POST {{host}}/api/submissions
+Content-Type: application/json
+
+{ "externalRef": "EXPLORE-1", "insuredLimit": 1200.00 }
+
+### 1.2 Search with no credential at all → expect 401, same problem type
+GET {{host}}/api/submissions
+Accept: application/json
+
+### 1.3 Register with a syntactically valid but unknown credential → expect 401, NOT 403
+# A 403 here would mean something authenticated the caller and then refused them, i.e. an
+# identity source exists that this file does not know about.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "EXPLORE-2", "insuredLimit": 1200.00 }
+
+### 1.4 Header-trusting probe: can a caller become an actor by asserting one? → expect 401
+# There is deliberately no resolver in the repository that reads these headers. If this
+# returns 201, the single worst defect this service could have has been introduced: every
+# tenant boundary in BR-17 and the whole role gate in BR-02 are bypassed by three headers.
+# Run this one after EVERY change to the web adapter, forever.
+POST {{host}}/api/submissions
+X-Tenant-Id: 0a000000-0000-0000-0000-00000000000a
+X-Actor-Id: attacker-01
+X-Actor-Role: SENIOR_UNDERWRITER
+Content-Type: application/json
+
+{ "externalRef": "HEADER-SPOOF-1", "insuredLimit": 1200.00 }
+
+### 1.5 The same probe on the read side → expect 401
+GET {{host}}/api/submissions
+X-Tenant-Id: 0b000000-0000-0000-0000-00000000000b
+X-Actor-Id: attacker-01
+X-Actor-Role: VIEWER
+
+### 1.6 Lowercase header variants, in case a filter is case-sensitive somewhere → expect 401
+GET {{host}}/api/submissions
+x-tenant-id: 0b000000-0000-0000-0000-00000000000b
+x-actor-role: SENIOR_UNDERWRITER
+
+### 1.7 A spoof attempt via query parameters instead → expect 401, and `tenantId` ignored
+# `tenantId` is not a @RequestParam and `SearchSubmissionsQuery` has no tenant component,
+# so an unknown parameter must be silently ignored rather than bound to anything.
+GET {{host}}/api/submissions?tenantId=0b000000-0000-0000-0000-00000000000b&tenant=B
+
+
+### =====================================================================================
+### 2. TRANSPORT-LEVEL REFUSALS — reachable today, because they happen before the facade
+###
+### These are Spring's own 400s, deliberately NOT business refusal reasons. The thing to
+### check is not the status but the BODY: a Jackson or binding message can carry a class
+### name, a field path or the offending value.
+### =====================================================================================
+
+### 2.1 Malformed JSON → expect 400, and NO exception class name in the body
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "BROKEN",
+
+### 2.2 insuredLimit as a string → expect 400, and the body must NOT echo "not-a-number"
+# Watch for `HttpMessageNotReadableException`, `JsonParseException`, `java.math.BigDecimal`
+# or a com.fasterxml path in the response. `server.error.include-message` is unset, so the
+# default should suppress it — confirm that it actually does.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "STR-1", "insuredLimit": "not-a-number" }
+
+### 2.3 Wrong content type → expect 415
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: text/plain
+
+externalRef=X&insuredLimit=1200.00
+
+### 2.4 No body at all → expect 400
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+### 2.5 size=abc → expect 400 from type conversion, NOT a business refusal
+# Documented as transport-level in SubmissionQueryController. Confirm the body names no
+# internal type.
+GET {{host}}/api/submissions?size=abc
+Authorization: Bearer {{tokenViewerTenantA}}
+
+### 2.6 size far beyond an int → expect 400 from conversion, not a clamp
+GET {{host}}/api/submissions?size=99999999999999
+Authorization: Bearer {{tokenViewerTenantA}}
+
+### 2.7 A deeply nested / oversized body → expect 400 or 413, never a 500 and never a hang
+# Jackson's StreamReadConstraints should cap this. Replace the number below with ~10 MB of
+# digits before running; it is left short here so the file stays readable.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "BIG-1", "insuredLimit": 111111111111111111111111111111111111111111.00 }
+
+### 2.8 Unknown field in the body → expect it to be IGNORED (201), not to become input
+# `tenantId`, `registeredBy` and `registeredAt` are never accepted as input (BR-15). If
+# any of them binds, BR-15 is broken and a caller can register into another organisation.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{
+  "externalRef": "UNKNOWN-FIELD-1",
+  "insuredLimit": 1200.00,
+  "tenantId": "0b000000-0000-0000-0000-00000000000b",
+  "registeredBy": "someone-else",
+  "registeredAt": "1999-01-01T00:00:00Z"
+}
+
+### 2.9 Read the row back and confirm the ignored fields really were ignored → expect
+###     registeredBy = the token's own actor, registeredAt ≈ now, and it is in organisation A
+GET {{host}}/api/submissions?reference=UNKNOWN-FIELD-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+
+### =====================================================================================
+### 3. REGISTRATION BOUNDARIES — the eight named refusal reasons
+###
+### Needs an identity source. Each expects a specific `type` urn, not merely a status: a
+### correct status with the wrong reason is still a defect.
+### =====================================================================================
+
+### 3.1 The happy path → expect 201, Location header, body { "submissionId": "..." }
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "BOUND-OK-1", "insuredLimit": 1200.00 }
+
+### 3.2 A viewer registering → expect 403, type ...:role-may-not-register
+# The detail names the ROLE. Confirm it does not name the actor id.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenViewerTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "VIEWER-1", "insuredLimit": 1200.00 }
+
+### 3.3 A senior underwriter → expect 201. No authority limit applies in this feature (BR-03)
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenSeniorTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "SENIOR-1", "insuredLimit": 999999999999.00 }
+
+### --- reference: present, empty, blank (BR-04, BR-07) ---
+
+### 3.4 externalRef absent → expect 400, type ...:reference-missing
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "insuredLimit": 1200.00 }
+
+### 3.5 externalRef null → expect 400, type ...:reference-missing
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": null, "insuredLimit": 1200.00 }
+
+### 3.6 externalRef "" → expect 400, type ...:reference-missing
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "", "insuredLimit": 1200.00 }
+
+### 3.7 externalRef " " (one space) → expect 201. NOT a defect: BR-04 refuses a reference
+###     with no characters, and a space is a character. BR-07 forbids trimming.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": " ", "insuredLimit": 1200.00 }
+
+### 3.8 externalRef "\t" → expect 201, same reasoning
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "\t", "insuredLimit": 1200.00 }
+
+### 3.9 externalRef " BOUND-OK-1 " → expect 201, and it must be a SEPARATE submission from
+###     3.1, because no trimming is applied (BR-07)
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": " BOUND-OK-1 ", "insuredLimit": 1200.00 }
+
+### 3.10 externalRef "bound-ok-1" → expect 201: case differs, so it is a different reference
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "bound-ok-1", "insuredLimit": 1200.00 }
+
+### --- reference: the 64-code-point limit, exactly at and one past (BR-05) ---
+
+### 3.11 Exactly 64 ASCII characters → expect 201
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "0123456789012345678901234567890123456789012345678901234567890123", "insuredLimit": 1200.00 }
+
+### 3.12 65 ASCII characters → expect 400, type ...:reference-too-long,
+###      detail reporting maxLength 64 and actualLength 65
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "01234567890123456789012345678901234567890123456789012345678901234", "insuredLimit": 1200.00 }
+
+### 3.13 64 code points that are 128 UTF-16 CHARS (surrogate pairs) → expect 201
+###      The limit is counted in code points, and VARCHAR(64) counts the same. A 400 here
+###      means String.length() crept back in; a 500 means the column disagrees with the
+###      domain (a 22001 string-data right-truncation).
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", "insuredLimit": 1200.00 }
+
+### 3.14 65 such code points (130 chars) → expect 400, actualLength 65 and NOT 130
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀", "insuredLimit": 1200.00 }
+
+### 3.15 64 code points of base letter + COMBINING ACUTE (32 graphemes) → expect 201
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "éééééééééééééééééééééééééééééééé", "insuredLimit": 1200.00 }
+
+### 3.16 "café" precomposed (U+00E9) vs "café" decomposed (e + U+0301) → expect 201 for BOTH.
+###      They render identically. Unicode normalisation would fold them together and
+###      wrongly refuse the second as a duplicate, which BR-07 forbids. Run 3.16 then 3.17.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "café", "insuredLimit": 1200.00 }
+
+### 3.17 the decomposed form → expect 201, as a SECOND submission
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "café", "insuredLimit": 1200.00 }
+
+### 3.18 *** FINDING QA-02 *** a NUL byte in the reference → expect 500 TODAY, which is the bug
+###      The domain accepts U+0000 (no character restriction is confirmed, BR-04/BR-07), and
+###      a PostgreSQL VARCHAR cannot store it: PgJDBC raises "Zero bytes may not occur in
+###      string parameters". That escapes the adapter as an unchecked exception, and there is
+###      no @ControllerAdvice in this module, so the caller gets a generic 500 — which is not
+###      one of the eight refusal reasons the specification calls exhaustive.
+###      Record the ENTIRE body. If it names PgJDBC, a SQL fragment or a class name, that is
+###      a second, separate finding.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "ABC\u0000DEF", "insuredLimit": 1200.00 }
+
+### 3.19 Other control characters → expect 201 (they are storable, unlike U+0000)
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "A\u0001B\u001fC\u007f", "insuredLimit": 1200.00 }
+
+### 3.20 Injection-shaped reference → expect 201, stored VERBATIM, and the table still there
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "'; DROP TABLE submissions; --", "insuredLimit": 1200.00 }
+
+### 3.21 Read it back by that exact reference → expect 200 with exactly one row whose
+###      externalRef is byte-identical to what was sent
+GET {{host}}/api/submissions?reference='%3B%20DROP%20TABLE%20submissions%3B%20--
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 3.22 Then confirm the table still exists by searching at all → expect 200
+GET {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+
+### --- the insured limit (BR-10 to BR-13) ---
+
+### 3.23 insuredLimit absent → expect 400, type ...:insured-limit-missing
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-ABSENT" }
+
+### 3.24 insuredLimit null → expect 400, type ...:insured-limit-missing
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-NULL", "insuredLimit": null }
+
+### 3.25 0.01 → expect 201. The smallest accepted amount.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-MIN", "insuredLimit": 0.01 }
+
+### 3.26 0.00 → expect 400, type ...:insured-limit-NOT-POSITIVE (not precision-invalid).
+###      0.00 violates only BR-11; the order of checks is observable and is sign first.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-ZERO", "insuredLimit": 0.00 }
+
+### 3.27 0 → expect 400, type ...:insured-limit-not-positive. Scale is 0 and would also be
+###      invalid, but the sign is checked first — confirm which reason comes back.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-ZERO-2", "insuredLimit": 0 }
+
+### 3.28 -0.01 → expect 400, type ...:insured-limit-not-positive
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-NEG", "insuredLimit": -0.01 }
+
+### 3.29 -0.00 → expect 400, ...:insured-limit-not-positive (signum is 0, so not positive)
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-NEG-ZERO", "insuredLimit": -0.00 }
+
+### 3.30 1200 → expect 400, ...:insured-limit-precision-invalid, actualScale 0
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-S0", "insuredLimit": 1200 }
+
+### 3.31 1200.5 → expect 400, precision-invalid, actualScale 1
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-S1", "insuredLimit": 1200.5 }
+
+### 3.32 1200.005 → expect 400, precision-invalid, actualScale 3.
+###      It must be REFUSED, never rounded to 1200.01. A 201 here means something called
+###      setScale or the column became NUMERIC(p,2).
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-S3", "insuredLimit": 1200.005 }
+
+### 3.33 1200.000 → expect 400, precision-invalid, actualScale 3. Trailing zeros are never
+###      stripped: 1200.000 is not 1200.00.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-S3-ZEROS", "insuredLimit": 1200.000 }
+
+### 3.34 *** SCIENTIFIC NOTATION *** 1.2E+3 → expect 400, precision-invalid with
+###      actualScale -2 (NEGATIVE). This is numerically 1200 but its BigDecimal scale is -2.
+###      A check written "reject if scale > 2" would ACCEPT this as a two-decimal amount it
+###      is not. A 201 here is a real defect; so is a 400 reporting actualScale 2.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-SCI-1", "insuredLimit": 1.2E+3 }
+
+### 3.35 12E+2 → expect 400, precision-invalid, actualScale -2
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-SCI-2", "insuredLimit": 12E+2 }
+
+### 3.36 1E+10 → expect 400, precision-invalid, actualScale -10
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-SCI-3", "insuredLimit": 1E+10 }
+
+### 3.37 120000E-2 → expect 201. The resulting scale IS 2 (value 1200.00). BR-12 is a rule
+###      about the scale as supplied, not about how the caller spelled it. Surprising but
+###      correct — flag it to the analyst rather than calling it a bug.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-SCI-OK", "insuredLimit": 120000E-2 }
+
+### 3.38 1E+2000000000 → expect 400, precision-invalid with an enormous negative actualScale.
+###      This must be refused on its scale WITHOUT being expanded into two billion digits.
+###      A hang, an OOM or a slow response is a denial-of-service finding.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-SCI-DOS", "insuredLimit": 1E+2000000000 }
+
+### 3.39 400 significant digits, scale 2 → expect 201. BR-13: no upper bound, and none may
+###      be introduced. A 400 or 500 here means a bound was imposed somewhere — Jackson's
+###      StreamReadConstraints, a NUMERIC(p,s), or a validator.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "AMT-HUGE", "insuredLimit": 9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.00 }
+
+### 3.40 A currency field → expect it to be IGNORED (201). No currency is accepted,
+###      recorded or returned anywhere (BR-14). A 400 naming currency, or a currency in the
+###      response, both contradict BR-14.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "CCY-1", "insuredLimit": 1200.00, "currency": "USD" }
+
+### --- duplicates (BR-06, BR-08) ---
+
+### 3.41 Register DUP-1 → expect 201
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "DUP-1", "insuredLimit": 1200.00 }
+
+### 3.42 Register DUP-1 again, same organisation → expect 409, type ...:reference-already-used.
+###      The detail echoes the reference, which is safe: uniqueness never crosses
+###      organisations, so the conflicting submission is always the caller's own (BR-08).
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "DUP-1", "insuredLimit": 999.00 }
+
+### 3.43 Confirm the earlier submission is UNCHANGED → expect 200, one row, insuredLimit
+###      still 1200.00 and not 999.00
+GET {{host}}/api/submissions?reference=DUP-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 3.44 Register DUP-1 as organisation B → expect 201. Uniqueness never crosses
+###      organisations (BR-08). A 409 here is a cross-tenant existence oracle AND a
+###      business-rule defect at once.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantB}}
+Content-Type: application/json
+
+{ "externalRef": "DUP-1", "insuredLimit": 7777.00 }
+
+
+### =====================================================================================
+### 4. TENANT ISOLATION (BOLA) — the single most commonly missed defect class
+###
+### Note what this feature does NOT have: there is no GET /api/submissions/{id}. Search is
+### the only read, so the classic "403 confirms the record exists" probe has no endpoint to
+### aim at. The equivalent oracle here is the REFERENCE FILTER and the TOTAL MATCH COUNT.
+###
+### PRECONDITION: run 3.41 (DUP-1 in A) and 3.44 (DUP-1 in B) first.
+### =====================================================================================
+
+### 4.1 Organisation B asks for a reference only A holds → expect 200, [] , totalMatchCount 0.
+###     NOT 403, NOT 404, NOT a count of 1. Save this whole response.
+GET {{host}}/api/submissions?reference=BOUND-OK-1
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 4.2 Organisation B asks for a reference NOBODY holds → expect the response from 4.1,
+###     byte for byte. Any difference between 4.1 and 4.2 is an existence oracle.
+GET {{host}}/api/submissions?reference=NO-SUCH-REFERENCE-ANYWHERE
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 4.3 B searches with no filter → expect only B's own rows, and a totalMatchCount equal to
+###     the number of rows B can actually page to. A count larger than that leaks A's volume
+###     without returning a single row of A's data (BR-17, BR-26).
+GET {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 4.4 B aims every filter at A's row at once → expect 200, [], totalMatchCount 0
+GET {{host}}/api/submissions?reference=BOUND-OK-1&insuredLimitFrom=1200.00&insuredLimitTo=1200.00&registeredFrom=2026-01-01T00:00:00Z&registeredTo=2030-01-01T00:00:00Z
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 4.5 A shared reference resolves per organisation → expect ONE row each, with DIFFERENT
+###     insuredLimit values (1200.00 for A, 7777.00 for B). Run 4.5 then 4.6 and compare.
+GET {{host}}/api/submissions?reference=DUP-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 4.6 → expect one row, insuredLimit 7777.00, and a different submissionId than 4.5
+GET {{host}}/api/submissions?reference=DUP-1
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 4.7 B pages past the end of its own matching set → expect [] on every page and never a
+###     row of A's. A spill here would mean the tenant predicate is missing from one of the
+###     two statements (findPage and countMatching carry it independently).
+GET {{host}}/api/submissions?page=1&size=100
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 4.8 ...and far past it → expect 200, [], the true count of B's own set
+GET {{host}}/api/submissions?page=1000&size=100
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 4.9 A VIEWER of B gets exactly what an UNDERWRITER of B gets → expect 4.3's body again.
+###     Role never widens or narrows (BR-16), and must never widen ACROSS organisations.
+GET {{host}}/api/submissions
+Authorization: Bearer {{tokenViewerTenantA}}
+
+### 4.10 Timing probe: is a foreign reference slower or faster than a nonexistent one?
+###      Run 4.1 and 4.2 twenty times each and compare the distributions. A consistent
+###      difference is a side channel that leaks existence even though both bodies match.
+###      (Nothing in the code suggests one — both are the same two statements — but it is
+###      the probe that would find it.)
+GET {{host}}/api/submissions?reference=BOUND-OK-1
+Authorization: Bearer {{tokenUwTenantB}}
+
+
+### =====================================================================================
+### 5. PAGING ARITHMETIC (BR-25 to BR-28)
+###
+### The maximum page size is 100, an engineering decision recorded in the design. `page`
+### and `size` in the response echo what was ACTUALLY APPLIED — that echo is the contract
+### that makes clamping safe, so check it on every single answer.
+###
+### PRECONDITION: at least 12 submissions in organisation A. Run section 3 first.
+### =====================================================================================
+
+### 5.1 Defaults → expect 200, page 0, size 100
+GET {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.2 size=500 → expect 200 with size ECHOED AS 100, never 500, and never a 400
+GET {{host}}/api/submissions?size=500
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.3 size=0 → expect 200 with size echoed as 1. Clamped up, never refused: search has
+###     exactly one refusal reason.
+GET {{host}}/api/submissions?size=0
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.4 size=-1 → expect 200, size echoed as 1
+GET {{host}}/api/submissions?size=-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.5 page=-1 → expect 200, page echoed as 0
+GET {{host}}/api/submissions?page=-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.6 page=2147483647 (Integer.MAX_VALUE) → expect 200, [], the TRUE total count.
+###     The offset is (long) page * size = 214 748 364 700. An int multiplication would
+###     give -100, and a negative OFFSET is a SQL error — so a 500 here means the long cast
+###     in SubmissionQueryFacade.pageFor was lost.
+GET {{host}}/api/submissions?page=2147483647&size=100
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.7 page=2147483647&size=1 → expect 200, [], true count
+GET {{host}}/api/submissions?page=2147483647&size=1
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.8 page=2147483648 (one past Integer.MAX_VALUE) → expect 400 from type conversion.
+###     A transport-level refusal, not a business one.
+GET {{host}}/api/submissions?page=2147483648
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.9 THE SKIP TEST. Ask size=500, be given 100, then ask page=1 size=500. The service
+###     must apply size=100 on BOTH and echo 100 on both, so page 1 starts at offset 100
+###     and nothing between rows 100 and 499 is skipped. Run 5.2, then this, then walk
+###     forward with size=100 and assemble every row: no duplicate, no gap, 12 rows total.
+GET {{host}}/api/submissions?page=1&size=500
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.10 Walk the whole set at size=5 — page 0 → expect 5 rows, newest first, count 12
+GET {{host}}/api/submissions?page=0&size=5
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.11 page 1 → expect 5 rows, no overlap with 5.10, count still 12
+GET {{host}}/api/submissions?page=1&size=5
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.12 page 2 → expect 2 rows, count still 12. Union of 5.10..5.12 = all 12, once each.
+GET {{host}}/api/submissions?page=2&size=5
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.13 page 3 → expect 200, [], count still 12. A page past the end is a SUCCESS (BR-27).
+GET {{host}}/api/submissions?page=3&size=5
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 5.14 Register two submissions in the SAME second, then page at size=1 across them.
+###      The order is registered_at DESC, id DESC — the trailing id is what makes the order
+###      total. Without it a tied row can appear on two pages or on neither (BR-28).
+###      Run 3.x twice quickly, then walk size=1 and check both ids appear exactly once.
+GET {{host}}/api/submissions?page=0&size=1
+Authorization: Bearer {{tokenUwTenantA}}
+
+
+### =====================================================================================
+### 6. SEARCH FILTERS (BR-18 to BR-21, BR-24)
+###
+### A filter bound is a COMPARISON value, not an amount being registered: BR-11 and BR-12
+### are not re-imposed on it. A negative, zero or odd-scaled bound must be accepted.
+### =====================================================================================
+
+### 6.1 No filters → expect every submission of the own organisation (BR-19)
+GET {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.2 Empty reference parameter → expect 200. `reference=` binds the empty string, which
+###     matches nothing (no stored reference is empty, BR-04). Confirm it is not treated as
+###     "omitted" — that would be a different answer and a silent filter drop.
+GET {{host}}/api/submissions?reference=
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.3 Both amount bounds inclusive → expect the 1200.00 submission to be INCLUDED
+GET {{host}}/api/submissions?insuredLimitFrom=1200.00&insuredLimitTo=1200.00
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.4 A bound of a different scale still compares numerically → expect the same row as 6.3
+GET {{host}}/api/submissions?insuredLimitFrom=1200&insuredLimitTo=1200.000000
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.5 A NEGATIVE bound → expect 200, not a refusal. BR-11 is not re-imposed on a filter.
+GET {{host}}/api/submissions?insuredLimitFrom=-99999.99
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.6 A ZERO bound → expect 200, not a refusal
+GET {{host}}/api/submissions?insuredLimitFrom=0
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.7 A bound with three decimals → expect 200, not a precision refusal
+GET {{host}}/api/submissions?insuredLimitTo=1200.005
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.8 A CONTRADICTORY amount range → expect 200, [], totalMatchCount 0. A SUCCESS and
+###     explicitly NOT a refusal (BR-21). There is no refusal reason for it.
+GET {{host}}/api/submissions?insuredLimitFrom=9999.00&insuredLimitTo=1.00
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.9 A CONTRADICTORY moment range → expect 200, [], totalMatchCount 0
+GET {{host}}/api/submissions?registeredFrom=2030-01-01T00:00:00Z&registeredTo=2020-01-01T00:00:00Z
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.10 BOTH ranges contradicting at once → expect one empty 200, not two errors
+GET {{host}}/api/submissions?insuredLimitFrom=9999.00&insuredLimitTo=1.00&registeredFrom=2030-01-01T00:00:00Z&registeredTo=2020-01-01T00:00:00Z
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.11 Moment bounds inclusive at both ends → expect the submission registered exactly at
+###      the bound to be included
+GET {{host}}/api/submissions?registeredFrom=2026-11-01T00:00:00Z&registeredTo=2030-01-01T00:00:00Z
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.12 A malformed instant → expect 400 from type conversion, and the body must NOT name
+###      java.time or a parser class
+GET {{host}}/api/submissions?registeredFrom=not-a-date
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.13 An instant with an offset rather than Z → expect 200 if it parses, or a clean 400.
+###      Never a 500.
+GET {{host}}/api/submissions?registeredFrom=2026-11-01T10:00:00%2B02:00
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.14 A leap second → expect a clean 400 or 200, never a 500
+GET {{host}}/api/submissions?registeredFrom=2016-12-31T23:59:60Z
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.15 Repeated parameters → expect a defined answer (Spring takes the first) and never a
+###      500. Watch whether the SECOND value is the one applied: if a filter can be
+###      overridden by appending a duplicate, that is worth knowing.
+GET {{host}}/api/submissions?reference=DUP-1&reference=BOUND-OK-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.16 Filters narrow TOGETHER, not separately → expect only rows satisfying ALL of them
+GET {{host}}/api/submissions?reference=DUP-1&insuredLimitFrom=1200.00&insuredLimitTo=1200.00
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.17 Two criteria that cannot both hold → expect 200, [], count 0
+GET {{host}}/api/submissions?reference=DUP-1&insuredLimitFrom=999999.00
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 6.18 Order of results → expect registered_at DESCENDING, newest first (BR-24), the same
+###      order for every caller and every page
+GET {{host}}/api/submissions?size=100
+Authorization: Bearer {{tokenUwTenantA}}
+
+
+### =====================================================================================
+### 7. ROLES (BR-02, BR-03, BR-16)
+### =====================================================================================
+
+### 7.1 Viewer registers → expect 403, ...:role-may-not-register. Detail names the role.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenViewerTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "ROLE-V", "insuredLimit": 1200.00 }
+
+### 7.2 A viewer sending RUBBISH → expect 403 role-may-not-register, NOT a 400 about the
+###     input. The role is checked first, so a viewer learns nothing about the input rules.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenViewerTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "", "insuredLimit": -1 }
+
+### 7.3 Underwriter registers → expect 201
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "ROLE-U", "insuredLimit": 1200.00 }
+
+### 7.4 Senior underwriter registers → expect 201, identical treatment (BR-03). No
+###     authority limit exists in this feature, so a huge amount must NOT change the answer.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenSeniorTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "ROLE-S", "insuredLimit": 99999999999999999999.00 }
+
+### 7.5 Viewer searches → expect 200. Every role may search (BR-16).
+GET {{host}}/api/submissions?size=100
+Authorization: Bearer {{tokenViewerTenantA}}
+
+### 7.6 Underwriter searches → expect the SAME body as 7.5
+GET {{host}}/api/submissions?size=100
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 7.7 Senior underwriter searches → expect the SAME body as 7.5 and 7.6, byte for byte.
+###     Role never narrows or widens a search. Diff all three.
+GET {{host}}/api/submissions?size=100
+Authorization: Bearer {{tokenSeniorTenantA}}
+
+### 7.8 A role value the enum does not have → expect 401 or 403, never 201 and never 500.
+###     Only VIEWER, UNDERWRITER and SENIOR_UNDERWRITER exist; a fourth is an invented
+###     business concept. How a bad role in a credential is rejected depends on the identity
+###     source, so the only firm requirement is: it must not be able to register.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+X-Actor-Role: ADMIN
+Content-Type: application/json
+
+{ "externalRef": "ROLE-FAKE", "insuredLimit": 1200.00 }
+
+
+### =====================================================================================
+### 8. ERROR RESPONSES AND DISCLOSURE
+###
+### Read every body from every section above against this list. A single hit is a finding
+### on its own, regardless of whether the status was right.
+### =====================================================================================
+
+### 8.1 Unknown path → expect 404, and the body must not reveal the mapped routes
+GET {{host}}/api/submissions/does-not-exist
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 8.2 Wrong method → expect 405
+DELETE {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 8.3 PUT, which this feature does not have → expect 405. A submission is read-only once
+###     registered; amendment is explicitly out of scope.
+PUT {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "DUP-1", "insuredLimit": 1.00 }
+
+### 8.4 Spring Boot's error endpoint directly → expect no stack trace and no `trace` field.
+###     `server.error.include-stacktrace` and `include-message` are both unset in
+###     application.yml, so the safe defaults should apply. CONFIRM IT, because this is the
+###     one place a 500 from 3.18 would hand a client a PgJDBC stack trace.
+GET {{host}}/error
+
+### 8.5 Actuator, in case it is exposed → expect 404 or 401, never a 200 listing beans,
+###     environment or the datasource password from application.yml
+GET {{host}}/actuator
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 8.6 Environment endpoint → expect 404 or 401. A 200 here discloses the datasource
+###     credentials that application.yml carries in plain text.
+GET {{host}}/actuator/env
+
+### 8.7 The three amount refusals, re-read for disclosure. Each one NAMES the reason and
+###     must never SHOW the value, not even rounded or partially (BR-22). Check 3.26, 3.30
+###     and 3.32: none of their bodies may contain 0.00, 1200 or 1200.005.
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "DISCLOSE-1", "insuredLimit": 1234567.89 }
+
+### 8.8 ...then provoke a precision refusal with a memorable amount and grep the body for it
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "DISCLOSE-2", "insuredLimit": 1234567.891 }
+
+### 8.9 Check the application log for 1234567.89 and 1234567.891 after 8.7 and 8.8.
+###     Neither may appear anywhere, in any entry, at any level — including a framework
+###     entry the module did not write. The reference MAY appear in full, because audit
+###     needs it to correlate submissions (BR-23).
+###     (There is no logging statement in src/main at all today, so BR-22 holds vacuously.
+###      The masking toString() methods are what will keep it holding once there is one —
+###      and see FINDING QA-01: SubmissionSearchCriteria is missing its.)
+GET {{host}}/api/submissions?reference=DISCLOSE-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+
+### =====================================================================================
+### 9. CONCURRENCY — the service runs on virtual threads
+###
+### An HTTP client cannot genuinely race requests. Use a load tool for these; the requests
+### below are the shapes to fire, and the assertions are what to check afterwards.
+###   hey  -n 64 -c 64 -m POST -T application/json -H "Authorization: Bearer $TOKEN" \
+###        -d '{"externalRef":"RACE-1","insuredLimit":1200.00}' $HOST/api/submissions
+### =====================================================================================
+
+### 9.1 Fire 64 concurrent registrations of the SAME reference in the SAME organisation.
+###     Expect EXACTLY ONE 201 and 63 × 409 reference-already-used. Never two 201s, never a
+###     500, never a deadlock. The unique index settles it via ON CONFLICT DO NOTHING, so
+###     the loser gets zero rows back rather than a 23505 escaping as an exception (BR-09).
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantA}}
+Content-Type: application/json
+
+{ "externalRef": "RACE-1", "insuredLimit": 1200.00 }
+
+### 9.2 Then confirm exactly one row exists → expect 200, one row, totalMatchCount 1
+GET {{host}}/api/submissions?reference=RACE-1
+Authorization: Bearer {{tokenUwTenantA}}
+
+### 9.3 Fire the SAME reference concurrently from BOTH organisations (32 each). Expect ONE
+###     201 per organisation — two in total, not one. Uniqueness never crosses an
+###     organisation, not even under contention (BR-08).
+POST {{host}}/api/submissions
+Authorization: Bearer {{tokenUwTenantB}}
+Content-Type: application/json
+
+{ "externalRef": "RACE-1", "insuredLimit": 1200.00 }
+
+### 9.4 Confirm each organisation sees exactly its own one row → run as A, then as B, and
+###     check the two submissionIds DIFFER
+GET {{host}}/api/submissions?reference=RACE-1
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 9.5 Fire 64 concurrent searches while 9.1 is in flight. Expect every one to be a 200,
+###     and every page to be SELF-CONSISTENT: never more rows than its own totalMatchCount,
+###     never a null field, never a row from the other organisation. findPage and
+###     countMatching are two separate statements, so page and count may come from
+###     different instants — that is tolerable; a torn row or a foreign row is not.
+GET {{host}}/api/submissions?size=100
+Authorization: Bearer {{tokenViewerTenantA}}
+
+### 9.6 Fire concurrent searches as A and as B interleaved, then check no answer ever held
+###     the other organisation's rows. This is the test that the actor binding does not leak
+###     between virtual threads — ActorContext uses ScopedValue precisely because a
+###     ThreadLocal would pin to a carrier thread and leak across tasks.
+GET {{host}}/api/submissions?size=100
+Authorization: Bearer {{tokenUwTenantB}}
+
+### 9.7 Register 40 submissions while paging through the set at size=5. Rows added mid-walk
+###     may shift pages — BR-28 is stated for an UNCHANGED matching set, so that is not a
+###     defect. What would be: a 500, a negative count, or a row appearing twice on pages
+###     taken in the same instant.
+GET {{host}}/api/submissions?page=0&size=5
+Authorization: Bearer {{tokenUwTenantA}}
+
+
+### =====================================================================================
+### END. Report every mismatch to @qa-explorer with the full request and response.
+### Reminder: as committed, sections 3 to 9 cannot run. If they appear to pass, check that
+### you are not reading 401s.
+### =====================================================================================

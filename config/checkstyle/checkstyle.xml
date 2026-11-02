@@ -90,6 +90,30 @@
             <property name="illegalClassNames" value="java.lang.Exception, java.lang.Throwable, java.lang.RuntimeException"/>
         </module>
 
+        <!--
+          Zero Magic Numbers: raw, unnamed numeric literals are forbidden in business logic.
+          Use named constants (public/private static final) or Value Objects.
+        -->
+        <module name="MagicNumber">
+            <property name="id" value="noMagicNumbers"/>
+            <property name="ignoreNumbers" value="-1, 0, 1, 2"/>
+            <property name="ignoreAnnotation" value="true"/>
+            <property name="ignoreHashCodeMethod" value="true"/>
+            <property name="ignoreFieldDeclaration" value="true"/>
+        </module>
+
+        <!--
+          Field injection ban: dependencies must be injected via constructor.
+          Direct field annotation with @Autowired is forbidden.
+        -->
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="noFieldAutowired"/>
+            <property name="format" value="^\s*@Autowired\s+(private|protected|public)?\s*[A-Za-z0-9_&lt;&gt;]+\s+[a-zA-Z0-9_]+;"/>
+            <property name="ignoreComments" value="true"/>
+            <property name="message"
+                      value="Field injection with @Autowired is forbidden. Use explicit constructor injection."/>
+        </module>
+
         <module name="UnusedImports"/>
         <module name="RedundantImport"/>
         <module name="EqualsHashCode"/>

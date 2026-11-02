@@ -45,9 +45,11 @@ final class Submission {
      * A brand-new submission for the identified caller's own organisation (BR-15), or the first
      * invariant it violates.
      *
-     * <p>The six invariants are checked in the order the design fixes, and the order is
+     * <p>The seven invariants are checked in the order the design fixes, and the order is
      * observable: {@code BigDecimal.ZERO} violates both BR-11 and BR-12, and the caller is told
      * {@link RegisterSubmissionError.InsuredLimitNotPositive} because the sign is checked first.
+     * A reference that is both too long and contains a control character is told it is too long,
+     * because BR-05 is checked before BR-29.
      *
      * <p>{@code version} is {@code null}, which is what tells the persistence adapter this
      * aggregate has never been stored.
@@ -109,11 +111,24 @@ final class Submission {
     // ------------------------------------------------------------------ invariants
 
     /**
-     * The first invariant violated, in the order the design fixes, or empty when all six hold.
+     * The first invariant violated, in the order the design fixes, or empty when all seven hold.
      *
      * <p>The stream is lazy and {@code findFirst} short-circuits, so a later check never runs
      * against input an earlier one already refused — which is what makes it safe for the length
-     * check to read a reference the presence check has already accepted.
+     * and control-character checks to read a reference the presence check has already accepted.
+     *
+     * <p>Three things about this order are argued in the design and pinned by tests, so none of
+     * them is free to move:
+     *
+     * <ul>
+     *   <li><strong>Role first,</strong> so an unauthorised caller never learns which field of the
+     *       input is malformed.</li>
+     *   <li><strong>Presence before shape,</strong> because {@code ""} trivially contains no
+     *       control character: a BR-29 check placed earlier would pass on an empty reference and
+     *       then report the real defect later and less clearly.</li>
+     *   <li><strong>Length before content,</strong> which matches the specification's refusal
+     *       catalogue and bounds the control-character scan to at most 64 code points.</li>
+     * </ul>
      */
     private static Optional<RegisterSubmissionError> firstViolation(ActorRole role,
                                                                     @Nullable String externalRef,
@@ -126,6 +141,7 @@ final class Submission {
                                 ? Optional.empty()
                                 : Optional.of(new RegisterSubmissionError.ReferenceMissing()),
                         () -> referenceLengthViolation(Objects.requireNonNull(externalRef)),
+                        () -> controlCharacterViolation(Objects.requireNonNull(externalRef)),
                         () -> limit != null
                                 ? Optional.empty()
                                 : Optional.of(new RegisterSubmissionError.InsuredLimitMissing()),
@@ -153,6 +169,37 @@ final class Submission {
                 ? Optional.empty()
                 : Optional.of(new RegisterSubmissionError.ReferenceTooLong(
                         RegisterSubmissionCommand.MAX_EXTERNAL_REF_LENGTH, length));
+    }
+
+    /**
+     * BR-29 — no character of Unicode general category {@code Cc}, anywhere in the reference.
+     *
+     * <p><strong>The category is the rule, not a list of known-bad characters.</strong> The product
+     * owner was offered the narrow fix — refuse only NUL, the one character a {@code VARCHAR}
+     * genuinely cannot hold — and chose the whole category instead, precisely so that no second
+     * control character has to be discovered in production later.
+     * {@link Character#getType(int)} {@code == } {@link Character#CONTROL} is exactly category
+     * {@code Cc}, which is exactly the specification's two ranges U+0000–U+001F and
+     * U+007F–U+009F.
+     *
+     * <p>{@code Character.isWhitespace} and a {@code \s} regex are both wrong here and would pass
+     * this rule's happy cases while failing it: they disagree with the category over most of the
+     * upper range — U+0085 NEXT LINE is the case that catches it — and they would drag in SPACE,
+     * which is category {@code Zs} and stays valid, reversing a rule nobody asked to reverse.
+     *
+     * <p>The index reported is a <strong>code point</strong> index, counted the same way BR-05
+     * counts length, so the two reference refusals measure positions alike. For a reference such
+     * as an emoji followed by a TAB the two measures diverge — code point index 1, char index 2 —
+     * and a caller told "2" would inspect the wrong character.
+     */
+    private static Optional<RegisterSubmissionError> controlCharacterViolation(String externalRef) {
+        var codePoints = externalRef.codePoints().toArray();
+        return IntStream.range(0, codePoints.length)
+                .filter(index -> Character.getType(codePoints[index]) == Character.CONTROL)
+                .<RegisterSubmissionError>mapToObj(index ->
+                        new RegisterSubmissionError.ReferenceContainsControlCharacter(
+                                codePoints[index], index))
+                .findFirst();
     }
 
     /**

@@ -14,7 +14,7 @@ engineering decision with its reasoning. Nothing else in this document invents a
 
 Covers, and only covers, the two operations the spec puts in scope:
 
-- **register a submission** — one command, eight refusal reasons (BR-01..BR-15)
+- **register a submission** — one command, **nine** refusal reasons (BR-01..BR-15, BR-29)
 - **search submissions** — one query, one refusal reason (BR-16..BR-28)
 
 Module: **`submission`** — one business capability, nameable without "and" because registration
@@ -49,7 +49,7 @@ submission/
 │   ├── package-info.java                 @NullMarked
 │   ├── SubmissionId.java                 public record
 │   ├── RegisterSubmissionCommand.java    public record, standalone
-│   ├── RegisterSubmissionError.java      public sealed interface — 8 variants
+│   ├── RegisterSubmissionError.java      public sealed interface — 9 variants
 │   ├── SubmissionCommandFacade.java      public final class — register(...)
 │   ├── SubmissionCommandRepository.java  public interface — outbound port
 │   ├── SubmissionEventPublisher.java     public interface — outbound port
@@ -94,6 +94,7 @@ public record RegisterSubmissionCommand(@Nullable String externalRef,
 
     public static final int MAX_EXTERNAL_REF_LENGTH = 64;   // BR-05
     public static final int REQUIRED_INSURED_LIMIT_SCALE = 2; // BR-12
+    // BR-29 needs no constant: Unicode general category Cc is the definition, see §3.1.
 
     @Override
     public String toString() {
@@ -104,13 +105,13 @@ public record RegisterSubmissionCommand(@Nullable String externalRef,
 
 | Field | Required | Constraint | Refused as |
 |---|---|---|---|
-| `externalRef` | yes | present and **not empty** (BR-04); at most 64 characters, measured in **code points** (BR-05); compared byte-exactly, never trimmed or case-folded (BR-07) | `ReferenceMissing`, `ReferenceTooLong` |
+| `externalRef` | yes | present and **not empty** (BR-04); at most 64 characters, measured in **code points** (BR-05); contains **no character of Unicode general category Cc** (BR-29); compared byte-exactly, never trimmed or case-folded (BR-07) | `ReferenceMissing`, `ReferenceTooLong`, `ReferenceContainsControlCharacter` |
 | `insuredLimit` | yes | present (BR-10); `signum() > 0` (BR-11); `scale() == 2` exactly (BR-12); **no upper bound** (BR-13); euro by definition, no currency field anywhere (BR-14) | `InsuredLimitMissing`, `InsuredLimitNotPositive`, `InsuredLimitPrecisionInvalid` |
 
 Both components are `@Nullable` **on purpose**, and the record has **no compact constructor
 running `Objects.requireNonNull`**. Absence of either input is a business refusal the spec names
 (BR-04, BR-10); turning it into a programmer-error guard would convert a refusal reason into a
-crash and make two of the eight variants unreachable.
+crash and make two of the nine variants unreachable.
 
 Nothing else is accepted as input. Organisation, registering caller and registration moment come
 from `ActorContext` and from the `Clock` (BR-15).
@@ -121,13 +122,38 @@ and that no trimming is applied. A reference of `" "` is therefore valid and dis
 `hexagonal-cqrs-slice` skill's illustration uses `externalRef.isBlank()` and a variant named
 `BlankExternalReference` — **that example contradicts this spec and must not be copied.**
 
-**Code points, not `String.length()`.** The spec places character-set restrictions out of scope,
-so a reference may contain supplementary characters, where `String.length()` (UTF-16 code units)
-and the character count diverge. The measure is `externalRef.codePointCount(0, externalRef.length())`,
+**No control characters (BR-29), and `isEmpty()` is still not `isBlank()`.** These two rules are
+easy to conflate and the spec says plainly that they must not be: "control character" is **narrower
+than "whitespace"**. TAB (U+0009) and NEWLINE (U+000A) are both control characters and whitespace;
+**SPACE (U+0020) is only whitespace and is not a control character.** So a reference of `"   "`
+stays valid — present, non-empty, no control character, not normalised away — and BR-07's
+no-trimming rule is untouched. `isBlank()` would refuse it and would therefore still be wrong after
+BR-29, which is exactly the trap BR-29 makes tempting.
+
+The test is on category, not on a character list:
+
+```java
+externalRef.codePoints()
+        .filter(codePoint -> Character.getType(codePoint) == Character.CONTROL)
+        .findFirst()                                     // OptionalInt, the first offender
+```
+
+`Character.getType(cp) == Character.CONTROL` **is** Unicode general category Cc, which is exactly
+the spec's two ranges U+0000–U+001F and U+007F–U+009F — no wider, no narrower. Writing the ranges
+out by hand would work identically and is the more literal transcription of the rule; the category
+test is preferred because it cannot drift from the definition by a typo in a hex bound. Either way
+the check is **not** a list of known-bad characters: the product owner deliberately chose the whole
+category over the narrow NUL-only fix, precisely so that no second control character has to be
+discovered later.
+
+**Code points, not `String.length()`.** The spec restricts the reference's character set only
+through BR-29, so a reference may still contain supplementary characters, where `String.length()`
+(UTF-16 code units) and the character count diverge. The measure is
+`externalRef.codePointCount(0, externalRef.length())`,
 which is also exactly what PostgreSQL `VARCHAR(64)` counts — so a reference the domain accepts can
 never overflow the column. Flagged in [§11](#11-open-questions).
 
-### 3.2 `RegisterSubmissionError` — exactly eight variants
+### 3.2 `RegisterSubmissionError` — exactly nine variants
 
 One sealed interface for **this one operation**. It is not shared with Search, and it gains no
 variant the spec does not list.
@@ -147,6 +173,9 @@ public sealed interface RegisterSubmissionError {
     /** BR-05 — reference longer than 64 characters. */
     record ReferenceTooLong(int maxLength, int actualLength) implements RegisterSubmissionError { }
 
+    /** BR-29 — reference contains a character of Unicode general category Cc. */
+    record ReferenceContainsControlCharacter(int codePoint) implements RegisterSubmissionError { }
+
     /** BR-10 — no insured limit supplied. */
     record InsuredLimitMissing() implements RegisterSubmissionError { }
 
@@ -162,7 +191,7 @@ public sealed interface RegisterSubmissionError {
 }
 ```
 
-Spec refusal reason → variant, one to one, all eight:
+Spec refusal reason → variant, one to one, all nine, in the spec's own enumeration order:
 
 | # | Spec refusal reason | Variant | Rule | Raised in |
 |---|---|---|---|---|
@@ -170,10 +199,20 @@ Spec refusal reason → variant, one to one, all eight:
 | 2 | Role may not register | `RoleMayNotRegister` | BR-02 | aggregate factory |
 | 3 | Reference missing | `ReferenceMissing` | BR-04 | aggregate factory |
 | 4 | Reference too long | `ReferenceTooLong` | BR-05 | aggregate factory |
-| 5 | Insured limit missing | `InsuredLimitMissing` | BR-10 | aggregate factory |
-| 6 | Insured limit not positive | `InsuredLimitNotPositive` | BR-11 | aggregate factory |
-| 7 | Insured limit precision invalid | `InsuredLimitPrecisionInvalid` | BR-12 | aggregate factory |
-| 8 | Reference already used | `ReferenceAlreadyUsed` | BR-06, BR-09 | persistence adapter (unique index) |
+| 5 | Reference contains a control character | `ReferenceContainsControlCharacter` | **BR-29** | **aggregate factory** |
+| 6 | Insured limit missing | `InsuredLimitMissing` | BR-10 | aggregate factory |
+| 7 | Insured limit not positive | `InsuredLimitNotPositive` | BR-11 | aggregate factory |
+| 8 | Insured limit precision invalid | `InsuredLimitPrecisionInvalid` | BR-12 | aggregate factory |
+| 9 | Reference already used | `ReferenceAlreadyUsed` | BR-06, BR-09 | persistence adapter (unique index) |
+
+**`ReferenceContainsControlCharacter` is raised in the aggregate factory**, with the other
+reference-shape checks, and **not** in the persistence adapter. That matters, because the defect
+that produced BR-29 was an adapter-level rejection: the storage refused what the domain had
+accepted, so the caller got a 500 for an input the business had called valid. Moving the check into
+the domain is the whole point of the rule — the refusal is now decided at the only layer that is
+allowed to decide refusals, before anything is written, and it is reachable with no database at all.
+`ReferenceAlreadyUsed` remains the single adapter-raised variant, because uniqueness genuinely
+cannot be decided without the database (BR-09).
 
 **No variant carries the insured limit.** BR-22 forbids the amount in any log, "not partially, not
 rounded", explicitly including the refusals that are *about* the amount. An error record ends up in
@@ -185,6 +224,21 @@ confirms is readable. No variant carries `actorId` (see [§10](#10-logging-and-m
 
 `RoleMayNotRegister` carries the role rather than the actor: the role is the fact that caused the
 refusal, and it identifies nobody.
+
+**`ReferenceContainsControlCharacter` carries the offending code point as an `int`, and never the
+character itself.** An `int` such as `9` is not a sensitive value — the reference it came from is
+loggable in full under BR-23 — and it is what a caller needs in order to fix the input, reported as
+`U+0009`. The deliberate omission is the raw character: **writing an unescaped control character
+into a log line is log injection.** A reference containing NEWLINE, written raw into a log, forges
+what looks like an additional log entry; one containing a terminal escape sequence can manipulate
+whoever reads the log. That hazard exists precisely for the references BR-29 refuses, so the
+refusal path is the one place it is guaranteed to be reachable. Two consequences:
+
+- **The refusal's log entry and `ProblemDetail` must escape the reference, not omit it.** BR-23
+  wants the reference readable; `\u0009` is both readable and inert, and is more informative than
+  an invisible character. Escaping every code point of category Cc satisfies BR-22 and BR-23
+  together without either rule bending.
+- This is flagged for `@sec-reviewer` in [§11](#11-open-questions).
 
 ### 3.3 Facade
 
@@ -274,7 +328,7 @@ public interface SubmissionIdGenerator {
 publishing.** There is no transport, no topic, no message key, no wire contract and no relay
 anywhere in `domain/`, `query/` or this document's schema. `publish` returns `void` and not a
 `Result`, because the spec lists no refusal reason for announcing a fact: a `Result` there would
-force the facade to invent a ninth error variant for something the business never described as an
+force the facade to invent a tenth error variant for something the business never described as an
 outcome.
 
 `SubmissionIdGenerator` exists so the write side stays a pure function of its inputs: the aggregate
@@ -304,13 +358,23 @@ side effects, and the second can fail after the first has succeeded. If `publish
 - **The submission is registered.** The row is committed, it is findable by a search from the same
   organisation, and BR-15 is satisfied. The announcement is lost.
 - **The facade does not return a refusal.** There is no "could not announce" refusal reason in the
-  spec, and the list is exhaustive by construction, so inventing a ninth variant to describe an
+  spec, and the list is exhaustive by construction, so inventing a tenth variant to describe an
   infrastructure failure would contradict the specification. The adapter's failure surfaces as what
   it is — an infrastructure exception propagating out of `register` to the web edge, which answers
   `500`. Nothing is caught in `domain/`; the zero-throw rule bans creating exceptions, not
   letting an adapter's own propagate.
 - **So the caller can be told "failed" about a submission that exists.** That is the real cost, and
   it is a lost event plus a misleading answer, invisible until someone reconciles.
+- **This is close to the pattern BR-29 was written to stop, and the difference is worth stating.**
+  The spec now says a caller must never receive an unexplained failure for an input it calls valid,
+  and that if one does, the refusal catalogue is wrong. The NUL finding was exactly that: a property
+  **of the input** made the operation impossible for every attempt, deterministically, so it was a
+  missing refusal reason. A publishing failure is not a property of the input — no reference and no
+  amount makes it more or less likely, every input is still valid, and the state change did happen.
+  It is a transient infrastructure failure, which is the one thing a 500 legitimately means. The
+  distinction is the test to apply the next time this question comes up: **if the same input always
+  fails, it is a missing refusal reason; if the same input usually succeeds, it is an outage.** Flagged
+  in [§11](#11-open-questions) so it is reviewed rather than assumed.
 - **The one mitigation that comes free is worth naming:** the reference is a *caller-supplied*
   natural key, unique per organisation (BR-06). A caller who retries after an ambiguous failure gets
   `ReferenceAlreadyUsed`, not a second submission. The operation is therefore idempotent on the
@@ -378,9 +442,40 @@ Invariants, in the order `register` checks them, each producing exactly one vari
 | 1 | `role.canDecide()` — role is `UNDERWRITER` or `SENIOR_UNDERWRITER` | BR-02, BR-03 | `RoleMayNotRegister(role)` |
 | 2 | `externalRef != null && !externalRef.isEmpty()` | BR-04 | `ReferenceMissing()` |
 | 3 | `externalRef.codePointCount(0, externalRef.length()) <= 64` | BR-05 | `ReferenceTooLong(64, actual)` |
-| 4 | `insuredLimit != null` | BR-10 | `InsuredLimitMissing()` |
-| 5 | `insuredLimit.signum() > 0` | BR-11 | `InsuredLimitNotPositive()` |
-| 6 | `insuredLimit.scale() == 2` | BR-12 | `InsuredLimitPrecisionInvalid(2, actual)` |
+| 4 | no code point of `externalRef` has `Character.getType(cp) == Character.CONTROL` | **BR-29** | `ReferenceContainsControlCharacter(cp)` |
+| 5 | `insuredLimit != null` | BR-10 | `InsuredLimitMissing()` |
+| 6 | `insuredLimit.signum() > 0` | BR-11 | `InsuredLimitNotPositive()` |
+| 7 | `insuredLimit.scale() == 2` | BR-12 | `InsuredLimitPrecisionInvalid(2, actual)` |
+
+**The order is pinned, not incidental.** An input can violate two rules at once, and which refusal
+the caller is told about is then decided by this sequence — so it is part of the contract and tests
+assert it. Why each position:
+
+- **Role stays first (1).** A Viewer learns that they may not register before learning anything
+  about their input. Existing tests assert this, and it is also right on principle: telling an
+  unauthorised caller which of their field values is malformed leaks the validator's behaviour to
+  someone who is not allowed to use the operation at all. BR-29 does not disturb it.
+- **Presence before shape (2 before 3, 4).** Nothing can be said about the characters of an absent
+  or empty reference. Note that `""` trivially contains no control character, so a control-character
+  check placed earlier would *pass* on an empty reference and the real problem would be reported
+  later and less clearly.
+- **Length before content (3 before 4) — this is where BR-29 goes, and it is deliberate.** Three
+  reasons: it matches the spec's own enumeration order, in which "reference too long" is reason 4
+  and "reference contains a control character" is reason 5, so the design and the catalogue the
+  tests are written from agree; a 10 MB reference ending in a TAB is refused for length without
+  scanning it, which bounds the control-character scan to at most 64 code points; and length is the
+  coarser, more obvious defect, so reporting it first is what a submitting party would expect. A
+  reference that is both too long and contains a control character is therefore refused as
+  `ReferenceTooLong`.
+- **Reference fully validated before the amount is examined (4 before 5).** The reference is the
+  identifier the caller will quote back; it is reported first in full.
+- **Positivity before precision (6 before 7), unchanged and still load-bearing.** `BigDecimal.ZERO`
+  has `scale() == 0`, so it violates both BR-11 and BR-12. This order makes it
+  `InsuredLimitNotPositive`, the more fundamental fact, and the spec's own worked examples list
+  `0.00` under BR-11. Swapping these two silently changes the answer for an input the spec names.
+- **Uniqueness last of all**, in the adapter ([§9.3](#93-command-adapter)), after the aggregate has
+  accepted everything: it is the only refusal costing a database round trip, and under BR-29 it is
+  no longer reachable by a reference that the storage could not have held anyway.
 
 `ActorRole.canDecide()` already exists in `shared/kernel` and returns true for exactly the two
 roles BR-02/BR-03 permit. BR-03 is satisfied by *not* distinguishing them: no authority limit
@@ -726,6 +821,8 @@ CREATE TABLE submissions
     -- otherwise make both this column's equality test and the unique index below case-folding,
     -- silently breaking BR-06 and BR-07. VARCHAR(64) counts characters, which is exactly the
     -- code-point measure the domain applies for BR-05, so an accepted reference always fits.
+    -- NOTE: neither the length nor this collation ever constrained the reference's CHARACTER
+    -- SET. The type itself refuses U+0000 outright, below SQL. See §8.3.
     external_ref  VARCHAR(64) COLLATE "C" NOT NULL,
     -- Unconstrained NUMERIC on purpose. BR-13 states the insured limit has no upper bound and
     -- that none may be introduced without a business decision: NUMERIC(19, 2) would quietly
@@ -745,6 +842,10 @@ CREATE TABLE submissions
     -- Defence in depth for the domain invariants. Each one mirrors a business rule that is
     -- already refused in the aggregate; a row that violates one of them is a bug, not a refusal.
     CONSTRAINT ck_submissions_external_ref_not_empty CHECK (length(external_ref) > 0),          -- BR-04
+    -- BR-29. Mirrors the domain check, and cannot fully mirror it: see §8.3. The escape syntax
+    -- must be verified against PostgreSQL when the migration is written.
+    CONSTRAINT ck_submissions_external_ref_no_control_chars
+        CHECK (external_ref !~ '[\x01-\x1F\x7F-\x9F]'),                                         -- BR-29
     CONSTRAINT ck_submissions_insured_limit_positive CHECK (insured_limit > 0),                 -- BR-11
     CONSTRAINT ck_submissions_insured_limit_scale CHECK (scale(insured_limit) = 2)              -- BR-12
 );
@@ -797,6 +898,61 @@ so the common case — a tenant paging through recent submissions — never sort
 100 000 index entries. Keyset ("seek") paging would fix it, but the spec's page request is
 explicitly "which page is wanted", i.e. a page number, so `OFFSET` is what the business asked for.
 Recorded as a known characteristic rather than designed around.
+
+### 8.3 What the schema never constrained: the reference's character set
+
+This section exists because the first revision of this design reasoned carefully about
+`external_ref` — its length, its collation, its emptiness — and none of that reasoning touched the
+thing that actually broke.
+
+**`VARCHAR(64)` and `CHECK (length(external_ref) > 0)` were never what would stop a NUL byte.**
+They constrain how *many* characters the column holds and that it holds at least one; they say
+nothing about *which* characters. The thing that refused U+0000 was **the PostgreSQL text type
+itself, enforced by the driver** — a `text`/`varchar` value cannot contain U+0000 at all, because
+the wire protocol and the server's internal string representation are NUL-terminated. That is not a
+constraint anybody declared and not a constraint anybody can relax. It sits **below the level where
+business refusals are decided**, so when it fired it could only come out as an infrastructure
+failure: a 500, for an input the business had called valid, with no refusal reason to name.
+
+Two consequences for this design:
+
+- **The new `ck_submissions_external_ref_no_control_chars` CHECK is defence in depth and cannot be
+  complete.** It covers U+0001–U+001F and U+007F–U+009F. It **cannot cover U+0000**, the very
+  character that caused the finding, because such a value is rejected before any CHECK is evaluated
+  — there is no way to express it as a row the constraint could reject. The schema can therefore
+  mirror BR-29 for every control character except the one that started this. The real enforcement
+  of BR-29 is in the aggregate ([§4](#4-aggregate)); the CHECK is a backstop against a future write
+  path that bypasses the domain, which is exactly what a backstop is for.
+- **Defence in depth below a business rule is not a substitute for the rule.** Had the CHECK existed
+  from the start without BR-29, the caller would still have received a 500 — a constraint violation
+  is an infrastructure failure too. A character restriction only becomes a *refusal* when the
+  domain owns it.
+
+#### The general lesson, recorded because it was expensive
+
+**A business rule that grants unrestricted input is only as true as the storage beneath it.**
+"No restriction is imposed, because none is confirmed" reads like a safe, humble default — it
+commits to nothing and invents nothing. It is in fact a strong claim: it promises that *every* value
+can be registered. That promise is only as good as the narrowest constraint anywhere under it, and
+nobody had checked what that was.
+
+How it escaped every gate up to that point, which is the part worth remembering:
+
+- **Design review did not catch it.** This document reasoned about the character set and still
+  missed it, because it reasoned about the *declared* schema and the unstated constraint was in the
+  type's implementation.
+- **142 unit tests did not catch it.** They could not: the in-memory fake backing the port stores a
+  `String` in a `ConcurrentHashMap`, and a Java `String` holds U+0000 perfectly happily. The fake
+  was *more permissive than the real adapter*, so a passing test was evidence of nothing in the
+  exact place it was needed. This is the failure mode of test doubles, not an oversight in the tests.
+- **Adversarial testing against the real constraint caught it,** and only that.
+
+Carried forward as a rule of thumb for this repository: **a rule of the form "no restriction"
+deserves an explicit check against what the adapter can actually accept, and a test that runs
+against the real adapter, before it is written down as confirmed.** Concretely, for stage 3: a fake
+must not accept input the real store would reject for anything a rule claims is unrestricted — and
+where that cannot be guaranteed, the claim needs an integration test, not a unit test. Noted in
+[§11](#11-open-questions) as a standing item rather than as a one-off post-mortem.
 
 ---
 
@@ -928,7 +1084,7 @@ aggregate (it cannot: `Submission` is package-private in another package).
 | Field | May it be logged? | Rule | How this design enforces it |
 |---|---|---|---|
 | `insuredLimit` | **Never** | BR-22 | masked `***` in the `toString()` of `RegisterSubmissionCommand`, `SubmissionSnapshot`, `SubmissionSummaryView`, `SubmissionRegistered`; no error variant carries the amount; no `ProblemDetail` echoes it |
-| `externalRef` | Yes, in full | BR-23 | printed plainly in every `toString()`; carried by `ReferenceAlreadyUsed` |
+| `externalRef` | Yes, in full — **with category-Cc code points escaped as `\uXXXX`** | BR-23, BR-29 | printed in every `toString()`; carried by `ReferenceAlreadyUsed`. Escaping is not redaction: the value stays complete and readable, and an unescaped control character in a log line is log injection ([§3.2](#32-registersubmissionerror--exactly-nine-variants)) |
 | `tenantId` | Not classified | spec §6 | printed; it is the isolation boundary, not a secret |
 | `actorId` / `registeredBy` | **Not logged** | OPEN-01 | masked `***` in the `toString()` of `SubmissionSnapshot`, `SubmissionSummaryView` and `SubmissionRegistered`; no error variant carries it |
 | `registeredAt` | Not classified | spec §6 | printed |
@@ -972,11 +1128,12 @@ Not an empty section, and none of these blocks stage 3.
    `CallerNotIdentified`, never an invented actor ([§13.1](#131-web-edge)). What remains open is the
    identity source itself — an **open dependency for stage 4 and for `@sec-reviewer`**. A
    header-trusting resolver is not authentication and must never ship outside a test profile.
-3. **"At most 64 characters" — code points or UTF-16 code units?** The spec places character-set
-   restrictions out of scope, so a reference may contain supplementary characters, where the two
-   measures differ. Code points chosen, because it matches PostgreSQL `VARCHAR(64)` and so cannot
-   overflow the column. A reference of 64 emoji is accepted under this reading and would be refused
-   under the other.
+3. **"At most 64 characters" — code points or UTF-16 code units?** BR-29 restricts the reference's
+   character set only to the extent of excluding category Cc, so a reference may still contain
+   supplementary characters, where the two measures differ. Code points chosen, because it matches
+   PostgreSQL `VARCHAR(64)` and so cannot overflow the column. A reference of 64 emoji is accepted
+   under this reading and would be refused under the other. BR-29 does not settle this and the same
+   measure is now used by two rules, so getting it wrong misreports two refusals instead of one.
 4. **Masking the insured-limit filter bounds.** An interpretation of BR-22, not a stated rule.
    Flagged rather than applied silently.
 5. **"Newest first" is not a total order.** `registered_at` is not unique, so BR-24 alone cannot
@@ -999,6 +1156,26 @@ Not an empty section, and none of these blocks stage 3.
 9. **A single `Clock` bean.** Declared in `SubmissionConfiguration` because no shared
    configuration package exists. The second module that needs one must move it to a shared
    configuration rather than declare a second.
+10. **Logging a refused reference requires escaping, and that needs confirming against BR-23.**
+    BR-23 says the reference may appear in a log "in full and readable". For a reference refused
+    under BR-29 — the only references that can now contain a control character — writing it raw is
+    **log injection**: a NEWLINE forges an extra log entry and an escape sequence can manipulate
+    whoever reads the log. This design escapes every category-Cc code point as `\uXXXX`, which is
+    both readable and inert, and argues that satisfies BR-23 rather than bending it. An
+    interpretation, not a stated rule, and the only item on this list with a security consequence
+    if it is got wrong. For `@sec-reviewer`.
+11. **"No restriction" rules need an adapter check before they are confirmed.** The standing lesson
+    from [§8.3](#83-what-the-schema-never-constrained-the-references-character-set), carried
+    forward rather than left in a post-mortem: a rule that grants unrestricted input is a strong
+    claim, it is only as true as the narrowest constraint beneath it, and a unit test against a
+    permissive fake cannot verify it. Applies to BR-13's unbounded amount (item 7) today, and to
+    the next such rule whenever it is written.
+12. **A 500 for a valid input is now explicitly a specification defect, and one path can still
+    produce one.** The spec's refusal-reason definition says a caller must never receive an
+    unexplained failure for an input it calls valid. A publishing failure
+    ([§3.5](#35-the-port-split-and-the-trade-off-it-accepts)) still answers `500`. The argument that
+    this is legitimately an outage rather than a missing refusal reason — the same input usually
+    succeeds, and the state change did happen — is made there and should be reviewed, not assumed.
 
 ### Settled since the first revision of this document
 
@@ -1009,6 +1186,12 @@ Not an empty section, and none of these blocks stage 3.
 - **Publishing is a port, not a transport** — architectural correction accepted; it withdrew the
   combined port ([§3.5](#35-the-port-split-and-the-trade-off-it-accepts)) and removed every topic,
   message key, wire contract and relay from this design ([§12](#12-events-and-the-publishing-port)).
+- **Control characters in a reference are refused (BR-29)** — decided by the product owner on
+  2026-11-02 after exploratory testing, who was offered the narrow NUL-only fix and chose the whole
+  of category Cc. This design's earlier "no character-set restriction exists" reasoning is
+  **superseded**, and the reversal it carries (TAB, NEWLINE and NUL move from valid to refused) is
+  deliberate. SPACE is untouched: it is not a control character, and a reference of spaces is still
+  valid, still not trimmed.
 
 ### Contradiction found — reported, and since fixed
 
@@ -1021,6 +1204,12 @@ BR-22. **That skill has since been corrected** (`isEmpty()`, variant names match
 two new checklist items: no sensitive value in an error record, and validation must match the
 specification literally). The rule still stands in this design for anyone reading an older copy:
 **`isEmpty()`, and no amount inside any error variant.**
+
+BR-29 does **not** reopen that question, and this is the one place the two are easy to confuse.
+`isBlank()` is still wrong: it refuses a reference of spaces, which the spec still calls valid.
+BR-29 refuses category Cc, which excludes SPACE. A reader who takes BR-29 as licence to switch to
+`isBlank()` reintroduces the original defect and breaks a rule the product owner has now confirmed
+twice.
 
 ---
 
@@ -1085,7 +1274,7 @@ candidates, with no choice expressed between them:
 | A table written in the same transaction as the insert, plus a separate relay | the fact survives a crash; at-least-once delivery | needs a transaction spanning both port calls, a relay, and a decision about where the boundary lives ([§9.3](#93-command-adapter)) |
 | Any broker client, direct | reaches other systems now | a dual write: the commit and the send are two systems, and a crash between them loses the fact with no trace |
 
-Three constraints the choice must respect, all of which follow from decisions already made rather
+Four constraints the choice must respect, all of which follow from decisions already made rather
 than from any transport:
 
 - **It must not log the insured limit** (BR-22, [§10](#10-logging-and-masking)), and it must not log
@@ -1098,6 +1287,12 @@ than from any transport:
   property of the event (one submission's facts belong in one sequence), not a design choice being
   smuggled in: the `aggregateId` accessor on the sealed interface is all the adapter needs, and this
   document names no mechanism that would use it.
+- **Whatever it writes to, check first that the store can hold every value the event carries** —
+  the lesson of [§8.3](#83-what-the-schema-never-constrained-the-references-character-set), applied
+  before rather than after. The event carries `externalRef`, and BR-29 now guarantees it is free of
+  control characters, so a line-delimited or text-based format is safe from a reference that breaks
+  a record boundary. That guarantee comes from the domain, not from the adapter, and an adapter must
+  not quietly assume anything stronger than it.
 
 `outbox_events` and `inbox_events` from `V1__init_outbox_and_inbox.sql` **stay where they are and
 this module does not have to use them.** Their existence is not an argument for any of the rows
@@ -1164,9 +1359,13 @@ record RegisterSubmissionRequest(@Nullable String externalRef, @Nullable BigDeci
 ```
 
 - **No Bean Validation annotations on the request record.** `spring-boot-starter-validation` is on
-  the classpath, but `@NotNull` / `@Positive` / `@Digits` would intercept BR-04, BR-10, BR-11 and
-  BR-12 and answer with a framework-shaped 400, bypassing the named refusal reasons and making four
-  of the eight error variants unreachable. Validation of business inputs happens in the aggregate.
+  the classpath, but `@NotNull` / `@Positive` / `@Digits` / `@Pattern` would intercept BR-04,
+  BR-05, BR-29, BR-10, BR-11 and BR-12 and answer with a framework-shaped 400, bypassing the named
+  refusal reasons and making **six of the nine** error variants unreachable. Validation of business
+  inputs happens in the aggregate. BR-29 makes this more tempting, not less — a `@Pattern` is the
+  obvious way to express "no control characters" and is exactly the wrong place for it: it would
+  turn the refusal the product owner just asked for back into an unnamed framework error, which is
+  the defect BR-29 exists to fix.
 - **`insuredLimit` must be declared `BigDecimal`.** Any `double` or `float` in the request record
   destroys the scale and makes BR-12 unenforceable. Nothing in the pipeline normalises it.
 - **Binding the actor, fail-closed.** `ActorContextResolver` returns `Optional<ActorContext>`; the
@@ -1198,13 +1397,22 @@ record RegisterSubmissionRequest(@Nullable String externalRef, @Nullable BigDeci
 
 - **Folding the `Result`.** An exhaustive `switch` over the sealed error type with **no `default`
   branch**, so the compiler reports any future variant instead of a 500 appearing in production.
+  BR-29 is the worked example of why that matters: adding a ninth variant to the sealed interface
+  makes every `switch` over it fail to compile until the new refusal is given a status and a
+  message. A `default` branch would have absorbed it silently and shipped the new refusal as
+  whatever the fallback happened to be.
+
+- **The reference is escaped on the way into any `ProblemDetail` or log line** — every code point
+  of category Cc rendered as `\uXXXX`. See [§3.2](#32-registersubmissionerror--exactly-nine-variants):
+  a raw control character in a log is log injection, and the BR-29 refusal path is where such a
+  reference is guaranteed to appear.
 
 | Outcome | HTTP |
 |---|---|
 | success | `201 Created`, `Location: /api/submissions/{id}`, body carries the id |
 | `CallerNotIdentified` | `401` |
 | `RoleMayNotRegister` | `403` |
-| `ReferenceMissing`, `ReferenceTooLong`, `InsuredLimitMissing`, `InsuredLimitNotPositive`, `InsuredLimitPrecisionInvalid` | `400` |
+| `ReferenceMissing`, `ReferenceTooLong`, `ReferenceContainsControlCharacter`, `InsuredLimitMissing`, `InsuredLimitNotPositive`, `InsuredLimitPrecisionInvalid` | `400` |
 | `ReferenceAlreadyUsed` | `409` |
 
 `GET /api/submissions?reference=&insuredLimitFrom=&insuredLimitTo=&registeredFrom=&registeredTo=&page=&size=`
@@ -1232,8 +1440,11 @@ Explicitly out of scope, so the next agent does not add it:
 - **No currency field** in any record, column, event or API payload. Every amount is euro by
   definition (BR-14).
 - **No maximum insured limit** (BR-13) — hence unconstrained `NUMERIC`, not `NUMERIC(19, 2)`.
-- **No character-set restriction on the reference**, no trimming, no case folding, no Unicode
-  normalisation (BR-07). Hence `COLLATE "C"`.
+- **No character-set restriction on the reference beyond BR-29.** Control characters (category Cc)
+  are refused and that is the **only** such restriction: no trimming, no case folding, no Unicode
+  normalisation, no allow-list of scripts, no rejection of spaces, punctuation, symbols or emoji
+  (BR-07, BR-29). Hence `COLLATE "C"`. A wider character rule needs a business decision, exactly as
+  BR-29 got one.
 - **No retention or archival** of submissions.
 - **No `Forbidden` outcome and no cross-tenant lookup.** Another organisation's submission is
   invisible, never forbidden (BR-17).

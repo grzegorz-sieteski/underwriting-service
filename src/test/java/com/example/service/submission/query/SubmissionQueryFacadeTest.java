@@ -111,9 +111,14 @@ class SubmissionQueryFacadeTest {
 
         @Test
         @DisplayName("a search is refused when no caller is known")
-        void unidentified_caller_is_refused() {
-            var result = facade.search(unfiltered(0, 100));
+        void shouldRefuseSearchWhenCallerIsUnidentified() {
+            // Given
+            var query = unfiltered(0, 100);
 
+            // When
+            var result = facade.search(query);
+
+            // Then
             assertThat(result).isEqualTo(
                     Result.<SubmissionPageView, SearchSubmissionsError>failure(
                             new SearchSubmissionsError.CallerNotIdentified()));
@@ -121,12 +126,14 @@ class SubmissionQueryFacadeTest {
 
         @Test
         @DisplayName("search has exactly one refusal reason, which is deliberate and complete")
-        void search_has_exactly_one_refusal_reason() {
+        void shouldExposeExactlyOneRefusalReasonWhenInspectingErrorHierarchy() {
+            // Given & When
             var variantNames = Arrays.stream(
                             SearchSubmissionsError.class.getPermittedSubclasses())
                     .map(Class::getSimpleName)
                     .toList();
 
+            // Then
             assertThat(variantNames).containsExactly("CallerNotIdentified");
         }
     }
@@ -137,22 +144,31 @@ class SubmissionQueryFacadeTest {
     @DisplayName("Every role may search, and the role changes nothing (BR-16)")
     class RoleIsIrrelevant {
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] role={0}")
         @EnumSource(ActorRole.class)
         @DisplayName("every role — viewer included — gets the identical page and count")
-        void every_role_gets_the_same_answer(ActorRole role) {
+        void shouldReturnIdenticalResultsWhenAnyRoleSearches(ActorRole role) {
+            // Given
             var actor = new ActorContext(TENANT_A, "actor-" + role, role);
+            var query = unfiltered(0, 100);
 
-            var result = searchAs(actor, unfiltered(0, 100));
+            // When
+            var result = searchAs(actor, query);
 
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5, s4, s3, s2, s1), 5L, 0, 100));
         }
 
         @Test
         @DisplayName("a viewer, who may not register at all, searches without restriction")
-        void viewer_searches_without_restriction() {
-            var result = searchAs(VIEWER_OF_A, byAmount("200.00", "400.00"));
+        void shouldReturnFilteredSubmissionsWhenViewerSearches() {
+            // Given
+            var query = byAmount("200.00", "400.00");
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s4, s3, s2), 3L, 0, 100));
         }
     }
@@ -165,18 +181,28 @@ class SubmissionQueryFacadeTest {
 
         @Test
         @DisplayName("another organisation's submission is absent from the page")
-        void other_organisation_is_absent_from_the_page() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(0, 100));
+        void shouldExcludeOtherTenantSubmissionsFromResultsPageWhenSearching() {
+            // Given
+            var query = unfiltered(0, 100);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5, s4, s3, s2, s1), 5L, 0, 100));
         }
 
         @Test
         @DisplayName("another organisation's submission is absent from the total match count too, "
                 + "so its existence is not revealed by a number")
-        void other_organisation_is_absent_from_the_count() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(0, 100));
+        void shouldExcludeOtherTenantSubmissionsFromTotalMatchCountWhenCounting() {
+            // Given
+            var query = unfiltered(0, 100);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result.toOptional()).hasValueSatisfying(view ->
                     assertThat(view.totalMatchCount()).isEqualTo(5L));
         }
@@ -184,20 +210,29 @@ class SubmissionQueryFacadeTest {
         @Test
         @DisplayName("asking by a reference only another organisation holds is an empty success, "
                 + "never a refusal: there is no forbidden outcome anywhere")
-        void other_organisations_reference_is_invisible_not_forbidden() {
+        void shouldReturnEmptyPageWhenSearchingByReferenceOwnedByOtherTenant() {
+            // Given
             repository.givenSubmission(TENANT_B, uuid(8), "ONLY-IN-B", "999.00", at(6));
+            var query = byReference("ONLY-IN-B");
 
-            var result = searchAs(VIEWER_OF_A, byReference("ONLY-IN-B"));
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
 
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 0L, 0, 100));
         }
 
         @Test
         @DisplayName("each organisation sees only its own submission under a shared reference")
-        void a_shared_reference_resolves_per_organisation() {
-            var ownOnly = searchAs(VIEWER_OF_A, byReference("S-1"));
+        void shouldReturnOnlyOwnSubmissionWhenSharedReferenceSearched() {
+            // Given
+            var query = byReference("S-1");
 
-            assertThat(ownOnly).isEqualTo(page(List.of(s1), 1L, 0, 100));
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
+            assertThat(result).isEqualTo(page(List.of(s1), 1L, 0, 100));
         }
     }
 
@@ -209,66 +244,97 @@ class SubmissionQueryFacadeTest {
 
         @Test
         @DisplayName("a search with no criteria returns every submission of the own organisation")
-        void no_criteria_returns_everything_own() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(0, 100));
+        void shouldReturnAllOwnSubmissionsWhenNoCriteriaProvided() {
+            // Given
+            var query = unfiltered(0, 100);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5, s4, s3, s2, s1), 5L, 0, 100));
         }
 
         @Test
         @DisplayName("the reference filter narrows to at most one submission")
-        void reference_filter_narrows_to_one() {
-            var result = searchAs(VIEWER_OF_A, byReference("S-3"));
+        void shouldNarrowToOneSubmissionWhenReferenceFilterProvided() {
+            // Given
+            var query = byReference("S-3");
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s3), 1L, 0, 100));
         }
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] nearMiss={0}")
         @ValueSource(strings = {"s-3", "S-3 ", " S-3", "S3"})
         @DisplayName("the reference filter compares exactly as supplied: no case folding and no "
                 + "trimming, so a near-miss is an empty success (BR-07)")
-        void reference_filter_is_exact(String nearMiss) {
-            var result = searchAs(VIEWER_OF_A, byReference(nearMiss));
+        void shouldReturnEmptyPageWhenReferenceIsNearMiss(String nearMiss) {
+            // Given
+            var query = byReference(nearMiss);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 0L, 0, 100));
         }
 
         @Test
         @DisplayName("both insured limit bounds are inclusive")
-        void amount_bounds_are_inclusive() {
-            var result = searchAs(VIEWER_OF_A, byAmount("200.00", "400.00"));
+        void shouldIncludeBothBoundariesWhenFilteringByInsuredLimit() {
+            // Given
+            var query = byAmount("200.00", "400.00");
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s4, s3, s2), 3L, 0, 100));
         }
 
         @Test
         @DisplayName("both registration moment bounds are inclusive")
-        void moment_bounds_are_inclusive() {
-            var result = searchAs(VIEWER_OF_A, byMoment(at(1), at(3)));
+        void shouldIncludeBothBoundariesWhenFilteringByRegistrationMoment() {
+            // Given
+            var query = byMoment(at(1), at(3));
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s4, s3, s2), 3L, 0, 100));
         }
 
         @Test
         @DisplayName("two criteria narrow together, not separately")
-        void two_criteria_are_combined_with_and() {
+        void shouldCombineMultipleCriteriaWithAndWhenFiltering() {
+            // Given
             var query = new SearchSubmissionsQuery(null, new BigDecimal("200.00"), null,
                     null, at(2), 0, 100);
 
+            // When
             var result = searchAs(VIEWER_OF_A, query);
 
+            // Then
             assertThat(result).isEqualTo(page(List.of(s3, s2), 2L, 0, 100));
         }
 
         @Test
         @DisplayName("a filter bound may be negative, zero or carry any scale: BR-11 and BR-12 are "
                 + "rules about what may be REGISTERED and are not re-imposed on a comparison value")
-        void filter_bounds_are_not_revalidated() {
+        void shouldAllowAnyScaleOrSignWhenFilterBoundsSupplied() {
+            // Given
             var query = new SearchSubmissionsQuery(null, new BigDecimal("-1"),
                     new BigDecimal("99999.5"), null, null, 0, 100);
 
+            // When
             var result = searchAs(VIEWER_OF_A, query);
 
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5, s4, s3, s2, s1), 5L, 0, 100));
         }
     }
@@ -282,9 +348,14 @@ class SubmissionQueryFacadeTest {
         @Test
         @DisplayName("a search that matches no submission succeeds with an empty page and a count "
                 + "of zero")
-        void matching_nothing_is_an_empty_success() {
-            var result = searchAs(VIEWER_OF_A, byReference("NOT-A-REFERENCE"));
+        void shouldReturnEmptySuccessWhenNoSubmissionMatches() {
+            // Given
+            var query = byReference("NOT-A-REFERENCE");
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 0L, 0, 100));
         }
     }
@@ -298,29 +369,42 @@ class SubmissionQueryFacadeTest {
         @Test
         @DisplayName("an insured limit range whose lower bound exceeds its upper bound is a "
                 + "SUCCESSFUL empty page with a total match count of zero — not a refusal")
-        void contradictory_amount_range_is_an_empty_success() {
-            var result = searchAs(VIEWER_OF_A, byAmount("5000.00", "1000.00"));
+        void shouldReturnEmptySuccessWhenInsuredLimitRangeIsContradictory() {
+            // Given
+            var query = byAmount("5000.00", "1000.00");
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 0L, 0, 100));
         }
 
         @Test
         @DisplayName("a registration moment range whose lower bound is after its upper bound is "
                 + "identically a SUCCESSFUL empty page with a count of zero — not a refusal")
-        void contradictory_moment_range_is_an_empty_success() {
-            var result = searchAs(VIEWER_OF_A, byMoment(at(4), at(0)));
+        void shouldReturnEmptySuccessWhenMomentRangeIsContradictory() {
+            // Given
+            var query = byMoment(at(4), at(0));
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 0L, 0, 100));
         }
 
         @Test
         @DisplayName("both ranges contradicting at once is still one empty success")
-        void both_ranges_contradicting_is_still_a_success() {
+        void shouldReturnEmptySuccessWhenBothRangesAreContradictory() {
+            // Given
             var query = new SearchSubmissionsQuery(null, new BigDecimal("5000.00"),
                     new BigDecimal("1000.00"), at(4), at(0), 0, 100);
 
+            // When
             var result = searchAs(VIEWER_OF_A, query);
 
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 0L, 0, 100));
         }
     }
@@ -333,9 +417,14 @@ class SubmissionQueryFacadeTest {
 
         @Test
         @DisplayName("submissions come back ordered by registration moment, newest first")
-        void newest_first() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(0, 100));
+        void shouldReturnSubmissionsOrderedByRegistrationMomentNewestFirst() {
+            // Given
+            var query = unfiltered(0, 100);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result.toOptional()).hasValueSatisfying(view ->
                     assertThat(view.submissions())
                             .extracting(SubmissionSummaryView::externalRef)
@@ -351,106 +440,146 @@ class SubmissionQueryFacadeTest {
 
         @Test
         @DisplayName("paging is zero-based: page 0 is the FIRST page, not the second")
-        void paging_is_zero_based() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(0, 2));
+        void shouldReturnFirstPageWhenPageIsZero() {
+            // Given
+            var query = unfiltered(0, 2);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5, s4), 5L, 0, 2));
         }
 
         @Test
         @DisplayName("page 1 is the second page")
-        void page_one_is_the_second_page() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(1, 2));
+        void shouldReturnSecondPageWhenPageIsOne() {
+            // Given
+            var query = unfiltered(1, 2);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s3, s2), 5L, 1, 2));
         }
 
         @Test
         @DisplayName("an oversized page request is clamped, never refused, and the answer echoes "
                 + "the size that was APPLIED — not the size that was asked for")
-        void oversized_size_is_clamped_and_echoed() {
-            // A caller who asked for 500, got 100 rows, and then asked for page 1 size 500 would
-            // skip rows 100-499 and break BR-28. Echoing the applied size is what prevents that,
-            // so this is a correctness condition, not a nicety.
-            var result = searchAs(VIEWER_OF_A, unfiltered(0, 500));
+        void shouldClampAndEchoAppliedSizeWhenPageSizeIsOversized() {
+            // Given
+            var query = unfiltered(0, 500);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5, s4, s3, s2, s1), 5L, 0, 100));
         }
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] requestedSize={0}")
         @ValueSource(ints = {0, -1, -500, Integer.MIN_VALUE})
         @DisplayName("a degenerate page size clamps up to one row and still succeeds: search has "
                 + "exactly one refusal reason, so a malformed page request cannot be refused")
-        void degenerate_size_clamps_up_to_one(int requestedSize) {
-            var result = searchAs(VIEWER_OF_A, unfiltered(0, requestedSize));
+        void shouldClampToOneRowWhenPageSizeIsDegenerate(int requestedSize) {
+            // Given
+            var query = unfiltered(0, requestedSize);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5), 5L, 0, 1));
         }
 
         @Test
         @DisplayName("a negative page clamps to the first page and still succeeds")
-        void negative_page_clamps_to_zero() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(-3, 2));
+        void shouldClampToFirstPageWhenPageNumberIsNegative() {
+            // Given
+            var query = unfiltered(-3, 2);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(s5, s4), 5L, 0, 2));
         }
 
         @Test
         @DisplayName("the total match count is the same on every page, and ignores which page was "
                 + "asked for (BR-26)")
-        void total_count_is_independent_of_the_page_requested() {
-            var totals = Stream.of(0, 1, 2, 7)
+        void shouldMaintainConstantTotalMatchCountAcrossAllPages() {
+            // Given
+            var pages = List.of(0, 1, 2, 7);
+
+            // When
+            var totals = pages.stream()
                     .map(p -> searchAs(VIEWER_OF_A, unfiltered(p, 2)))
                     .map(result -> result.toOptional()
                             .map(SubmissionPageView::totalMatchCount)
                             .orElse(-1L))
                     .toList();
 
+            // Then
             assertThat(totals).containsExactly(5L, 5L, 5L, 5L);
         }
 
         @Test
         @DisplayName("a page beyond the end of the matching set is a success carrying an empty "
                 + "page and the TRUE total match count (BR-26, BR-27)")
-        void page_past_the_end_is_an_empty_success_with_the_true_total() {
-            var result = searchAs(VIEWER_OF_A, unfiltered(10, 2));
+        void shouldReturnEmptyPageWithTrueTotalCountWhenPageExceedsMatchingSet() {
+            // Given
+            var query = unfiltered(10, 2);
 
+            // When
+            var result = searchAs(VIEWER_OF_A, query);
+
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 5L, 10, 2));
         }
 
         @Test
         @DisplayName("a page beyond the end of an EMPTY matching set is a success with a total of "
                 + "zero")
-        void page_past_the_end_of_an_empty_set_is_a_success() {
+        void shouldReturnEmptyPageWithZeroCountWhenEmptySetPagingExceeded() {
+            // Given
             var query = new SearchSubmissionsQuery("NOT-A-REFERENCE", null, null, null, null, 4, 2);
 
+            // When
             var result = searchAs(VIEWER_OF_A, query);
 
+            // Then
             assertThat(result).isEqualTo(page(List.of(), 0L, 4, 2));
         }
 
         @Test
         @DisplayName("paging reaches the whole matching set once each: nothing skipped, nothing "
                 + "twice (BR-28)")
-        void paging_reaches_everything_exactly_once() {
-            var paged = Stream.of(0, 1, 2)
+        void shouldReachEverySubmissionExactlyOnceWhenPagingThroughAllResults() {
+            // Given
+            var pages = List.of(0, 1, 2);
+
+            // When
+            var paged = pages.stream()
                     .map(p -> searchAs(VIEWER_OF_A, unfiltered(p, 2)))
                     .flatMap(result -> result.toOptional().stream())
                     .flatMap(view -> view.submissions().stream())
                     .toList();
 
+            // Then
             assertThat(paged).containsExactly(s5, s4, s3, s2, s1).doesNotHaveDuplicates();
         }
 
         @Test
         @DisplayName("submissions registered in the identical moment still page without skipping "
                 + "or repeating one, because the order is total")
-        void ties_in_the_registration_moment_do_not_break_paging() {
-            // "Newest first" alone is not a total order: two submissions can share a moment, and
-            // under LIMIT/OFFSET a tied row can then appear on two pages or on neither.
+        void shouldPageWithoutDuplicatesOrSkipsWhenRegistrationMomentsTie() {
+            // Given
             repository.givenSubmission(TENANT_A, uuid(6), "S-3A", "310.00", at(2));
             repository.givenSubmission(TENANT_A, uuid(7), "S-3B", "320.00", at(2));
 
+            // When
             var wholeSet = searchAs(VIEWER_OF_A, unfiltered(0, 100));
             var pagedByThree = Stream.of(0, 1, 2)
                     .map(p -> searchAs(VIEWER_OF_A, unfiltered(p, 3)))
@@ -458,6 +587,7 @@ class SubmissionQueryFacadeTest {
                     .flatMap(view -> view.submissions().stream())
                     .toList();
 
+            // Then
             assertThat(pagedByThree).doesNotHaveDuplicates().hasSize(7);
             assertThat(wholeSet.toOptional()).hasValueSatisfying(view ->
                     assertThat(view.submissions()).isEqualTo(pagedByThree));

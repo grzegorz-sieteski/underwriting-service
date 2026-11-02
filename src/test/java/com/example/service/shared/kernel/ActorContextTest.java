@@ -22,53 +22,71 @@ class ActorContextTest {
 
     @Test
     @DisplayName("binds the actor for the duration of the call and returns the value")
-    void binds_actor_during_call() {
+    void shouldBindActorDuringCallWhenCallWithInvoked() {
+        // Given
         var actor = new ActorContext(TENANT, "uw-01", ActorRole.UNDERWRITER);
 
+        // When
         var seen = ActorContext.callWith(actor, () -> ActorContext.current().orElse(null));
 
+        // Then
         assertThat(seen).isEqualTo(actor);
     }
 
     @Test
     @DisplayName("unbinds automatically once the call returns")
-    void unbinds_after_call() {
+    void shouldUnbindActorAutomaticallyWhenCallReturns() {
+        // Given
         var actor = new ActorContext(TENANT, "uw-01", ActorRole.UNDERWRITER);
 
+        // When
         ActorContext.callWith(actor, () -> "ignored");
 
+        // Then
         assertThat(ActorContext.current()).isEmpty();
     }
 
     @Test
     @DisplayName("current() is empty outside any binding instead of throwing")
-    void current_is_empty_when_unbound() {
-        assertThat(ActorContext.current()).isEmpty();
+    void shouldReturnEmptyWhenNoActorBound() {
+        // Given no binding
+
+        // When
+        var current = ActorContext.current();
+
+        // Then
+        assertThat(current).isEmpty();
     }
 
     @Test
     @DisplayName("runWith binds the actor for a side-effecting operation")
-    void run_with_binds_actor() {
+    void shouldBindActorDuringRunWithWhenRunnableExecuted() {
+        // Given
         var actor = new ActorContext(TENANT, "uw-02", ActorRole.SENIOR_UNDERWRITER);
         var captured = new AtomicReference<ActorContext>();
 
+        // When
         ActorContext.runWith(actor, () -> captured.set(ActorContext.current().orElse(null)));
 
+        // Then
         assertThat(captured).hasValue(actor);
     }
 
     @Test
     @DisplayName("tenant check is the basis of every BOLA rule")
-    void tenant_check_distinguishes_tenants() {
+    void shouldDistinguishTenantsWhenBelongsToTenantChecked() {
+        // Given
         var actor = new ActorContext(TENANT, "viewer-01", ActorRole.VIEWER);
 
+        // When & Then
         assertThat(actor.belongsToTenant(TENANT)).isTrue();
         assertThat(actor.belongsToTenant(OTHER_TENANT)).isFalse();
     }
 
     @Test
     @DisplayName("only underwriter roles may decide")
-    void only_underwriters_may_decide() {
+    void shouldAllowDecisionsOnlyForUnderwriterRolesWhenCanDecideChecked() {
+        // Given & When & Then
         assertThat(ActorRole.VIEWER.canDecide()).isFalse();
         assertThat(ActorRole.UNDERWRITER.canDecide()).isTrue();
         assertThat(ActorRole.SENIOR_UNDERWRITER.canDecide()).isTrue();

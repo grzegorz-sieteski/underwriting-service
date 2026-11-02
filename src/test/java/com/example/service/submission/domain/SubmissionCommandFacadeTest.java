@@ -93,10 +93,12 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("registration is refused when no caller is known")
-        void unidentified_caller_is_refused() {
-            // Given no actor bound at all — exactly what a fail-closed resolver produces
+        void shouldRefuseRegistrationWhenCallerIsUnidentified() {
+            // Given
+            var command = new RegisterSubmissionCommand("ABC-1", VALID_LIMIT);
+
             // When
-            var result = facade.register(new RegisterSubmissionCommand("ABC-1", VALID_LIMIT));
+            var result = facade.register(command);
 
             // Then
             assertThat(result).isEqualTo(refused(new RegisterSubmissionError.CallerNotIdentified()));
@@ -104,9 +106,14 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("an unidentified caller records nothing and announces nothing")
-        void unidentified_caller_changes_nothing() {
-            facade.register(new RegisterSubmissionCommand("ABC-1", VALID_LIMIT));
+        void shouldRecordNothingAndAnnounceNothingWhenCallerIsUnidentified() {
+            // Given
+            var command = new RegisterSubmissionCommand("ABC-1", VALID_LIMIT);
 
+            // When
+            facade.register(command);
+
+            // Then
             assertThat(repository.storedSubmissions()).isEmpty();
             assertThat(eventPublisher.publishedEvents()).isEmpty();
         }
@@ -120,35 +127,43 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("an underwriter may register")
-        void underwriter_may_register() {
+        void shouldAcceptRegistrationWhenCallerIsUnderwriter() {
+            // Given & When
             var result = registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(accepted());
         }
 
         @Test
         @DisplayName("a senior underwriter may register, and is treated identically: "
                 + "no authority limit applies in this feature")
-        void senior_underwriter_may_register() {
+        void shouldAcceptRegistrationWhenCallerIsSeniorUnderwriter() {
+            // Given & When
             var result = registerAs(SENIOR_UNDERWRITER, "ABC-1", new BigDecimal("999999999.99"));
 
+            // Then
             assertThat(result).isEqualTo(accepted());
         }
 
         @Test
         @DisplayName("a viewer is refused, and the reason names the role rather than the caller")
-        void viewer_may_not_register() {
+        void shouldRefuseRegistrationWhenCallerIsViewer() {
+            // Given & When
             var result = registerAs(VIEWER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(
                     refused(new RegisterSubmissionError.RoleMayNotRegister(ActorRole.VIEWER)));
         }
 
         @Test
         @DisplayName("a refused registration records nothing and announces nothing")
-        void refusal_records_nothing() {
+        void shouldRecordNothingAndAnnounceNothingWhenRegistrationIsRefused() {
+            // Given & When
             registerAs(VIEWER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(repository.storedSubmissions()).isEmpty();
             assertThat(eventPublisher.publishedEvents()).isEmpty();
         }
@@ -160,26 +175,27 @@ class SubmissionCommandFacadeTest {
     @DisplayName("A submission reference must be supplied (BR-04, BR-07)")
     class ReferencePresence {
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] externalRef={0}")
         @NullSource
         @ValueSource(strings = {""})
         @DisplayName("an absent reference, and one containing no characters at all, are refused")
-        void absent_or_empty_reference_is_refused(String externalRef) {
+        void shouldRefuseRegistrationWhenReferenceIsAbsentOrEmpty(String externalRef) {
+            // Given & When
             var result = registerAs(UNDERWRITER, externalRef, VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(refused(new RegisterSubmissionError.ReferenceMissing()));
         }
 
-        @ParameterizedTest
-        @ValueSource(strings = {" ", "   ", "\t", "\n", " ABC-1", "ABC-1 "})
-        @DisplayName("a reference made only of blank space is VALID: BR-04 refuses a reference with "
-                + "no characters at all, and BR-07 applies no trimming because none is confirmed")
-        void whitespace_only_reference_is_accepted(String externalRef) {
-            // This is the counter-intuitive one. isEmpty(), never isBlank(): a reference of "   "
-            // contains three characters, so BR-04 does not refuse it, and BR-07 states plainly
-            // that references differing in surrounding blank space are DIFFERENT references.
+        @ParameterizedTest(name = "[{index}] externalRef=\"{0}\"")
+        @ValueSource(strings = {" ", "   ", "        ", " ABC-1", "ABC-1 ", "AB CD"})
+        @DisplayName("a reference made only of SPACES is VALID: BR-04 refuses a reference with no "
+                + "characters at all, and BR-07 applies no trimming because none is confirmed")
+        void shouldAcceptRegistrationWhenReferenceContainsSpacesOnly(String externalRef) {
+            // Given & When
             var result = registerAs(UNDERWRITER, externalRef, VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(accepted());
             assertThat(repository.storedSubmission(TENANT_A, externalRef))
                     .hasValueSatisfying(stored ->
@@ -189,13 +205,15 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("references differing only in letter case or surrounding blank space are "
                 + "four different references, all four of which register (BR-07)")
-        void references_are_compared_exactly_as_supplied() {
+        void shouldTreatReferencesAsDistinctWhenDifferingByCaseOrSpaces() {
+            // Given & When
             var results = Stream.of(
                     registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT),
                     registerAs(UNDERWRITER, "abc-1", VALID_LIMIT),
                     registerAs(UNDERWRITER, " ABC-1", VALID_LIMIT),
                     registerAs(UNDERWRITER, "ABC-1 ", VALID_LIMIT)).toList();
 
+            // Then
             assertThat(results).containsExactly(accepted(), accepted(), accepted(), accepted());
             assertThat(repository.storedCount()).isEqualTo(4);
         }
@@ -209,17 +227,21 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("a reference of exactly 64 characters is accepted")
-        void reference_of_exactly_the_maximum_is_accepted() {
+        void shouldAcceptRegistrationWhenReferenceIsExactly64Characters() {
+            // Given & When
             var result = registerAs(UNDERWRITER, "A".repeat(64), VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(accepted());
         }
 
         @Test
         @DisplayName("a reference of 65 characters is refused, and the reason carries both lengths")
-        void reference_one_over_the_maximum_is_refused() {
+        void shouldRefuseRegistrationWhenReferenceExceeds64Characters() {
+            // Given & When
             var result = registerAs(UNDERWRITER, "A".repeat(65), VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(
                     refused(new RegisterSubmissionError.ReferenceTooLong(64, 65)));
         }
@@ -227,25 +249,209 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("length is counted in characters, so 64 supplementary characters are accepted "
                 + "even though they occupy 128 UTF-16 code units")
-        void length_is_counted_in_code_points_not_code_units() {
-            // No character-set restriction is confirmed, so a reference may hold supplementary
-            // characters. String.length() would call this 128 and refuse it; the business counts
-            // characters, which is also what PostgreSQL VARCHAR(64) counts.
+        void shouldCountLengthInCodePointsWhenSupplementaryCharactersPresent() {
+            // Given
             var sixtyFourEmoji = "😀".repeat(64);
             assertThat(sixtyFourEmoji.length()).isEqualTo(128);
 
+            // When
             var result = registerAs(UNDERWRITER, sixtyFourEmoji, VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(accepted());
         }
 
         @Test
         @DisplayName("65 supplementary characters are refused, with an actual length of 65")
-        void sixty_five_code_points_are_refused() {
+        void shouldRefuseRegistrationWhenSupplementaryCharactersExceed64CodePoints() {
+            // Given & When
             var result = registerAs(UNDERWRITER, "😀".repeat(65), VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(
                     refused(new RegisterSubmissionError.ReferenceTooLong(64, 65)));
+        }
+    }
+
+    // ================================================================== BR-29
+
+    @Nested
+    @DisplayName("A reference may not contain a control character (BR-29)")
+    class ControlCharactersInTheReference {
+
+        @Test
+        @DisplayName("a reference containing NUL is refused, which is the input that used to be "
+                + "accepted here and then fail in the driver as an unexplained 500")
+        void shouldRefuseRegistrationWhenReferenceContainsNulByte() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "ABC\u0000DEF", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0000, 3)));
+        }
+
+        @ParameterizedTest(name = "[{index}] codePoint={0}")
+        @CsvSource({"9", "10"})
+        @DisplayName("a reference consisting of a single TAB or a single NEWLINE is refused, "
+                + "reversing the previously confirmed behaviour that accepted both")
+        void shouldRefuseRegistrationWhenReferenceIsSingleTabOrNewline(int codePoint) {
+            // Given & When
+            var result = registerAs(UNDERWRITER, Character.toString(codePoint), VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(codePoint, 0)));
+        }
+
+        @Test
+        @DisplayName("a control character in the middle of an otherwise ordinary reference is "
+                + "refused, and the reference is refused whole rather than stripped")
+        void shouldRefuseRegistrationWhenReferenceContainsControlCharacterInside() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "AB\tCD", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 2)));
+            assertThat(repository.storedSubmissions()).isEmpty();
+            assertThat(eventPublisher.publishedEvents()).isEmpty();
+        }
+
+        @ParameterizedTest(name = "[{index}] codePoint={0}")
+        @CsvSource({
+            "0",    // U+0000 — first of the lower range
+            "31",   // U+001F — last of the lower range
+            "127",  // U+007F — first of the upper range
+            "159",  // U+009F — last of the upper range
+        })
+        @DisplayName("every boundary of both control-character ranges is refused")
+        void shouldRefuseRegistrationWhenReferenceHitsControlCharacterBoundaries(int codePoint) {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "AB" + Character.toString(codePoint) + "CD",
+                    VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(codePoint, 2)));
+        }
+
+        @ParameterizedTest(name = "[{index}] codePoint={0}")
+        @CsvSource({
+            "32",   // U+0020 SPACE — immediately above the lower range, and explicitly valid
+            "126",  // U+007E TILDE — immediately below the upper range
+            "160",  // U+00A0 NO-BREAK SPACE — immediately above the upper range; category Zs
+        })
+        @DisplayName("the characters immediately outside both ranges are accepted, so the rule is "
+                + "not implemented one code point too wide")
+        void shouldAcceptRegistrationWhenCharactersLieImmediatelyOutsideControlRanges(int codePoint) {
+            // Given
+            var reference = "AB" + Character.toString(codePoint) + "CD";
+
+            // When & Then
+            assertThat(registerAs(UNDERWRITER, reference, VALID_LIMIT)).isEqualTo(accepted());
+            assertThat(repository.storedSubmission(TENANT_A, reference))
+                    .hasValueSatisfying(stored ->
+                            assertThat(stored.externalRef()).isEqualTo(reference));
+        }
+
+        @Test
+        @DisplayName("U+0085 from the upper range is refused even though it is the one control "
+                + "character Java's own isWhitespace() disagrees about")
+        void shouldRefuseRegistrationWhenReferenceContainsNextLineU0085() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "AB\u0085CD", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0085, 2)));
+        }
+
+        @Test
+        @DisplayName("the reported index counts CODE POINTS, not UTF-16 code units, the same way "
+                + "BR-05 counts length")
+        void shouldReportCodePointIndexWhenControlCharacterFollowsSupplementaryCharacter() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "😀\tAB", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 1)));
+        }
+
+        @Test
+        @DisplayName("the first offending character is the one reported, when there is more than "
+                + "one")
+        void shouldReportFirstOffendingCharacterWhenMultipleControlCharactersExist() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "A\tB\nC", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 1)));
+        }
+
+        @Test
+        @DisplayName("a reference that is both too long AND contains a control character is "
+                + "refused as too long, because BR-05 is checked before BR-29")
+        void shouldPrioritizeLengthCheckOverControlCharacterCheckWhenBothViolated() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "A".repeat(64) + "\t", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(
+                    refused(new RegisterSubmissionError.ReferenceTooLong(64, 65)));
+        }
+
+        @Test
+        @DisplayName("an empty reference is still refused as missing, not as a control character")
+        void shouldPrioritizePresenceCheckOverControlCharacterCheckWhenReferenceIsEmpty() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(refused(new RegisterSubmissionError.ReferenceMissing()));
+        }
+
+        @Test
+        @DisplayName("the reference is checked before the insured limit, so a control character "
+                + "with an absent amount reports the reference")
+        void shouldCheckReferenceBeforeInsuredLimitWhenBothInvalid() {
+            // Given & When
+            var result = registerAs(UNDERWRITER, "AB\tCD", null);
+
+            // Then
+            assertThat(result).isEqualTo(refused(
+                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 2)));
+        }
+
+        @Test
+        @DisplayName("the role gate still comes first: a viewer sending a control character is "
+                + "told about the role, not about the reference")
+        void shouldCheckRoleBeforeReferenceValidationWhenViewerSubmitsControlCharacter() {
+            // Given & When
+            var result = registerAs(VIEWER, "AB\tCD", VALID_LIMIT);
+
+            // Then
+            assertThat(result).isEqualTo(
+                    refused(new RegisterSubmissionError.RoleMayNotRegister(ActorRole.VIEWER)));
+        }
+
+        @Test
+        @DisplayName("the refusal carries no part of the reference itself, so an unprintable "
+                + "character cannot reach a log line or a ProblemDetail")
+        void shouldEnsureRefusalCarriesOnlyNumericInformationWhenInspected() {
+            // Given
+            var error = new RegisterSubmissionError.ReferenceContainsControlCharacter(0x000A, 2);
+
+            // When & Then
+            assertThat(error.toString()).doesNotContain("\n", "\u0000", "\t");
+            var componentTypes = Arrays.stream(
+                            RegisterSubmissionError.ReferenceContainsControlCharacter.class
+                                    .getRecordComponents())
+                    .map(RecordComponent::getType)
+                    .toList();
+            assertThat(componentTypes).allMatch(type -> type.equals(int.class));
         }
     }
 
@@ -257,31 +463,37 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("an absent insured limit is refused")
-        void absent_insured_limit_is_refused() {
+        void shouldRefuseRegistrationWhenInsuredLimitIsAbsent() {
+            // Given & When
             var result = registerAs(UNDERWRITER, "ABC-1", null);
 
+            // Then
             assertThat(result).isEqualTo(
                     refused(new RegisterSubmissionError.InsuredLimitMissing()));
         }
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] insuredLimit={0}")
         @ValueSource(strings = {"0.01", "1200.00", "0.10", "1000000.00",
                                 "99999999999999999999999999999999.00"})
         @DisplayName("a strictly positive amount with exactly two decimal places is accepted, "
                 + "with no upper bound (BR-11, BR-12, BR-13)")
-        void positive_two_decimal_amounts_are_accepted(String insuredLimit) {
+        void shouldAcceptRegistrationWhenInsuredLimitIsPositiveWithTwoDecimals(String insuredLimit) {
+            // Given & When
             var result = registerAs(UNDERWRITER, "ABC-1", new BigDecimal(insuredLimit));
 
+            // Then
             assertThat(result).isEqualTo(accepted());
         }
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] insuredLimit={0}")
         @ValueSource(strings = {"0.00", "-0.01", "-1200.00"})
         @DisplayName("zero and negative amounts are refused, and the reason carries no amount "
                 + "because BR-22 forbids showing it")
-        void non_positive_amounts_are_refused(String insuredLimit) {
+        void shouldRefuseRegistrationWhenInsuredLimitIsNotPositive(String insuredLimit) {
+            // Given & When
             var result = registerAs(UNDERWRITER, "ABC-1", new BigDecimal(insuredLimit));
 
+            // Then
             assertThat(result).isEqualTo(
                     refused(new RegisterSubmissionError.InsuredLimitNotPositive()));
         }
@@ -289,22 +501,24 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("BigDecimal.ZERO is refused as not positive rather than as imprecise: "
                 + "the sign is checked before the number of decimal places")
-        void zero_is_not_positive_before_it_is_imprecise() {
-            // BigDecimal.ZERO has scale 0, so both BR-11 and BR-12 are violated. The order the
-            // rules are checked in decides which reason the caller is told, and it is this one.
+        void shouldCheckSignBeforePrecisionWhenAmountIsZero() {
+            // Given & When
             var result = registerAs(UNDERWRITER, "ABC-1", BigDecimal.ZERO);
 
+            // Then
             assertThat(result).isEqualTo(
                     refused(new RegisterSubmissionError.InsuredLimitNotPositive()));
         }
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] insuredLimit={0}, actualScale={1}")
         @CsvSource({"1200, 0", "1200.5, 1", "1200.005, 3", "1200.0000, 4", "0.001, 3"})
         @DisplayName("an amount with any number of decimal places other than two is refused, and "
                 + "the reason carries only the two scales — never the amount")
-        void wrong_precision_is_refused(String insuredLimit, int actualScale) {
+        void shouldRefuseRegistrationWhenInsuredLimitPrecisionIsNotTwo(String insuredLimit, int actualScale) {
+            // Given & When
             var result = registerAs(UNDERWRITER, "ABC-1", new BigDecimal(insuredLimit));
 
+            // Then
             assertThat(result).isEqualTo(refused(
                     new RegisterSubmissionError.InsuredLimitPrecisionInvalid(2, actualScale)));
         }
@@ -312,9 +526,8 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("1200 and 1200.00 are not the same amount: trailing zeros are never stripped "
                 + "and the scale is never normalised")
-        void trailing_zeros_are_never_stripped() {
-            // stripTrailingZeros() or setScale() anywhere in the pipeline would make BR-12
-            // unenforceable, because 1200 and 1200.00 would become indistinguishable.
+        void shouldDistinguishTrailingZerosWhenPrecisionChecked() {
+            // Given & When & Then
             assertThat(registerAs(UNDERWRITER, "ACCEPTED", new BigDecimal("1200.00")))
                     .isEqualTo(accepted());
             assertThat(registerAs(UNDERWRITER, "REFUSED", new BigDecimal("1200")))
@@ -324,9 +537,11 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("the amount is stored exactly as supplied, scale included")
-        void amount_is_stored_exactly_as_supplied() {
+        void shouldStoreInsuredLimitExactlyAsSuppliedWithScalePreserved() {
+            // Given & When
             registerAs(UNDERWRITER, "ABC-1", new BigDecimal("1200.00"));
 
+            // Then
             assertThat(repository.storedSubmission(TENANT_A, "ABC-1"))
                     .hasValueSatisfying(stored -> {
                         assertThat(stored.insuredLimit()).isEqualTo(new BigDecimal("1200.00"));
@@ -343,22 +558,28 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("the same reference in the same organisation is refused as already used")
-        void duplicate_in_same_organisation_is_refused() {
+        void shouldRefuseRegistrationWhenReferenceAlreadyUsedInSameTenant() {
+            // Given
             registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // When
             var second = registerAs(SENIOR_UNDERWRITER, "ABC-1", new BigDecimal("77.00"));
 
+            // Then
             assertThat(second).isEqualTo(
                     refused(new RegisterSubmissionError.ReferenceAlreadyUsed("ABC-1")));
         }
 
         @Test
         @DisplayName("the earlier submission is left unchanged by the refused duplicate")
-        void earlier_submission_is_unchanged() {
+        void shouldLeaveEarlierSubmissionUntouchedWhenDuplicateRefused() {
+            // Given
             registerAs(UNDERWRITER, "ABC-1", new BigDecimal("1200.00"));
 
+            // When
             registerAs(SENIOR_UNDERWRITER, "ABC-1", new BigDecimal("77.00"));
 
+            // Then
             assertThat(repository.storedCount()).isEqualTo(1);
             assertThat(repository.storedSubmission(TENANT_A, "ABC-1"))
                     .hasValueSatisfying(stored -> {
@@ -371,20 +592,25 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("the same reference used by a DIFFERENT organisation is accepted: "
                 + "uniqueness never crosses organisations (BR-08)")
-        void same_reference_in_another_organisation_is_accepted() {
+        void shouldAcceptSameReferenceWhenRegisteredInDifferentTenant() {
+            // Given
             repository.givenAlreadyRegistered(TENANT_B, "ABC-1");
 
+            // When
             var result = registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(accepted());
         }
 
         @Test
         @DisplayName("two organisations may each hold the identical reference at the same time")
-        void both_organisations_may_hold_the_same_reference() {
+        void shouldAllowBothOrganizationsToHoldIdenticalReference() {
+            // Given & When
             var first = registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
             var second = registerAs(UNDERWRITER_OF_OTHER_TENANT, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(first).isEqualTo(accepted());
             assertThat(second).isEqualTo(accepted());
             assertThat(repository.storedCount()).isEqualTo(2);
@@ -393,11 +619,11 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("when two registrations race for the same reference, exactly one is recorded "
                 + "and the other is refused as already used (BR-09)")
-        void racing_registrations_record_exactly_one() {
-            // The race must be settled by the store, not by a read-then-write pre-check: a
-            // pre-check is exactly the race BR-09 describes, and both attempts would see "free".
-            // The outcome below is therefore the same whichever way the two threads interleave.
+        void shouldRecordExactlyOneWhenTwoRegistrationsRaceForSameReference() {
+            // Given
             List<Result<SubmissionId, RegisterSubmissionError>> outcomes;
+
+            // When
             try (var pool = Executors.newFixedThreadPool(2)) {
                 var first = CompletableFuture.supplyAsync(
                         () -> registerAs(UNDERWRITER, "RACE-1", VALID_LIMIT), pool);
@@ -406,6 +632,7 @@ class SubmissionCommandFacadeTest {
                 outcomes = Stream.of(first.join(), second.join()).toList();
             }
 
+            // Then
             assertThat(outcomes).containsExactlyInAnyOrder(
                     accepted(),
                     refused(new RegisterSubmissionError.ReferenceAlreadyUsed("RACE-1")));
@@ -423,9 +650,11 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("the submission belongs to the caller's own organisation, carries the "
                 + "supplied reference and amount, names the caller, and carries the moment")
-        void successful_registration_records_the_submission() {
+        void shouldRecordSubmissionWithAllDetailsWhenRegistrationSucceeds() {
+            // Given & When
             registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(repository.storedSubmissions()).containsExactly(
                     new SubmissionSnapshot(FixedSubmissionIdGenerator.SUBMISSION_UUID,
                             TENANT_A, "ABC-1", VALID_LIMIT, "uw-01", REGISTERED_AT, null));
@@ -433,9 +662,11 @@ class SubmissionCommandFacadeTest {
 
         @Test
         @DisplayName("the registration moment comes from the clock, never from the caller")
-        void registration_moment_comes_from_the_clock() {
+        void shouldObtainRegistrationMomentFromClockWhenRegistrationSucceeds() {
+            // Given & When
             registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(repository.storedSubmission(TENANT_A, "ABC-1"))
                     .hasValueSatisfying(stored ->
                             assertThat(stored.registeredAt()).isEqualTo(REGISTERED_AT));
@@ -444,9 +675,11 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("a brand-new submission carries no version yet, which is what tells the "
                 + "persistence adapter it has never been stored")
-        void new_submission_carries_no_version() {
+        void shouldLeaveVersionNullWhenNewSubmissionCreated() {
+            // Given & When
             registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(repository.storedSubmission(TENANT_A, "ABC-1"))
                     .hasValueSatisfying(stored -> assertThat(stored.version()).isNull());
         }
@@ -454,9 +687,11 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("the fact is announced exactly once, carrying everything a downstream system "
                 + "needs including the amount")
-        void successful_registration_announces_the_fact() {
+        void shouldAnnounceSubmissionRegisteredEventWhenRegistrationSucceeds() {
+            // Given & When
             registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(eventPublisher.publishedEvents()).containsExactly(
                     new SubmissionDomainEvent.SubmissionRegistered(
                             FixedSubmissionIdGenerator.EVENT_UUID, EXPECTED_ID, TENANT_A,
@@ -466,26 +701,32 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("the submission is recorded before the fact is announced, so nothing is "
                 + "announced about a row that does not exist")
-        void nothing_is_announced_before_the_row_exists() {
+        void shouldAnnounceNothingWhenStorageFailsOrRefuses() {
+            // Given
             repository.givenAlreadyRegistered(TENANT_A, "ABC-1");
 
+            // When
             var result = registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
 
+            // Then
             assertThat(result).isEqualTo(
                     refused(new RegisterSubmissionError.ReferenceAlreadyUsed("ABC-1")));
             assertThat(eventPublisher.publishedEvents()).isEmpty();
         }
 
-        @ParameterizedTest
+        @ParameterizedTest(name = "[{index}] role={0}")
         @EnumSource(value = ActorRole.class, names = {"UNDERWRITER", "SENIOR_UNDERWRITER"})
         @DisplayName("the registering caller recorded is the identified caller, for either "
                 + "permitted role")
-        void registering_caller_is_the_identified_caller(ActorRole role) {
+        void shouldRecordIdentifiedCallerWhenEitherPermittedRoleRegisters(ActorRole role) {
+            // Given
             var actor = new ActorContext(TENANT_A, "actor-" + role, role);
 
+            // When
             ActorContext.callWith(actor,
                     () -> facade.register(new RegisterSubmissionCommand("ABC-1", VALID_LIMIT)));
 
+            // Then
             assertThat(repository.storedSubmission(TENANT_A, "ABC-1"))
                     .hasValueSatisfying(stored ->
                             assertThat(stored.registeredBy()).isEqualTo("actor-" + role));
@@ -499,20 +740,23 @@ class SubmissionCommandFacadeTest {
     class RefusalReasonShape {
 
         @Test
-        @DisplayName("registration has exactly the eight refusal reasons the specification lists, "
-                + "and no ninth")
-        void exactly_eight_refusal_reasons_exist() {
+        @DisplayName("registration has exactly the nine refusal reasons the specification lists, "
+                + "and no tenth")
+        void shouldContainExactlyNineRefusalReasonsWhenErrorHierarchyInspected() {
+            // Given & When
             var variantNames = Arrays.stream(RegisterSubmissionError.class.getPermittedSubclasses())
                     .map(Class::getSimpleName)
                     .sorted()
                     .toList();
 
+            // Then
             assertThat(variantNames).containsExactly(
                     "CallerNotIdentified",
                     "InsuredLimitMissing",
                     "InsuredLimitNotPositive",
                     "InsuredLimitPrecisionInvalid",
                     "ReferenceAlreadyUsed",
+                    "ReferenceContainsControlCharacter",
                     "ReferenceMissing",
                     "ReferenceTooLong",
                     "RoleMayNotRegister");
@@ -521,22 +765,23 @@ class SubmissionCommandFacadeTest {
         @Test
         @DisplayName("NO refusal reason carries the insured limit: an error record is logged and "
                 + "serialised, so a value inside one is a value published")
-        void no_refusal_reason_carries_the_insured_limit() {
-            // BR-22 forbids the amount in any log, not partially and not rounded, explicitly
-            // including the refusals that are ABOUT the amount. A scale is a property of the
-            // notation and is allowed; the magnitude is not.
+        void shouldNeverCarryInsuredLimitInsideAnyRefusalReason() {
+            // Given & When
             var carriedTypes = Arrays.stream(
                             RegisterSubmissionError.class.getPermittedSubclasses())
                     .flatMap(variant -> Arrays.stream(variant.getRecordComponents()))
                     .map(RecordComponent::getType)
                     .toList();
 
-            assertThat(carriedTypes).doesNotContain(BigDecimal.class, Number.class);
+            // Then
+            assertThat(carriedTypes)
+                    .noneMatch(type -> type.equals(BigDecimal.class) || Number.class.isAssignableFrom(type));
         }
 
         @Test
         @DisplayName("every refusal reason is a record, so it compares by value")
-        void every_refusal_reason_is_a_record() {
+        void shouldEnsureEveryRefusalReasonIsRecord() {
+            // Given & When & Then
             assertThat(RegisterSubmissionError.class.getPermittedSubclasses())
                     .isNotEmpty()
                     .allMatch(Class::isRecord);
