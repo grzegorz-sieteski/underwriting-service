@@ -104,6 +104,7 @@ Every row is testable exactly as written.
 | `BR-28` | Paging reaches the whole matching set, once each | Every page of a matching set is requested in turn while the matching set is unchanged | Each matching submission appears on exactly one page, no submission is skipped, none appears twice, and the sequence of pages follows the order of `BR-24` |
 | `BR-29` | A submission reference may not contain a control character | The reference contains, at any position, at least one character of Unicode general category **Cc** — that is, any character in U+0000–U+001F or in U+007F–U+009F. NUL (U+0000), TAB (U+0009) and NEWLINE (U+000A) are all such characters | Registration refused: **reference contains a control character**. The reference is refused whole; nothing is stripped or replaced (`BR-07`). **SPACE (U+0020) is not a control character**: a reference containing spaces, including one consisting only of spaces, is unaffected by this rule and stays valid |
 | `BR-30` | A search whose reference filter contains a control character matches nothing, and is still a success | A search supplies a submission reference filter containing at least one control character (any character in U+0000–U+001F or U+007F–U+009F). No such reference can have been registered, because `BR-29` refuses every one at registration | A success carrying an empty page and a total match count of zero. It is **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). The filter is never stripped or altered to make it match. A filter made only of spaces is **not** affected, since SPACE is not a control character: it is compared exactly (`BR-07`) and matches a submission registered with that very reference. This extends `BR-20` and `BR-21` |
+| `BR-31` | A reference filter that is empty is treated as not supplied, and narrows nothing | A search supplies a submission reference filter that is present but empty, containing no characters at all (for example a blank field left untouched by the client) | The filter is treated exactly as if it had been omitted (`BR-19`): the search is not narrowed by reference, and the other criteria apply as usual. With no other criteria, every submission of the caller's own organisation is in the matching set. It is a success, **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). This is consistent with `BR-19`, which already says an omitted criterion narrows nothing; `BR-31` states that an empty reference filter counts as omitted. It is **not** extended to spaces: a filter made only of spaces is not empty (see `BR-30`, `BR-07`) |
 
 ---
 
@@ -267,7 +268,7 @@ Filter criteria, all optional (`BR-19`), combined with "and" (`BR-18`):
 
 | Criterion | Meaning |
 |---|---|
-| Submission reference | Returns the submission carrying exactly this reference, compared exactly as supplied (`BR-07`). Because a reference is unique within an organisation (`BR-06`), this narrows to at most one submission |
+| Submission reference | Returns the submission carrying exactly this reference, compared exactly as supplied (`BR-07`). Because a reference is unique within an organisation (`BR-06`), this narrows to at most one submission. An empty reference filter counts as not supplied and narrows nothing (`BR-31`) |
 | Insured limit — at least | Returns submissions whose insured limit is greater than or equal to this amount (inclusive) |
 | Insured limit — at most | Returns submissions whose insured limit is less than or equal to this amount (inclusive) |
 | Registered from | Returns submissions whose registration moment is at or after this moment (inclusive) |
@@ -288,8 +289,34 @@ succeeds and returns an empty page with a total match count of zero. It is **not
 make it match something. A filter of spaces only is unaffected, since SPACE is not a control
 character.
 
+**A filter that is not set is simply not applied** (`BR-19`), and for the reference filter an
+**empty** value counts as not set (`BR-31`). The product owner's answer, recorded: a filter that is
+not set takes no part in the search. A client that leaves its reference field untouched therefore
+receives all of the caller's own submissions, not none.
+
+Three reference filters that look alike and are treated differently:
+
+| Reference filter sent | What it is | Treatment | Result of the search |
+|---|---|---|---|
+| Present but empty (no characters) | Not set | Not applied (`BR-31`, `BR-19`) | Success. Narrows nothing: with no other criteria, every submission of the caller's own organisation matches, newest first, one page at a time |
+| Contains a control character, for example a TAB, a NEWLINE or NUL | A value no stored reference can equal | Applied as given, never altered (`BR-30`) | Success with an empty page and a total match count of zero |
+| Made only of spaces, for example `"   "` | A value: not empty, and SPACE is not a control character | Applied, compared exactly as supplied (`BR-07`) | Success. Returns the submission registered with exactly that reference, if the caller's organisation has one; otherwise an empty page and a total of zero (`BR-20`) |
+
+Worked examples, for an organisation holding three submissions with references `A-1`, `A-2` and
+`"   "` (three spaces):
+
+- Reference filter empty, no other criteria: all three submissions, total three.
+- Reference filter empty, insured limit at least some amount: only the submissions at or above
+  that amount, as if the reference filter had not been sent.
+- Reference filter `"A\tB"` (containing a TAB): empty page, total zero.
+- Reference filter `"   "` (three spaces): the one submission registered with three spaces, total
+  one. A filter of two spaces matches nothing, because it is compared exactly.
+- Reference filter `A-1`: the one submission `A-1`, total one.
+
+In every case above the search succeeds; none is refused.
+
 Search has no ordering question between role and input: every role may search (`BR-16`) and no
-filter value is ever refused (`BR-20`, `BR-21`, `BR-30`), so the only thing judged before a search
+filter value is ever refused (`BR-20`, `BR-21`, `BR-30`, `BR-31`), so the only thing judged before a search
 runs is that the caller is identified (`BR-01`).
 
 **Page request.** Every search asks for one page of the matching set (`BR-25`): which page is
@@ -316,8 +343,8 @@ else exists to show.
 known, every search succeeds. In particular a search is never refused for a role reason
 (`BR-16`), never refused because it matched nothing (`BR-20`), never refused because a range
 contradicts itself (`BR-21`), never refused because the reference filter contains a control
-character (`BR-30`), and never refused because the page asked for lies beyond the end of the
-matching set (`BR-27`) — each of those is a successful search returning an empty page.
+character (`BR-30`), never refused because the reference filter is empty (`BR-31`), and never
+refused because the page asked for lies beyond the end of the matching set (`BR-27`) — each of those is a successful search returning an empty page.
 
 ---
 
@@ -371,7 +398,8 @@ Notes:
       caller learns nothing about the input; the reason is stated under the Register command.
       This is the long-standing order, not a reversal
 - [x] Search accepts any filter value without refusal, including a reference filter containing a
-      control character (`BR-30`); it still has exactly one refusal reason
+      control character (`BR-30`), and treats an empty reference filter as not supplied (`BR-31`); it
+      still has exactly one refusal reason
 - [x] No class name, table name, query language or framework term anywhere in this document
 - [x] **Every business fact is confirmed; nothing is left unconfirmed or pending.** The two open
       questions the first draft carried were answered by the product owner on 2026-11-01: the
