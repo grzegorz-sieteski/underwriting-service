@@ -44,9 +44,8 @@ class SubmissionCommandController {
 
     SubmissionCommandController(RegisterSubmissionUseCase useCase,
                                 ActorContextResolver actorContextResolver) {
-        this.useCase = Objects.requireNonNull(useCase, "useCase");
-        this.actorContextResolver =
-                Objects.requireNonNull(actorContextResolver, "actorContextResolver");
+        this.useCase = useCase;
+        this.actorContextResolver = actorContextResolver;
     }
 
     @PostMapping

@@ -36,6 +36,7 @@ Architecture: package-by-feature, Hexagonal boundaries, CQRS, Railway Oriented P
 | Banned | Instead | Enforced by |
 |---|---|---|
 | `throw new ...` anywhere in `src/main` | `Result.failure(new SomeError(...))` | Checkstyle `noThrowNew` |
+| `Objects.requireNonNull` (a `throw` in disguise) | `@NullMarked` + NullAway at compile time; genuine absence is `@Nullable` -> `Result` | Checkstyle `noRequireNonNull` + NullAway |
 | Custom `*Exception` classes | `sealed interface *Error` | ArchUnit `no_custom_throwables` |
 | `*Service`, `*Facade`, `*Manager`, `*Helper`, `*Util` | one `*UseCase` per operation (`execute` / `ask`) | ArchUnit + Checkstyle |
 | JPA / Hibernate (`@Entity`, `@OneToMany`, `EntityManager`) | Spring Data JDBC + native SQL | ArchUnit + Checkstyle |

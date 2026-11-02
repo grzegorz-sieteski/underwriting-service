@@ -61,18 +61,12 @@ final class Submission {
                                                                 @Nullable String externalRef,
                                                                 @Nullable BigDecimal insuredLimit,
                                                                 Instant registeredAt) {
-        Objects.requireNonNull(id, "id");
-        Objects.requireNonNull(tenantId, "tenantId");
-        Objects.requireNonNull(actorId, "actorId");
-        Objects.requireNonNull(role, "role");
-        Objects.requireNonNull(registeredAt, "registeredAt");
 
-        return firstViolation(role, externalRef, insuredLimit)
-                .<Result<Submission, RegisterSubmissionError>>map(Result::failure)
-                .orElseGet(() -> Result.success(new Submission(id, tenantId,
-                        Objects.requireNonNull(externalRef),
-                        Objects.requireNonNull(insuredLimit),
-                        actorId, registeredAt, null)));
+        return roleMayRegister(role)
+                .flatMap(_ -> validReference(externalRef))
+                .flatMap(reference -> validInsuredLimit(insuredLimit)
+                        .map(limit -> new Submission(id, tenantId, reference, limit,
+                                actorId, registeredAt, null)));
     }
 
     /**
@@ -85,7 +79,6 @@ final class Submission {
      * what proves {@code version} survives both directions.
      */
     static Submission reconstitute(SubmissionSnapshot snapshot) {
-        Objects.requireNonNull(snapshot, "snapshot");
         return new Submission(new SubmissionId(snapshot.id()), snapshot.tenantId(),
                 snapshot.externalRef(), snapshot.insuredLimit(), snapshot.registeredBy(),
                 snapshot.registeredAt(), snapshot.version());
@@ -99,7 +92,6 @@ final class Submission {
 
     /** BR-15 — the fact that this submission was registered. */
     SubmissionDomainEvent.SubmissionRegistered registeredEvent(UUID eventId) {
-        Objects.requireNonNull(eventId, "eventId");
         return new SubmissionDomainEvent.SubmissionRegistered(eventId, id, tenantId, externalRef,
                 insuredLimit, registeredBy, registeredAt);
     }
@@ -111,11 +103,12 @@ final class Submission {
     // ------------------------------------------------------------------ invariants
 
     /**
-     * The first invariant violated, in the order the design fixes, or empty when all seven hold.
+     * The seven invariants, as three railway steps that run in the order the design fixes.
      *
-     * <p>The stream is lazy and {@code findFirst} short-circuits, so a later check never runs
-     * against input an earlier one already refused — which is what makes it safe for the length
-     * and control-character checks to read a reference the presence check has already accepted.
+     * <p>{@code flatMap} short-circuits on the first failure, so a later check never runs against
+     * input an earlier one already refused. Each step hands the next one a value it has already
+     * proved acceptable, which is what lets the length and control-character checks read a
+     * reference the presence check accepted without asserting anything by throwing.
      *
      * <p>Three things about this order are argued in the design and pinned by tests, so none of
      * them is free to move:
@@ -130,29 +123,40 @@ final class Submission {
      *       catalogue and bounds the control-character scan to at most 64 code points.</li>
      * </ul>
      */
-    private static Optional<RegisterSubmissionError> firstViolation(ActorRole role,
-                                                                    @Nullable String externalRef,
-                                                                    @Nullable BigDecimal limit) {
-        return Stream.<Supplier<Optional<RegisterSubmissionError>>>of(
-                        () -> role.canDecide()
-                                ? Optional.empty()
-                                : Optional.of(new RegisterSubmissionError.RoleMayNotRegister(role)),
-                        () -> externalRef != null && !externalRef.isEmpty()
-                                ? Optional.empty()
-                                : Optional.of(new RegisterSubmissionError.ReferenceMissing()),
-                        () -> referenceLengthViolation(Objects.requireNonNull(externalRef)),
-                        () -> controlCharacterViolation(Objects.requireNonNull(externalRef)),
-                        () -> limit != null
-                                ? Optional.empty()
-                                : Optional.of(new RegisterSubmissionError.InsuredLimitMissing()),
-                        () -> Objects.requireNonNull(limit).signum() > 0
-                                ? Optional.empty()
-                                : Optional.of(
-                                        new RegisterSubmissionError.InsuredLimitNotPositive()),
-                        () -> precisionViolation(Objects.requireNonNull(limit)))
-                .map(Supplier::get)
-                .flatMap(Optional::stream)
-                .findFirst();
+    private static Result<ActorRole, RegisterSubmissionError> roleMayRegister(ActorRole role) {
+        return role.canDecide()
+                ? Result.success(role)
+                : Result.failure(new RegisterSubmissionError.RoleMayNotRegister(role));
+    }
+
+    /**
+     * Presence, then length, then control characters, in the specification's order. On success it
+     * returns the reference itself, so everything after this step holds a value the flow has
+     * <em>proved</em> present: nothing asserts non-null by throwing, and nothing needs to.
+     */
+    private static Result<String, RegisterSubmissionError> validReference(
+            @Nullable String externalRef) {
+        if (externalRef == null || externalRef.isEmpty()) {
+            return Result.failure(new RegisterSubmissionError.ReferenceMissing());
+        }
+        return referenceLengthViolation(externalRef)
+                .or(() -> controlCharacterViolation(externalRef))
+                .<Result<String, RegisterSubmissionError>>map(Result::failure)
+                .orElseGet(() -> Result.success(externalRef));
+    }
+
+    /** Presence, then sign, then scale. {@code BigDecimal.ZERO} is not positive before it is imprecise. */
+    private static Result<BigDecimal, RegisterSubmissionError> validInsuredLimit(
+            @Nullable BigDecimal limit) {
+        if (limit == null) {
+            return Result.failure(new RegisterSubmissionError.InsuredLimitMissing());
+        }
+        if (limit.signum() <= 0) {
+            return Result.failure(new RegisterSubmissionError.InsuredLimitNotPositive());
+        }
+        return precisionViolation(limit)
+                .<Result<BigDecimal, RegisterSubmissionError>>map(Result::failure)
+                .orElseGet(() -> Result.success(limit));
     }
 
     /**

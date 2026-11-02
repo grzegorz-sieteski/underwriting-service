@@ -31,6 +31,15 @@
         <archunit.version>1.5.1</archunit.version>
         <jspecify.version>1.0.0</jspecify.version>
         <!--
+          Compile-time null-safety. @NullMarked (JSpecify) on every package says "non-null by
+          default", but an annotation nobody checks is documentation. NullAway makes it a build
+          failure to pass a possibly-null value where null is not allowed, which is what lets the
+          code drop Objects.requireNonNull: the exception it would throw can no longer happen.
+          Needs JDK 17+ and, on JDK 17+, the add-exports flags listed in .mvn/jvm.config.
+        -->
+        <errorprone.version>2.52.0</errorprone.version>
+        <nullaway.version>0.14.3</nullaway.version>
+        <!--
           Must be new enough to parse Java 25 syntax. Checkstyle 10.x fails on
           `import module java.base;` (JEP 511) with "mismatched input 'java'".
         -->
@@ -157,6 +166,34 @@
                     -->
                     <parameters>true</parameters>
                 </configuration>
+                <executions>
+                    <!--
+                      NullAway runs on production code only. Tests deliberately hand null to
+                      production code to prove how it behaves, which NullAway would reject.
+                    -->
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>-XDcompilePolicy=simple</arg>
+                                <arg>--should-stop=ifError=FLOW</arg>
+                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=com.gs5.underwriting</arg>
+                            </compilerArgs>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>com.google.errorprone</groupId>
+                                    <artifactId>error_prone_core</artifactId>
+                                    <version>${errorprone.version}</version>
+                                </path>
+                                <path>
+                                    <groupId>com.uber.nullaway</groupId>
+                                    <artifactId>nullaway</artifactId>
+                                    <version>${nullaway.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <!--

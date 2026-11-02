@@ -39,12 +39,11 @@ class SpringSubmissionEventPublisher implements SubmissionEventPublisher {
     private final ApplicationEventPublisher delegate;
 
     SpringSubmissionEventPublisher(ApplicationEventPublisher delegate) {
-        this.delegate = Objects.requireNonNull(delegate, "delegate");
+        this.delegate = delegate;
     }
 
     @Override
     public void publish(SubmissionDomainEvent event) {
-        Objects.requireNonNull(event, "event");
         delegate.publishEvent(event);
     }
 }

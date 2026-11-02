@@ -30,8 +30,16 @@ if (ref.isBlank()) {
 }
 ```
 
-`Objects.requireNonNull(x, "x")` stays allowed: it guards a programmer error, not a business
-branch. Everything a user can cause is a `Result.failure`.
+`Objects.requireNonNull` is banned too: it throws `NullPointerException`, so it is a `throw` in
+disguise. Null is kept out at **compile time** instead. Every package is `@NullMarked` (non-null by
+default) and NullAway fails the build when a possibly-null value reaches a non-null parameter, so
+there is no null to guard against. Where absence is real — a field a client may omit — mark it
+`@Nullable` and turn it into a `Result.failure` (`ReferenceMissing`), never into a crash.
+Everything a user can cause is a `Result.failure`.
+
+When a value is `@Nullable` and you need it non-null afterwards, do not assert it. Check it and
+return the proved value down the railway (`validReference(...)` hands the next step a `String` that
+is already known present), so the compiler can see why it is safe.
 
 Errors are **per operation**, not per module:
 

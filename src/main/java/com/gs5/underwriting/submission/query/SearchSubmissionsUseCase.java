@@ -21,7 +21,7 @@ public final class SearchSubmissionsUseCase {
     private final SubmissionQueryRepository repository;
 
     public SearchSubmissionsUseCase(SubmissionQueryRepository repository) {
-        this.repository = Objects.requireNonNull(repository, "repository");
+        this.repository = repository;
     }
 
     /**
@@ -29,7 +29,6 @@ public final class SearchSubmissionsUseCase {
      * of the whole matching set — or the single refusal reason Search has.
      */
     public Result<SubmissionPageView, SearchSubmissionsError> ask(SearchSubmissionsQuery query) {
-        Objects.requireNonNull(query, "query");
         return Result.<ActorContext, SearchSubmissionsError>fromOptional(
                         ActorContext.current(),
                         SearchSubmissionsError.CallerNotIdentified::new)

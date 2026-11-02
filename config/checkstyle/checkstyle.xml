@@ -24,16 +24,27 @@
         <!--
           Railway Oriented Programming: business failures are values, not control flow.
 
-          Allowed:    Objects.requireNonNull(x, "...")  - guards a programmer error
           Forbidden:  throw new AnythingException(...)  - that is a business branch,
                                                           so it belongs in Result.failure(...)
+          Forbidden:  Objects.requireNonNull(...)       - it is a throw in disguise. Null is kept
+                                                          out at COMPILE time instead: @NullMarked
+                                                          on every package, enforced by NullAway,
+                                                          so there is no null to guard against.
         -->
         <module name="RegexpSinglelineJava">
             <property name="id" value="noThrowNew"/>
             <property name="format" value="\bthrow\s+new\b"/>
             <property name="ignoreComments" value="true"/>
             <property name="message"
-                      value="Zero-Exception rule: do not 'throw new ...'. Return Result.failure(new SomeError(...)) instead. Objects.requireNonNull is still allowed for programmer errors."/>
+                      value="Zero-Exception rule: do not 'throw new ...'. Return Result.failure(new SomeError(...)) instead."/>
+        </module>
+
+        <module name="RegexpSinglelineJava">
+            <property name="id" value="noRequireNonNull"/>
+            <property name="format" value="\brequireNonNull\s*\("/>
+            <property name="ignoreComments" value="true"/>
+            <property name="message"
+                      value="Zero-Exception rule: requireNonNull throws NullPointerException. Mark the parameter @Nullable and handle absence as a Result, or leave it non-null and let NullAway prove callers never pass null."/>
         </module>
 
         <!--

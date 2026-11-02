@@ -24,7 +24,7 @@ class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
     private final SubmissionCommandJdbcRepository repository;
 
     SubmissionCommandSqlAdapter(SubmissionCommandJdbcRepository repository) {
-        this.repository = Objects.requireNonNull(repository, "repository");
+        this.repository = repository;
     }
 
     /**
@@ -35,7 +35,6 @@ class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
     @Override
     public Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> insert(
             SubmissionSnapshot snapshot) {
-        Objects.requireNonNull(snapshot, "snapshot");
         var entity = SubmissionPersistenceMapper.toEntity(snapshot);
         var insertedRows = repository.insertIfReferenceFree(entity.id(), entity.tenantId(),
                 entity.externalRef(), entity.insuredLimit(), entity.registeredBy(),
@@ -54,8 +53,6 @@ class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
      * adapter, and it is what proves the mapper carries {@code version} in both directions.
      */
     Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id) {
-        Objects.requireNonNull(tenantId, "tenantId");
-        Objects.requireNonNull(id, "id");
         return repository.findOwn(tenantId, id).map(SubmissionPersistenceMapper::toSnapshot);
     }
 }

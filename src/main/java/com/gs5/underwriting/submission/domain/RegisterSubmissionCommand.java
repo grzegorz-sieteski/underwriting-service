@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * input: they come from {@code ActorContext} and from the {@code Clock} (BR-15).
  *
  * <p>Both components are {@code @Nullable} <strong>on purpose</strong>, and this record carries no
- * compact constructor running {@code Objects.requireNonNull}. Absence of either input is a
+ * compact constructor that rejects null. Absence of either input is a
  * business refusal the specification names (BR-04, BR-10); turning it into a programmer-error
  * guard would convert a named refusal reason into a crash and make two of the nine variants of
  * {@link RegisterSubmissionError} unreachable.

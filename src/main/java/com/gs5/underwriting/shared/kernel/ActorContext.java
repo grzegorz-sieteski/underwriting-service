@@ -24,9 +24,6 @@ public record ActorContext(UUID tenantId, String actorId, ActorRole role) {
     public static final ScopedValue<ActorContext> CURRENT = ScopedValue.newInstance();
 
     public ActorContext {
-        Objects.requireNonNull(tenantId, "tenantId");
-        Objects.requireNonNull(actorId, "actorId");
-        Objects.requireNonNull(role, "role");
     }
 
     /**
@@ -36,15 +33,11 @@ public record ActorContext(UUID tenantId, String actorId, ActorRole role) {
      * {@code ScopedValue.callWhere(CURRENT, actor, op)}.
      */
     public static <R> R callWith(ActorContext actor, Supplier<R> operation) {
-        Objects.requireNonNull(actor, "actor");
-        Objects.requireNonNull(operation, "operation");
         return ScopedValue.where(CURRENT, actor).call(operation::get);
     }
 
     /** Runs {@code operation} with this actor bound. */
     public static void runWith(ActorContext actor, Runnable operation) {
-        Objects.requireNonNull(actor, "actor");
-        Objects.requireNonNull(operation, "operation");
         ScopedValue.where(CURRENT, actor).run(operation);
     }
 

@@ -27,10 +27,10 @@ public final class RegisterSubmissionUseCase {
                                    SubmissionEventPublisher eventPublisher,
                                    SubmissionIdGenerator idGenerator,
                                    Clock clock) {
-        this.repository = Objects.requireNonNull(repository, "repository");
-        this.eventPublisher = Objects.requireNonNull(eventPublisher, "eventPublisher");
-        this.idGenerator = Objects.requireNonNull(idGenerator, "idGenerator");
-        this.clock = Objects.requireNonNull(clock, "clock");
+        this.repository = repository;
+        this.eventPublisher = eventPublisher;
+        this.idGenerator = idGenerator;
+        this.clock = clock;
     }
 
     /**
@@ -38,7 +38,6 @@ public final class RegisterSubmissionUseCase {
      * of the nine refusal reasons in {@link RegisterSubmissionError}.
      */
     public Result<SubmissionId, RegisterSubmissionError> execute(RegisterSubmissionCommand command) {
-        Objects.requireNonNull(command, "command");
         return Result.<ActorContext, RegisterSubmissionError>fromOptional(
                         ActorContext.current(),
                         RegisterSubmissionError.CallerNotIdentified::new)

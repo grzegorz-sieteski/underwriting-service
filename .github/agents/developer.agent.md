@@ -41,7 +41,9 @@ Follow `.github/skills/hexagonal-cqrs-slice/SKILL.md`. Read
 
 - Validation and invariants live in the aggregate, which is package-private.
 - Failures are `Result.failure(new SomeError(...))`. There is no `throw new` in this codebase, and
-  Checkstyle fails the build on it. `Objects.requireNonNull` for programmer errors is fine.
+  Checkstyle fails the build on it. `Objects.requireNonNull` is banned too (it throws NPE): null is
+  excluded at compile time by `@NullMarked` + NullAway, so mark genuine absence `@Nullable` and
+  handle it as a `Result`.
 - Compose with `.map`, `.flatMap`, `.ensure`, `.fold` rather than a staircase of early returns.
 - Exhaustive `switch` over sealed types, no `default` branch.
 - No `@Service` or `@Component` in `domain/` or `query/`; beans are declared in `adapters/config/`.

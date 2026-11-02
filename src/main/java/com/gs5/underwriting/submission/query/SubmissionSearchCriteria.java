@@ -26,7 +26,7 @@ public record SubmissionSearchCriteria(UUID tenantId,
      * (finding QA-01, which was that this record did <em>not</em>).
      *
      * <p>This record carries the identical two values one step further down than the query does —
-     * into the adapter, where a bound parameter, a {@code requireNonNull} message or any future
+     * into the adapter, where a bound parameter, a precondition message or any future
      * diagnostic prints them — so masking at the query alone left the disclosure intact: a logged
      * search for {@code from=1200.00, to=1200.00} that returns one row discloses that row's
      * amount, wherever it is logged.

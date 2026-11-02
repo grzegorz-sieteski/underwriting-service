@@ -20,14 +20,13 @@ class SubmissionQuerySqlAdapter implements SubmissionQueryRepository {
     private final SubmissionQueryJdbcRepository repository;
 
     SubmissionQuerySqlAdapter(SubmissionQueryJdbcRepository repository) {
-        this.repository = Objects.requireNonNull(repository, "repository");
+        this.repository = repository;
     }
 
     @Override
     public List<SubmissionSummaryView> findPage(SubmissionSearchCriteria criteria,
                                                 int limit,
                                                 long offset) {
-        Objects.requireNonNull(criteria, "criteria");
         return repository.findPage(criteria.tenantId(), criteria.externalRef(),
                 criteria.insuredLimitFrom(), criteria.insuredLimitTo(),
                 criteria.registeredFrom(), criteria.registeredTo(), limit, offset);
@@ -35,7 +34,6 @@ class SubmissionQuerySqlAdapter implements SubmissionQueryRepository {
 
     @Override
     public long countMatching(SubmissionSearchCriteria criteria) {
-        Objects.requireNonNull(criteria, "criteria");
         return repository.countMatching(criteria.tenantId(), criteria.externalRef(),
                 criteria.insuredLimitFrom(), criteria.insuredLimitTo(),
                 criteria.registeredFrom(), criteria.registeredTo());

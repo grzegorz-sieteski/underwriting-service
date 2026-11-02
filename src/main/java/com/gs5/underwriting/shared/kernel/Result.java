@@ -27,7 +27,6 @@ public sealed interface Result<T, E> {
     }
 
     static <T, E> Result<T, E> failure(E error) {
-        Objects.requireNonNull(error, "error");
         return new Failure<>(error);
     }
 
@@ -44,7 +43,6 @@ public sealed interface Result<T, E> {
 
     /** Transforms the value, leaving a failure untouched. */
     default <U> Result<U, E> map(Function<? super T, ? extends U> mapper) {
-        Objects.requireNonNull(mapper, "mapper");
         return switch (this) {
             case Success<T, E>(var value) -> new Success<>(mapper.apply(value));
             case Failure<T, E>(var error) -> new Failure<>(error);
@@ -53,7 +51,6 @@ public sealed interface Result<T, E> {
 
     /** Chains another fallible step; the first failure short-circuits the rest. */
     default <U> Result<U, E> flatMap(Function<? super T, ? extends Result<U, E>> mapper) {
-        Objects.requireNonNull(mapper, "mapper");
         return switch (this) {
             case Success<T, E>(var value) -> mapper.apply(value);
             case Failure<T, E>(var error) -> new Failure<>(error);
@@ -62,7 +59,6 @@ public sealed interface Result<T, E> {
 
     /** Translates the failure, e.g. from an adapter error to a domain error. */
     default <F> Result<T, F> mapError(Function<? super E, ? extends F> mapper) {
-        Objects.requireNonNull(mapper, "mapper");
         return switch (this) {
             case Success<T, E>(var value) -> new Success<>(value);
             case Failure<T, E>(var error) -> new Failure<>(mapper.apply(error));
@@ -71,8 +67,6 @@ public sealed interface Result<T, E> {
 
     /** Turns a success into a failure when an invariant does not hold. */
     default Result<T, E> ensure(Predicate<? super T> invariant, Function<? super T, ? extends E> onViolation) {
-        Objects.requireNonNull(invariant, "invariant");
-        Objects.requireNonNull(onViolation, "onViolation");
         return switch (this) {
             case Success<T, E>(var value) ->
                     invariant.test(value) ? this : new Failure<>(onViolation.apply(value));
@@ -82,8 +76,6 @@ public sealed interface Result<T, E> {
 
     /** Collapses both branches into one value. This is how adapters leave the railway. */
     default <R> R fold(Function<? super T, ? extends R> onSuccess, Function<? super E, ? extends R> onFailure) {
-        Objects.requireNonNull(onSuccess, "onSuccess");
-        Objects.requireNonNull(onFailure, "onFailure");
         return switch (this) {
             case Success<T, E>(var value) -> onSuccess.apply(value);
             case Failure<T, E>(var error) -> onFailure.apply(error);
@@ -92,7 +84,6 @@ public sealed interface Result<T, E> {
 
     /** Runs a side effect on success without changing the railway. */
     default Result<T, E> peek(Consumer<? super T> action) {
-        Objects.requireNonNull(action, "action");
         return switch (this) {
             case Success<T, E>(var value) -> {
                 action.accept(value);
@@ -104,7 +95,6 @@ public sealed interface Result<T, E> {
 
     /** Runs a side effect on failure, e.g. a metric. Does not change the railway. */
     default Result<T, E> peekError(Consumer<? super E> action) {
-        Objects.requireNonNull(action, "action");
         return switch (this) {
             case Success<T, E> _ -> this;
             case Failure<T, E>(var error) -> {
@@ -122,7 +112,6 @@ public sealed interface Result<T, E> {
     }
 
     default T orElseGet(Function<? super E, ? extends T> fallback) {
-        Objects.requireNonNull(fallback, "fallback");
         return switch (this) {
             case Success<T, E>(var value) -> value;
             case Failure<T, E>(var error) -> fallback.apply(error);
@@ -145,8 +134,6 @@ public sealed interface Result<T, E> {
 
     /** Bridges a lookup that may legitimately find nothing into the railway. */
     static <T, E> Result<T, E> fromOptional(Optional<T> optional, Supplier<? extends E> onEmpty) {
-        Objects.requireNonNull(optional, "optional");
-        Objects.requireNonNull(onEmpty, "onEmpty");
         return optional.<Result<T, E>>map(Success::new)
                 .orElseGet(() -> new Failure<>(onEmpty.get()));
     }

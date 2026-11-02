@@ -120,6 +120,10 @@ Be honest about this, because the distinction matters:
   built through the agent workflow, which is also how the workflow itself got tested.
   `docs/workflow/submission-registration-state.md` records what each stage found, including four
   defects in this repository's own rules that the separation of roles caught.
+- **NullAway runs on `src/main` at compile time** (Error Prone 2.52 + NullAway 0.14.3). It needs the
+  `--add-exports` flags in `.mvn/jvm.config`, which `./mvnw` picks up automatically. If you build
+  with another Maven (IntelliJ's bundled one included), point it at that file or the compile fails
+  with an `IllegalAccessError`. Tests are not checked: they hand null to production code on purpose.
 - **ArchUnit must stay at 1.5.1 or newer.** Version 1.4.0 cannot read Java 25 class files: it logs
   `Unsupported class file major version 69` at WARN, skips every class, and then reports all rules
   as passing. The suite was green while analysing nothing until this was caught. Treat a downgrade
