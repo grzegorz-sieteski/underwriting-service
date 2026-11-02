@@ -57,17 +57,39 @@ One behaviour per test.
 ## Integration tests
 
 ```java
+import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureDataSourceInitialization;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+
 @DataJdbcTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@AutoConfigureDataSourceInitialization   // see below — without this there is no schema
 @Testcontainers
 class SubmissionPersistenceAdapterIT {
+
     @Container
     @ServiceConnection
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:17-alpine");
+    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17-alpine");
 }
 ```
 
 `@ServiceConnection` wires the container to Spring — no `@DynamicPropertySource` needed.
+
+Three details that each produce a confusing runtime failure rather than a compile error:
+
+- **`@DataJdbcTest` does not pull in Flyway.** The slice imports only
+  `DataJdbcRepositoriesAutoConfiguration` and `DataSourceAutoConfiguration`; migrations arrive
+  through `@AutoConfigureDataSourceInitialization`, which the slice is not meta-annotated with.
+  Leave it out and the container starts with an empty schema and every test dies on
+  `relation "..." does not exist`. **Check this first when a fresh Docker run fails.**
+- **`org.testcontainers.postgresql.PostgreSQLContainer`**, not
+  `org.testcontainers.containers.PostgreSQLContainer`, which is deprecated in Testcontainers 2.x.
+  The live class is **not generic**, so there is no `<?>`. It still extends `JdbcDatabaseContainer`,
+  which is the type `@ServiceConnection` binds to, so the move is safe.
+- **Boot 4 test annotations live under `.test.autoconfigure`**, e.g.
+  `org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest`. Resolve these against the
+  jars rather than from memory; the pre-4 package names are close enough to look right.
 
 **Dependency names (Testcontainers 2.x renamed every module):**
 `org.testcontainers:testcontainers-junit-jupiter`, `:testcontainers-postgresql`,

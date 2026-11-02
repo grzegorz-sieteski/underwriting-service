@@ -24,6 +24,22 @@ class ArchitectureRulesTest {
 
     // ---------------------------------------------------------------- purity
 
+    /*
+     * KNOWN BLIND SPOT, found the hard way: javac inlines compile-time constants, so ArchUnit
+     * cannot see a cross-package dependency that exists only as a `static final` primitive or
+     * String constant. A class that reads `OtherPackage.SOME_INT` compiles to the literal value
+     * and leaves NO reference to the declaring class in the bytecode, so there is nothing for
+     * ArchUnit to find and the rule below passes while the leak is real.
+     *
+     * This bit once already: the first probe of this rule "passed" for exactly that reason, which
+     * looked like proof the rule worked. It was proof of nothing.
+     *
+     * Consequences for anyone trusting this class: a constant leaking across a package boundary
+     * (query/ reading a constant declared in domain/, say) is invisible here. Only a dependency
+     * carried by a type — a field, parameter, return type, annotation, instantiation or method
+     * call — is visible. Catching the constant case needs a source-level gate: Checkstyle's
+     * IllegalImport, or a plain grep, not ArchUnit.
+     */
     @ArchTest
     static final ArchRule write_and_read_models_stay_pure_java =
             noClasses()
@@ -70,6 +86,18 @@ class ArchitectureRulesTest {
                     .should().dependOnClassesThat().resideInAPackage("..query..")
                     .because("the write side must not be shaped by what a screen happens to display");
 
+    /*
+     * `archRule.failOnEmptyShould` is TRUE globally (src/test/resources/archunit.properties), with
+     * no per-rule exceptions: every rule in this class matches at least one class, so a rule that
+     * stops matching is a typo and fails the build rather than passing silently.
+     *
+     * These two rules carried a temporary `allowEmptyShould(true)` while the RED phase had written
+     * domain/ and query/ but no adapters/web/. The controllers now exist, so both allowances are
+     * gone. They were confirmed redundant by breaking the rule on purpose — pointing
+     * SubmissionQueryController at domain/ produced "query_controllers_touch_only_the_read_side ...
+     * was violated (2 times)" and a BUILD FAILURE — which is the only way to know a structural
+     * gate is actually looking at something.
+     */
     @ArchTest
     static final ArchRule command_controllers_touch_only_the_write_side =
             noClasses()

@@ -63,15 +63,21 @@ final class Submission {
     static Result<Submission, RegisterSubmissionError> register(
             UUID tenantId, String externalRef, BigDecimal insuredLimit) {
 
-        if (externalRef == null || externalRef.isBlank()) {
-            return Result.failure(new RegisterSubmissionError.BlankExternalReference());
+        // isEmpty, not isBlank: trimming is a business decision. Unless a rule says whitespace
+        // is insignificant, "   " is a reference like any other, and isBlank() silently refuses
+        // input the specification accepts.
+        if (externalRef == null || externalRef.isEmpty()) {
+            return Result.failure(new RegisterSubmissionError.ReferenceMissing());
         }
         if (externalRef.length() > MAX_REF) {
             return Result.failure(
-                    new RegisterSubmissionError.ExternalReferenceTooLong(MAX_REF, externalRef.length()));
+                    new RegisterSubmissionError.ReferenceTooLong(MAX_REF, externalRef.length()));
         }
+        // The variant names the reason and carries NO amount. An error record is logged and
+        // serialised into ProblemDetail, so anything inside it is published. Never put a
+        // sensitive value in an error.
         if (insuredLimit == null || insuredLimit.signum() <= 0) {
-            return Result.failure(new RegisterSubmissionError.NonPositiveInsuredLimit(insuredLimit));
+            return Result.failure(new RegisterSubmissionError.InsuredLimitNotPositive());
         }
         return Result.success(new Submission(/* ... */));
     }
@@ -182,3 +188,9 @@ a SQL fragment or an internal id.
 - [ ] The mapper carries `version` both ways, and an `*IT` proves insert works
 - [ ] Every SQL parameter is bound; every query filters by tenant
 - [ ] No `default` branch in any `switch` over a sealed type
+- [ ] **No error variant carries a sensitive value.** Error records end up in logs and in the
+      HTTP response body, so a field placed in one is a field you have published. Name the
+      reason, carry identifiers and bounds, never the protected value itself.
+- [ ] **Validation matches the specification literally.** `isBlank()` where the rules say
+      "empty", a trim nobody asked for, or a case-insensitive compare against an exact-match
+      rule each silently change behaviour the business decided on.
