@@ -28,3 +28,7 @@ mvnw            text eol=lf
 *.properties    text eol=lf
 
 *.jar           binary
+
+# Maven reads these line by line as JVM options; a stray CR corrupts the last token of each line.
+.mvn/jvm.config text eol=lf
+.mvn/maven.config text eol=lf
