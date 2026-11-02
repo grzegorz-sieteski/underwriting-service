@@ -21,7 +21,7 @@ Module: **`submission`** — one business capability, nameable without "and" bec
 and search are the write and read side of the same capability, not two capabilities.
 
 ```
-com.example.service.submission
+com.gs5.underwriting.submission
 ├── domain/      WRITE side.  Pure Java. Aggregate package-private.
 ├── query/       READ side.   Projections only. Cannot import domain/.
 └── adapters/
@@ -36,7 +36,7 @@ boundary; a layer between a controller and a facade has nothing to do but delega
 Checkstyle `noServiceSuffixDeclaration` plus ArchUnit `no_procedural_service_layer` fail the
 build on the alternative.
 
-`domain/` and `query/` import only `java.*`, `com.example.service.shared.kernel.*` and
+`domain/` and `query/` import only `java.*`, `com.gs5.underwriting.shared.kernel.*` and
 `org.jspecify.annotations.*`. Each package carries a `package-info.java` with `@NullMarked`.
 
 ---

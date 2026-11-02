@@ -524,7 +524,7 @@ Run by the orchestrator, outputs read rather than reported:
   paging under ties are verified by execution, not by reading.
 - **The Spring context started** against PostgreSQL 17.11 from the packaged jar: Flyway applied
   V1 and V2 (`flyway_schema_history`: both `success = t`), Tomcat on 8080,
-  `Started ServiceApplication in 3.788 seconds`. GET and POST `/api/submissions` → **401**,
+  `Started UnderwritingServiceApplication in 3.788 seconds`. GET and POST `/api/submissions` → **401**,
   the fail-closed resolver behaving exactly as designed.
 
 ### What the first real run disproved

@@ -11,10 +11,10 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.example</groupId>
-    <artifactId>service-backend</artifactId>
+    <groupId>com.gs5</groupId>
+    <artifactId>underwriting-service</artifactId>
     <version>1.0.0-SNAPSHOT</version>
-    <name>service-backend</name>
+    <name>underwriting-service</name>
     <description>Hexagonal + CQRS + Railway Oriented Programming on Java 25 / Spring Boot 4</description>
 
     <properties>

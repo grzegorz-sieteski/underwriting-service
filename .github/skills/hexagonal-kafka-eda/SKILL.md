@@ -38,7 +38,7 @@ retry count yourself.
 ## Step 1: the domain event and the outbound port
 
 ```java
-package com.example.service.submission.domain;
+package com.gs5.underwriting.submission.domain;
 
 import module java.base;
 

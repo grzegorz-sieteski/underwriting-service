@@ -15,7 +15,7 @@ Read `src/main/resources/db/migration/*.sql` before writing any SQL.
 ## Layout
 
 ```
-com.example.service.<module>/
+com.gs5.underwriting.<module>/
 ├── domain/                                   WRITE SIDE — pure Java 25
 │   ├── package-info.java                     @NullMarked
 │   ├── <M>CommandFacade.java                 public — named business methods

@@ -23,7 +23,7 @@ it, say so.
 ## Layout
 
 ```
-service-backend/
+underwriting-service/
 ├── AGENTS.md                          this file
 ├── pom.xml                            Boot 4 modular starters, no preview features
 ├── config/checkstyle/checkstyle.xml   statement-level gate (throw, imports, catch-all)
@@ -40,10 +40,10 @@ service-backend/
 │   ├── skills/                        loaded on demand
 │   └── agents/                        eight roles, invoked with @name
 └── src/
-    ├── main/java/com/example/service/
+    ├── main/java/com/gs5/underwriting/
     │   ├── shared/kernel/             Result, ActorContext, ActorRole — keep tiny
     │   └── <module>/                  domain/ · query/ · adapters/
-    └── test/java/com/example/service/
+    └── test/java/com/gs5/underwriting/
         └── ArchitectureRulesTest.java structural gate
 ```
 
