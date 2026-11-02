@@ -30,9 +30,11 @@ CREATE TABLE submissions
     -- Defence in depth for the domain invariants. Each one mirrors a business rule that is
     -- already refused in the aggregate; a row that violates one of them is a bug, not a refusal.
     CONSTRAINT ck_submissions_external_ref_not_empty CHECK (length(external_ref) > 0),          -- BR-04
-    -- BR-29. Mirrors the domain check. Explicit ranges, not [[:cntrl:]]: external_ref is
-    -- COLLATE "C", and under the C locale PostgreSQL's regex classifies only ASCII, so
-    -- [[:cntrl:]] would miss U+0080-U+009F. U+0000 is refused by the type itself (ADR §8.3).
+    -- BR-29. Mirrors the domain check. Explicit ranges rather than [[:cntrl:]] because they state
+    -- BR-29's two ranges literally and do not depend on how a given PostgreSQL build or locale
+    -- implements regex character classes. On PostgreSQL 17 the two forms were verified
+    -- equivalent (including U+0080-U+009F under COLLATE "C"), which is why the IT cannot tell
+    -- them apart. U+0000 is refused by the type itself (ADR §8.3).
     -- \xhh is greedy over hex digits: any character added to this class must be followed by a
     -- non-hex character or written as a separate range. V2 has never been applied anywhere, so
     -- it is edited in place; after its first application a change here needs a V3.
