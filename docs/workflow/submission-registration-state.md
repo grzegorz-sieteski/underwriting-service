@@ -513,3 +513,39 @@ unit test executes that SQL.
 - W-2: the ADR still shows `ReferenceContainsControlCharacter` with one field; the code has two.
 - W-4: the Kafka ArchUnit rule exempts `..adapters.messaging..`, which does not exist.
 - FU-01: the repository still presupposes Kafka in several places.
+
+## First execution against real infrastructure — 2026-11-02 (Docker available)
+
+Run by the orchestrator, outputs read rather than reported:
+
+- `./mvnw -B verify`: **251 unit + 52 integration tests, all green**, zero skipped. Release
+  conditions 1 and 2 below are now **met**: tenant predicates in both page and count queries,
+  the insert/version trap, the BR-09 race against the real unique index, inclusive ranges, and
+  paging under ties are verified by execution, not by reading.
+- **The Spring context started** against PostgreSQL 17.11 from the packaged jar: Flyway applied
+  V1 and V2 (`flyway_schema_history`: both `success = t`), Tomcat on 8080,
+  `Started ServiceApplication in 3.788 seconds`. GET and POST `/api/submissions` → **401**,
+  the fail-closed resolver behaving exactly as designed.
+
+### What the first real run disproved
+
+A mutation probe (V2 CHECK replaced with `[[:cntrl:]]`) passed all 44 ITs — nothing pinned the
+CHECK. `SubmissionControlCharacterCheckIT` (8 cases, raw JDBC bypassing the domain) now fails on
+exactly U+0085 and U+009F when the CHECK's upper range is dropped.
+
+The same probe disproved a claim that had passed **two reviews and a commit**: that
+`[[:cntrl:]]` misses U+0080–U+009F under `COLLATE "C"`. On PostgreSQL 17 a direct query shows
+`chr(cp) COLLATE "C" ~ '[[:cntrl:]]'` is true for 0x80, 0x85 and 0x9F. The reasoning was
+coherent and wrong; nobody had run it. The V2 comment now gives the true reason for keeping
+explicit ranges (they state the rule literally and do not depend on the regex implementation).
+
+### Note on V2 from now on
+
+V2 has now been **applied** to a local database (container `service-postgres`). Any further
+change to V2 needs either a V3 migration or that container recreated, or Flyway will refuse to
+start on a checksum mismatch.
+
+### Release conditions still open
+
+3. No identity source — every request answers 401.
+4. OPEN-01 — business answer on whether `actorId` may be logged.
