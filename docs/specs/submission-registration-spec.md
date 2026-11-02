@@ -6,7 +6,7 @@ Stage 1 artefact. Source of every business fact: the product owner's confirmed d
 in `docs/workflow/submission-registration-state.md` — the conversations of 2026-11-01 (the
 original scope, and the search filter set and result order) and of 2026-11-02 (`BR-29`, refusing
 references that contain control characters, decided after exploratory testing showed the previous
-rule could not be honoured).
+rule could not be honoured), plus a defect found in review that gave search `BR-30`.
 
 Nothing in this document is an analyst invention. Every business fact here traces to a product
 owner answer; where the business has not decided something, this document says so and places it
@@ -75,7 +75,7 @@ Every row is testable exactly as written.
 | ID | Rule | Condition | Expected outcome / refusal |
 |---|---|---|---|
 | `BR-01` | A caller must be identified before any operation in this feature | No caller is known (no organisation, identity and role available) | Operation refused: **caller not identified**. Nothing is recorded and nothing is returned |
-| `BR-02` | Only an Underwriter or a Senior Underwriter may register a submission | Caller's role is Viewer | Registration refused: **role may not register**. The caller may still search (see `BR-16`) |
+| `BR-02` | Only an Underwriter or a Senior Underwriter may register a submission, and the role is decided **before any of the input is examined** | Caller's role is Viewer | Registration refused: **role may not register**, whatever the reference and insured limit contain. The input is not examined, so a Viewer sending a malformed reference is refused for the role, not for the reference. The caller may still search (see `BR-16`) |
 | `BR-03` | Registration permission depends on role alone | Caller's role is Underwriter, or Senior Underwriter | Registration is permitted. The two roles are treated identically here; no authority limit applies in this feature |
 | `BR-04` | A submission reference must be supplied | Reference is absent, or contains no characters at all | Registration refused: **reference missing** |
 | `BR-05` | A submission reference is at most 64 characters long | Reference is 65 characters or longer | Registration refused: **reference too long**. A reference of exactly 64 characters is accepted |
@@ -103,6 +103,7 @@ Every row is testable exactly as written.
 | `BR-27` | Asking for a page beyond the end of the matching set is a success | The first submission of the requested page lies past the end of the matching set, including when the matching set is empty | A success carrying an empty page and the true total match count. It is **not** a refusal |
 | `BR-28` | Paging reaches the whole matching set, once each | Every page of a matching set is requested in turn while the matching set is unchanged | Each matching submission appears on exactly one page, no submission is skipped, none appears twice, and the sequence of pages follows the order of `BR-24` |
 | `BR-29` | A submission reference may not contain a control character | The reference contains, at any position, at least one character of Unicode general category **Cc** — that is, any character in U+0000–U+001F or in U+007F–U+009F. NUL (U+0000), TAB (U+0009) and NEWLINE (U+000A) are all such characters | Registration refused: **reference contains a control character**. The reference is refused whole; nothing is stripped or replaced (`BR-07`). **SPACE (U+0020) is not a control character**: a reference containing spaces, including one consisting only of spaces, is unaffected by this rule and stays valid |
+| `BR-30` | A search whose reference filter contains a control character matches nothing, and is still a success | A search supplies a submission reference filter containing at least one control character (any character in U+0000–U+001F or U+007F–U+009F). No such reference can have been registered, because `BR-29` refuses every one at registration | A success carrying an empty page and a total match count of zero. It is **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). The filter is never stripped or altered to make it match. A filter made only of spaces is **not** affected, since SPACE is not a control character: it is compared exactly (`BR-07`) and matches a submission registered with that very reference. This extends `BR-20` and `BR-21` |
 
 ---
 
@@ -112,7 +113,7 @@ Every row is testable exactly as written.
 
 | | |
 |---|---|
-| **Who may do it** | A caller whose role is **Underwriter** or **Senior Underwriter** (`BR-02`, `BR-03`) |
+| **Who may do it** | A caller whose role is **Underwriter** or **Senior Underwriter** (`BR-02`, `BR-03`). The role is decided before any input is examined: see "The order in which a registration is judged" below |
 | **Organisational context** | The submission is always registered for the caller's own organisation. The caller cannot name an organisation (`BR-15`) |
 
 Inputs and their hard constraints:
@@ -127,6 +128,8 @@ moment — is taken from the identified caller and from the clock. It is never a
 
 **Every reason this command can be refused** (exhaustive) — there are **nine**:
 
+The numbering below is the order in which refusals are decided (see the next subsection).
+
 | # | Refusal reason | Raised when | Rule |
 |---|---|---|---|
 | 1 | **Caller not identified** | No caller is known | `BR-01` |
@@ -140,6 +143,58 @@ moment — is taken from the identified caller and from the clock. It is never a
 | 9 | **Reference already used** | The caller's organisation has already registered this exact reference, including when a competing registration wins the race | `BR-06`, `BR-09` |
 
 No other refusal exists for this command. A refusal records nothing.
+
+**Business fact that follows success:** the submission is registered — it belongs to the caller's
+organisation, carries the supplied reference and insured limit, names the caller who registered
+it, and carries the moment of registration. It is immediately findable by a search from the same
+organisation. The fact is announced as `SubmissionRegistered` (section 5).
+
+#### The order in which a registration is judged
+
+A registration is judged in the sequence below. **The first failure found is the one refusal the
+caller receives; nothing later in the sequence is considered.**
+
+| Step | What is judged | Refusal, in the order it is tried | Rule |
+|---|---|---|---|
+| 1 | The caller is identified | caller not identified | `BR-01` |
+| 2 | The caller's role permits registering | role may not register | `BR-02`, `BR-03` |
+| 3 | The reference | reference missing, then reference too long, then reference contains a control character | `BR-04`, `BR-05`, `BR-29` |
+| 4 | The insured limit | insured limit missing, then insured limit not positive, then insured limit precision invalid | `BR-10`, `BR-11`, `BR-12` |
+| 5 | The reference against what is already registered | reference already used | `BR-06`, `BR-09` |
+
+This is the order registration has always been judged in. Nothing about it has changed; it is
+written down here so that it is not reversed by accident.
+
+**Why the role comes before any of the input is examined.** A caller who may not register has no
+business having what they sent read, interpreted or judged. Two things follow, and both are
+deliberate:
+
+- *An unauthorised caller learns nothing about the input.* A refusal for the role says nothing
+  about whether the reference or the insured limit would have been accepted, and nothing about
+  which references the organisation already holds. If field refusals came first, anyone holding
+  a Viewer's credentials, genuine or stolen, could use registration to probe the rules and the
+  stored references without ever being permitted to register.
+- *No effort is spent on someone who is not allowed to submit.* The rules about the input are the
+  part of the service that handles whatever a caller chooses to send, so they are exposed to
+  whoever reaches them. Limiting that exposure to callers who are permitted to register is the
+  point of deciding the role first.
+
+Within step 3 and within step 4 the order is fixed, so a request with two faults in the same field
+always receives the earlier of the two. Step 5 depends on what the caller's organisation has
+already registered, not on the input alone, so it comes last.
+
+Which refusal the caller receives when more than one thing is wrong:
+
+| Request | Refusal received |
+|---|---|
+| No caller is known, and the reference is empty | **Caller not identified** |
+| A Viewer sends a malformed reference (for example an empty one, or one containing a TAB) | **Role may not register**, not the reference refusal |
+| A Viewer sends a malformed insured limit (for example `0.00`) | **Role may not register**, not the insured limit refusal |
+| A Viewer sends a valid request whose reference the organisation has already used | **Role may not register** |
+| An Underwriter sends a reference of 65 characters containing a TAB | **Reference too long** (the earlier of the two faults in the reference) |
+| An Underwriter sends a reference containing a TAB and no insured limit | **Reference contains a control character** (the reference is judged before the insured limit) |
+| An Underwriter sends a reference of 65 characters and an insured limit of `1200.5` | **Reference too long** |
+| An Underwriter sends a valid request whose reference the organisation has already used | **Reference already used** |
 
 #### Why references with control characters are refused
 
@@ -196,11 +251,6 @@ SPACE is not a control character, so no rule about spaces changed. `BR-07`'s pro
 trimming stands exactly as it did, and a reference of spaces must still be accepted and stored
 with its spaces intact.
 
-**Business fact that follows success:** the submission is registered — it belongs to the caller's
-organisation, carries the supplied reference and insured limit, names the caller who registered
-it, and carries the moment of registration. It is immediately findable by a search from the same
-organisation. The fact is announced as `SubmissionRegistered` (section 5).
-
 ---
 
 ## 4. Query catalogue
@@ -231,6 +281,17 @@ A range whose lower bound exceeds its upper bound simply matches nothing: the se
 returns an empty page with a total match count of zero. This holds for the insured limit range and
 for the registration moment range alike, and it is **not** a refusal (`BR-21`).
 
+A reference filter containing a control character likewise matches nothing, because `BR-29`
+refuses every such reference at registration, so none can ever have been stored. The search
+succeeds and returns an empty page with a total match count of zero. It is **not** a refusal and
+**not** an error (`BR-30`). The filter is not cleaned up: no character is stripped or replaced to
+make it match something. A filter of spaces only is unaffected, since SPACE is not a control
+character.
+
+Search has no ordering question between role and input: every role may search (`BR-16`) and no
+filter value is ever refused (`BR-20`, `BR-21`, `BR-30`), so the only thing judged before a search
+runs is that the caller is identified (`BR-01`).
+
 **Page request.** Every search asks for one page of the matching set (`BR-25`): which page is
 wanted, and how large a page is. A page size is bounded above; **that bound is a
 resource-protection parameter set in the technical design, not a business rule**, and no number
@@ -254,8 +315,9 @@ else exists to show.
 **This single-reason list is deliberate and complete, not an oversight.** Once the caller is
 known, every search succeeds. In particular a search is never refused for a role reason
 (`BR-16`), never refused because it matched nothing (`BR-20`), never refused because a range
-contradicts itself (`BR-21`), and never refused because the page asked for lies beyond the end of
-the matching set (`BR-27`) — each of those is a successful search returning an empty page.
+contradicts itself (`BR-21`), never refused because the reference filter contains a control
+character (`BR-30`), and never refused because the page asked for lies beyond the end of the
+matching set (`BR-27`) — each of those is a successful search returning an empty page.
 
 ---
 
@@ -304,6 +366,12 @@ Notes:
       of category Cc move from valid to refused). The reversal, its reason, and the inputs that
       are **not** affected are all stated explicitly under the Register command rather than
       folded in silently — existing tests asserting the old behaviour must be changed
+- [x] Registration is judged in the order caller identified, role, reference, insured limit,
+      reference already used. The role is decided before any input is examined, so an unauthorised
+      caller learns nothing about the input; the reason is stated under the Register command.
+      This is the long-standing order, not a reversal
+- [x] Search accepts any filter value without refusal, including a reference filter containing a
+      control character (`BR-30`); it still has exactly one refusal reason
 - [x] No class name, table name, query language or framework term anywhere in this document
 - [x] **Every business fact is confirmed; nothing is left unconfirmed or pending.** The two open
       questions the first draft carried were answered by the product owner on 2026-11-01: the
