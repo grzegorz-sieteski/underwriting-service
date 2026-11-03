@@ -550,3 +550,22 @@ database that is kept. From then on, any change needs a V3 migration.
 
 3. No identity source — every request answers 401.
 4. ~~OPEN-01~~ — **closed 2026-11-02.** Product owner: `actorId` must never appear in logs. The masking already implemented is now a confirmed rule, not a cautious default. Consequence accepted: logs cannot show who registered a submission; that comes from the audit columns.
+
+## Decisions taken on 2026-11-03 (product owner)
+
+1. **Commit `5bf01b3` (approval and access-gate refactor) is kept.** It contains the approval
+   feature, implemented without stages 1–3. The specification and the design both state that
+   approval is OUT OF SCOPE ("a separate future feature"), so the documents and the code now
+   disagree. Until approval has a business specification (new BR ids, reversing the out-of-scope
+   statement) and a design section, the feature is unspecified and must not be released.
+2. **The test cases deleted in `5bf01b3` are NOT restored.** Coverage of the moved behaviour is
+   to be judged by the test designer in the next stage, not restored by default.
+3. **The role policy (`role.canDecide()` as the rule for who may register) is a business
+   decision**, confirmed by the product owner. It is no longer provisional.
+
+### Known limitation of the write-lock gate
+
+`scripts/check-write-lock.sh green` compares against `HEAD`. After commit `5bf01b3`, `HEAD`
+already contains the test changes, so the gate reports "OK" for changes it was built to block.
+Its baseline must be pinned to the last reviewed commit (`b0319f7`) before the gate is relied on
+again. Not fixed in this entry.
