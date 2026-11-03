@@ -2,7 +2,7 @@ package com.gs5.underwriting.submission.adapters.web;
 
 import module java.base;
 
-import com.gs5.underwriting.shared.kernel.ActorContext;
+import com.gs5.underwriting.submission.adapters.access.AuthenticatedCaller;
 import org.springframework.stereotype.Component;
 
 /**
@@ -13,7 +13,7 @@ import org.springframework.stereotype.Component;
  * confirmed the behaviour in that situation: <strong>no identity source configured means no
  * actor</strong>. This resolver returns {@link Optional#empty()} and never invents, defaults or
  * infers an actor, a tenant or a role. The request is then refused as {@code CallerNotIdentified}
- * ({@code 401}) by the domain, which is the correct answer under BR-01 and the only safe one: a
+ * ({@code 401}) by the access gate, which is the correct answer under BR-01 and the only safe one: a
  * resolver that manufactures an actor when it cannot identify one turns BR-01 into decoration and
  * makes every tenant boundary in BR-17 meaningless.
  *
@@ -36,7 +36,7 @@ import org.springframework.stereotype.Component;
 class ActorContextResolver {
 
     /** The caller, when an identity source can name one. Empty is the configured answer today. */
-    Optional<ActorContext> resolve() {
+    Optional<AuthenticatedCaller> resolve() {
         return Optional.empty();
     }
 }

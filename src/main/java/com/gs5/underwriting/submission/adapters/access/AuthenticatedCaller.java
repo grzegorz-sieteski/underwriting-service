@@ -3,6 +3,7 @@ package com.gs5.underwriting.submission.adapters.access;
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.ActorRole;
 
+import java.util.Arrays;
 import java.util.Optional;
 
 import org.jspecify.annotations.Nullable;
@@ -12,13 +13,13 @@ import org.jspecify.annotations.Nullable;
  *
  * <p>The only type that carries a role into the adapter. It never reaches {@code domain/} or
  * {@code query/}, which is how a domain role check becomes a build failure.
- *
- * <p><strong>RED stub.</strong> {@link #parse} returns {@code null}; pinned by
- * {@code AuthenticatedCallerParseTest}.
- */
+ * */
 public final class AuthenticatedCaller {
 
-    private AuthenticatedCaller() {
+    private final ActorContext actor;
+
+    private AuthenticatedCaller(ActorContext actor) {
+        this.actor = actor;
     }
 
     /**
@@ -27,22 +28,23 @@ public final class AuthenticatedCaller {
      * unknown role makes the whole result empty. The tenant and actor checks are those of
      * {@link ActorContext#parse}.
      */
-    @SuppressWarnings("NullAway")
     public static Optional<AuthenticatedCaller> parse(@Nullable String tenantId,
                                                       @Nullable String actorId,
                                                       @Nullable String role) {
-        return null;
+        return Arrays.stream(ActorRole.values())
+                .filter(candidate -> candidate.name().equals(role))
+                .findFirst()
+                .flatMap(parsedRole -> ActorContext.parse(tenantId, actorId, parsedRole))
+                .map(AuthenticatedCaller::new);
     }
 
     /** The organisation and identity. */
-    @SuppressWarnings("NullAway")
     public ActorContext actor() {
-        return null;
+        return actor;
     }
 
     /** The role. */
-    @SuppressWarnings("NullAway")
     public ActorRole role() {
-        return null;
+        return actor.role();
     }
 }

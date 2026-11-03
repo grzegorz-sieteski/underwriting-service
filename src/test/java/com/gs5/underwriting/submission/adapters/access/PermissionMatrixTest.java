@@ -17,9 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The role-by-operation decisions, driven off {@link ActorRole#values()} so that a fourth role is
  * covered the moment it exists, and checked against a policy the test supplies.
  *
- * <p>These tests pin the <em>contract around</em> the policy seam, not a role list. The list of
- * roles that may register is undecided, so no test here names one as correct. Search consults no role
- * at all (BR-16), so its matrix has no policy to vary.
+ * <p>These tests pin the <em>contract around</em> the policy seam using test-specific policies.
+ * The application policy admits underwriters and senior underwriters. Search consults no role at
+ * all (BR-16), so its matrix has no policy to vary.
  */
 class PermissionMatrixTest {
 
@@ -61,6 +61,39 @@ class PermissionMatrixTest {
 
         assertThat(permission.check(Callers.optionalOf(role)))
                 .isEqualTo(Result.failure(new AccessRefusal.PermissionDenied(role)));
+    }
+
+    @ParameterizedTest(name = "approval admits {0} when the policy allows it")
+    @EnumSource(value = ActorRole.class, names = {"UNDERWRITER", "SENIOR_UNDERWRITER"})
+    @DisplayName("approval admits underwriters allowed by the policy")
+    void shouldAdmitApprovalWhenPolicyAllowsTheRole(ActorRole role) {
+        var permission = Permission.approval(new FixedAccessPolicy(Set.of(role)));
+
+        var outcome = permission.check(Callers.optionalOf(role));
+
+        assertThat(outcome.isSuccess()).isTrue();
+        assertThat(outcome.orElse(null).role()).isEqualTo(role);
+    }
+
+    @ParameterizedTest(name = "approval refuses {0} when the policy denies it")
+    @EnumSource(value = ActorRole.class, names = {"VIEWER"})
+    @DisplayName("approval refuses roles outside the configured policy")
+    void shouldRefuseApprovalWhenPolicyDeniesTheRole(ActorRole role) {
+        var permission = Permission.approval(
+                new FixedAccessPolicy(Set.of(ActorRole.UNDERWRITER, ActorRole.SENIOR_UNDERWRITER)));
+
+        assertThat(permission.check(Callers.optionalOf(role)))
+                .isEqualTo(Result.failure(new AccessRefusal.PermissionDenied(role)));
+    }
+
+    @Test
+    @DisplayName("approval refuses an absent caller before checking its role")
+    void shouldRefuseApprovalWhenCallerIsAbsent() {
+        var permission = Permission.approval(
+                new FixedAccessPolicy(Set.of(ActorRole.UNDERWRITER, ActorRole.SENIOR_UNDERWRITER)));
+
+        assertThat(permission.check(Optional.empty()))
+                .isEqualTo(Result.failure(new AccessRefusal.CallerNotIdentified()));
     }
 
     @Test

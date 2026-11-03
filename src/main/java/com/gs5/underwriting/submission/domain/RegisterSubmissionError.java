@@ -1,9 +1,7 @@
 package com.gs5.underwriting.submission.domain;
 
-import com.gs5.underwriting.shared.kernel.ActorRole;
-
 /**
- * Every reason registering a submission can be refused — exhaustively, nine of them.
+ * Every domain reason registering a submission can be refused — exhaustively, seven of them.
  *
  * <p>One sealed interface for this one operation. It is not shared with Search, and it gains no
  * variant the specification does not list.
@@ -17,12 +15,6 @@ import com.gs5.underwriting.shared.kernel.ActorRole;
  * OPEN-01 is open.
  */
 public sealed interface RegisterSubmissionError {
-
-    /** BR-01 — no organisation, identity and role are available. */
-    record CallerNotIdentified() implements RegisterSubmissionError { }
-
-    /** BR-02 — the caller's role is {@code VIEWER}. The role identifies nobody. */
-    record RoleMayNotRegister(ActorRole role) implements RegisterSubmissionError { }
 
     /** BR-04 — no reference supplied, or it contains no characters at all. */
     record ReferenceMissing() implements RegisterSubmissionError { }

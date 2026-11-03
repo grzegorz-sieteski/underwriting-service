@@ -46,7 +46,7 @@ class SubmissionDomainRecordsTest {
                 + "not in full and not partially")
         void shouldMaskAmountWhenRegisterSubmissionCommandPrinted() {
             // Given
-            var command = new RegisterSubmissionCommand("ABC-1", AMOUNT);
+            var command = SubmissionCommandFixtures.parsedCommand("ABC-1", AMOUNT);
 
             // When
             var printed = command.toString();
@@ -95,7 +95,7 @@ class SubmissionDomainRecordsTest {
                 + "correlate submissions (BR-23)")
         void shouldPreserveExternalReferenceInToStringWhenAuditReadableRequired() {
             // Given
-            var command = new RegisterSubmissionCommand("ABC-1", AMOUNT);
+            var command = SubmissionCommandFixtures.parsedCommand("ABC-1", AMOUNT);
             var snapshot = new SubmissionSnapshot(DIGIT_FREE_ID, TENANT, "ABC-1", AMOUNT,
                     "uw-01", MOMENT, null);
 

@@ -2,8 +2,6 @@ package com.gs5.underwriting.submission.domain;
 
 import module java.base;
 
-import com.gs5.underwriting.shared.kernel.LogSafeText;
-
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -23,11 +21,7 @@ import org.jspecify.annotations.Nullable;
  * construction the size actually used. An out-of-range page request clamps and never refuses,
  * because Search has exactly one refusal reason.
  */
-public record SearchSubmissionsQuery(@Nullable String externalRef,
-                                     @Nullable BigDecimal insuredLimitFrom,
-                                     @Nullable BigDecimal insuredLimitTo,
-                                     @Nullable Instant registeredFrom,
-                                     @Nullable Instant registeredTo,
+public record SearchSubmissionsQuery(SubmissionFilter filter,
                                      int page,
                                      int size) {
 
@@ -36,11 +30,27 @@ public record SearchSubmissionsQuery(@Nullable String externalRef,
     /** Engineering decision, recorded in the design: resource protection, not a business rule. */
     public static final int MAX_PAGE_SIZE = 100;
 
-    private static final String MASKED = "***";
-
     public SearchSubmissionsQuery {
         page = Math.max(0, page);
         size = Math.clamp(size, MIN_PAGE_SIZE, MAX_PAGE_SIZE);
+    }
+
+    /**
+     * Parses raw transport filters into the value carried by this query. Search filters are total:
+     * an invalid reference becomes {@link SubmissionFilter.MatchesNothing}, not a refusal.
+     */
+    public static SearchSubmissionsQuery parse(@Nullable String externalRef,
+                                               @Nullable BigDecimal insuredLimitFrom,
+                                               @Nullable BigDecimal insuredLimitTo,
+                                               @Nullable Instant registeredFrom,
+                                               @Nullable Instant registeredTo,
+                                               int page,
+                                               int size) {
+        return new SearchSubmissionsQuery(
+                SubmissionFilter.parse(externalRef, insuredLimitFrom, insuredLimitTo,
+                        registeredFrom, registeredTo),
+                page,
+                size);
     }
 
     /**
@@ -50,11 +60,7 @@ public record SearchSubmissionsQuery(@Nullable String externalRef,
      */
     @Override
     public String toString() {
-        return "SearchSubmissionsQuery[externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
-                + ", insuredLimitFrom=" + MASKED
-                + ", insuredLimitTo=" + MASKED
-                + ", registeredFrom=" + registeredFrom
-                + ", registeredTo=" + registeredTo
+        return "SearchSubmissionsQuery[filter=" + filter
                 + ", page=" + page
                 + ", size=" + size + "]";
     }

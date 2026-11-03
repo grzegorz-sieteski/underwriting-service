@@ -24,16 +24,27 @@ final class InMemorySubmissionCommandRepository implements SubmissionCommandRepo
     private record ReferenceKey(UUID tenantId, String externalRef) { }
 
     private final Map<ReferenceKey, SubmissionSnapshot> byReference = new ConcurrentHashMap<>();
+    private final Map<UUID, SubmissionSnapshot> byId = new ConcurrentHashMap<>();
 
     @Override
     public Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> insert(
             SubmissionSnapshot snapshot) {
         var key = new ReferenceKey(snapshot.tenantId(), snapshot.externalRef());
         var alreadyThere = byReference.putIfAbsent(key, snapshot);
-        return alreadyThere == null
-                ? Result.success(new SubmissionId(snapshot.id()))
-                : Result.failure(
-                        new RegisterSubmissionError.ReferenceAlreadyUsed(snapshot.externalRef()));
+        if (alreadyThere != null) {
+            return Result.failure(
+                    new RegisterSubmissionError.ReferenceAlreadyUsed(snapshot.externalRef()));
+        }
+        byId.put(snapshot.id(), snapshot);
+        return Result.success(new SubmissionId(snapshot.id()));
+    }
+
+    @Override
+    public Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id) {
+        var snapshot = byId.get(id);
+        return snapshot != null && snapshot.tenantId().equals(tenantId)
+                ? Optional.of(snapshot)
+                : Optional.empty();
     }
 
     // ------------------------------------------------------------------ arrange
@@ -44,6 +55,7 @@ final class InMemorySubmissionCommandRepository implements SubmissionCommandRepo
                 new java.math.BigDecimal("1.00"), "someone-else",
                 java.time.Instant.parse("2020-01-01T00:00:00Z"), 0L);
         byReference.put(new ReferenceKey(tenantId, externalRef), snapshot);
+        byId.put(snapshot.id(), snapshot);
     }
 
     // ------------------------------------------------------------------ inspect

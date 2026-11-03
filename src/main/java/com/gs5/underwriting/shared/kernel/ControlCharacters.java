@@ -1,17 +1,15 @@
 package com.gs5.underwriting.shared.kernel;
 
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 /**
- * The single definition of Unicode general category {@code Cc}: U+0000–U+001F and U+007F–U+009F.
+ * The single definition of Unicode general category {@code Cc}: U+0000âU+001F and U+007FâU+009F.
  *
  * <p>Defined once here because {@code domain/}, {@code query/} and {@code adapters/} all need it and
  * {@code query/} may not import {@code domain/}. Three private copies would be three places for the
  * category to drift.
- *
- * <p><strong>RED stub.</strong> {@link #firstIn} returns {@code null}; its behaviour is pinned by
- * {@code ControlCharactersTest}. Implementing it is stage 4's job.
- */
+ * */
 public final class ControlCharacters {
 
     private ControlCharacters() {
@@ -21,9 +19,20 @@ public final class ControlCharacters {
      * The first character of category {@code Cc} in {@code text}, with its code point and its
      * zero-based index counted in <strong>code points</strong>, or empty when there is none.
      */
-    @SuppressWarnings("NullAway")
     public static Optional<Found> firstIn(String text) {
-        return null;
+        var codePoints = text.codePoints().toArray();
+        return IntStream.range(0, codePoints.length)
+                .filter(index -> isControl(codePoints[index]))
+                .mapToObj(index -> new Found(codePoints[index], index))
+                .findFirst();
+    }
+
+    /**
+     * True for exactly category {@code Cc}. {@code Character.isWhitespace} and a {@code \s} regex
+     * both disagree with the category over most of U+007F–U+009F and wrongly include SPACE.
+     */
+    public static boolean isControl(int codePoint) {
+        return Character.getType(codePoint) == Character.CONTROL;
     }
 
     /**

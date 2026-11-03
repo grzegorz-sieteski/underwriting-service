@@ -47,8 +47,6 @@ class RegisterSubmissionUseCaseTest {
             new ActorContext(TENANT_A, "uw-01", ActorRole.UNDERWRITER);
     private static final ActorContext SENIOR_UNDERWRITER =
             new ActorContext(TENANT_A, "suw-01", ActorRole.SENIOR_UNDERWRITER);
-    private static final ActorContext VIEWER =
-            new ActorContext(TENANT_A, "viewer-01", ActorRole.VIEWER);
     private static final ActorContext UNDERWRITER_OF_OTHER_TENANT =
             new ActorContext(TENANT_B, "uw-99", ActorRole.UNDERWRITER);
 
@@ -72,8 +70,8 @@ class RegisterSubmissionUseCaseTest {
     private Result<SubmissionId, RegisterSubmissionError> registerAs(ActorContext actor,
                                                                      String externalRef,
                                                                      BigDecimal insuredLimit) {
-        return ActorContext.callWith(actor,
-                () -> useCase.execute(new RegisterSubmissionCommand(externalRef, insuredLimit)));
+        return RegisterSubmissionCommand.parse(externalRef, insuredLimit)
+                .flatMap(command -> useCase.execute(actor, command));
     }
 
     private static Result<SubmissionId, RegisterSubmissionError> accepted() {
@@ -83,90 +81,6 @@ class RegisterSubmissionUseCaseTest {
     private static Result<SubmissionId, RegisterSubmissionError> refused(
             RegisterSubmissionError reason) {
         return Result.failure(reason);
-    }
-
-    // =================================================================== BR-01
-
-    @Nested
-    @DisplayName("A caller must be identified first (BR-01)")
-    class CallerIdentity {
-
-        @Test
-        @DisplayName("registration is refused when no caller is known")
-        void shouldRefuseRegistrationWhenCallerIsUnidentified() {
-            // Given
-            var command = new RegisterSubmissionCommand("ABC-1", VALID_LIMIT);
-
-            // When
-            var result = useCase.execute(command);
-
-            // Then
-            assertThat(result).isEqualTo(refused(new RegisterSubmissionError.CallerNotIdentified()));
-        }
-
-        @Test
-        @DisplayName("an unidentified caller records nothing and announces nothing")
-        void shouldRecordNothingAndAnnounceNothingWhenCallerIsUnidentified() {
-            // Given
-            var command = new RegisterSubmissionCommand("ABC-1", VALID_LIMIT);
-
-            // When
-            useCase.execute(command);
-
-            // Then
-            assertThat(repository.storedSubmissions()).isEmpty();
-            assertThat(eventPublisher.publishedEvents()).isEmpty();
-        }
-    }
-
-    // ============================================================ BR-02, BR-03
-
-    @Nested
-    @DisplayName("Only an underwriter or senior underwriter may register (BR-02, BR-03)")
-    class Role {
-
-        @Test
-        @DisplayName("an underwriter may register")
-        void shouldAcceptRegistrationWhenCallerIsUnderwriter() {
-            // Given & When
-            var result = registerAs(UNDERWRITER, "ABC-1", VALID_LIMIT);
-
-            // Then
-            assertThat(result).isEqualTo(accepted());
-        }
-
-        @Test
-        @DisplayName("a senior underwriter may register, and is treated identically: "
-                + "no authority limit applies in this feature")
-        void shouldAcceptRegistrationWhenCallerIsSeniorUnderwriter() {
-            // Given & When
-            var result = registerAs(SENIOR_UNDERWRITER, "ABC-1", new BigDecimal("999999999.99"));
-
-            // Then
-            assertThat(result).isEqualTo(accepted());
-        }
-
-        @Test
-        @DisplayName("a viewer is refused, and the reason names the role rather than the caller")
-        void shouldRefuseRegistrationWhenCallerIsViewer() {
-            // Given & When
-            var result = registerAs(VIEWER, "ABC-1", VALID_LIMIT);
-
-            // Then
-            assertThat(result).isEqualTo(
-                    refused(new RegisterSubmissionError.RoleMayNotRegister(ActorRole.VIEWER)));
-        }
-
-        @Test
-        @DisplayName("a refused registration records nothing and announces nothing")
-        void shouldRecordNothingAndAnnounceNothingWhenRegistrationIsRefused() {
-            // Given & When
-            registerAs(VIEWER, "ABC-1", VALID_LIMIT);
-
-            // Then
-            assertThat(repository.storedSubmissions()).isEmpty();
-            assertThat(eventPublisher.publishedEvents()).isEmpty();
-        }
     }
 
     // ============================================================ BR-04, BR-07
@@ -423,18 +337,6 @@ class RegisterSubmissionUseCaseTest {
             // Then
             assertThat(result).isEqualTo(refused(
                     new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 2)));
-        }
-
-        @Test
-        @DisplayName("the role gate still comes first: a viewer sending a control character is "
-                + "told about the role, not about the reference")
-        void shouldCheckRoleBeforeReferenceValidationWhenViewerSubmitsControlCharacter() {
-            // Given & When
-            var result = registerAs(VIEWER, "AB\tCD", VALID_LIMIT);
-
-            // Then
-            assertThat(result).isEqualTo(
-                    refused(new RegisterSubmissionError.RoleMayNotRegister(ActorRole.VIEWER)));
         }
 
         @Test
@@ -723,8 +625,7 @@ class RegisterSubmissionUseCaseTest {
             var actor = new ActorContext(TENANT_A, "actor-" + role, role);
 
             // When
-            ActorContext.callWith(actor,
-                    () -> useCase.execute(new RegisterSubmissionCommand("ABC-1", VALID_LIMIT)));
+            useCase.execute(actor, SubmissionCommandFixtures.parsedCommand("ABC-1", VALID_LIMIT));
 
             // Then
             assertThat(repository.storedSubmission(TENANT_A, "ABC-1"))
@@ -740,9 +641,8 @@ class RegisterSubmissionUseCaseTest {
     class RefusalReasonShape {
 
         @Test
-        @DisplayName("registration has exactly the nine refusal reasons the specification lists, "
-                + "and no tenth")
-        void shouldContainExactlyNineRefusalReasonsWhenErrorHierarchyInspected() {
+        @DisplayName("the domain has exactly the seven business refusal reasons")
+        void shouldContainExactlySevenBusinessRefusalReasonsWhenErrorHierarchyInspected() {
             // Given & When
             var variantNames = Arrays.stream(RegisterSubmissionError.class.getPermittedSubclasses())
                     .map(Class::getSimpleName)
@@ -751,15 +651,13 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(variantNames).containsExactly(
-                    "CallerNotIdentified",
                     "InsuredLimitMissing",
                     "InsuredLimitNotPositive",
                     "InsuredLimitPrecisionInvalid",
                     "ReferenceAlreadyUsed",
                     "ReferenceContainsControlCharacter",
                     "ReferenceMissing",
-                    "ReferenceTooLong",
-                    "RoleMayNotRegister");
+                    "ReferenceTooLong");
         }
 
         @Test

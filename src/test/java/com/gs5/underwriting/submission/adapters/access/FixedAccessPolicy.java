@@ -27,6 +27,11 @@ final class FixedAccessPolicy implements AccessPolicy {
     }
 
     @Override
+    public boolean mayApprove(ActorRole role) {
+        return admitted.contains(role);
+    }
+
+    @Override
     public Optional<String> tenantIdFrom(Map<String, String> identityClaims) {
         return Optional.empty();
     }

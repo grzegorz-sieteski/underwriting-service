@@ -67,8 +67,8 @@ class SubmissionRegistrationAdversarialTest {
     private Result<SubmissionId, RegisterSubmissionError> registerAs(ActorContext caller,
                                                                       String externalRef,
                                                                       BigDecimal insuredLimit) {
-        return ActorContext.callWith(caller,
-                () -> useCase.execute(new RegisterSubmissionCommand(externalRef, insuredLimit)));
+        return RegisterSubmissionCommand.parse(externalRef, insuredLimit)
+                .flatMap(command -> useCase.execute(caller, command));
     }
 
     private Result<SubmissionId, RegisterSubmissionError> register(String externalRef,
@@ -328,73 +328,6 @@ class SubmissionRegistrationAdversarialTest {
         }
     }
 
-    // ================================================================ roles
-
-    @Nested
-    @DisplayName("The role gate, driven off the enum rather than off three hand-written cases "
-            + "(BR-02, BR-03)")
-    class RoleGate {
-
-        @ParameterizedTest(name = "[{index}] role={0}")
-        @EnumSource(ActorRole.class)
-        @DisplayName("exactly the deciding roles may register, and a role added to the enum after "
-                + "this was written must be classified explicitly rather than inherit a default")
-        void shouldPermitOnlyDecidingRolesToRegisterWhenExhaustivelyChecked(ActorRole role) {
-            // Given
-            var result = registerAs(new ActorContext(TENANT_A, "actor-01", role),
-                    "ROLE-" + role, VALID_LIMIT);
-
-            // When
-            var mayRegister = switch (role) {
-                case UNDERWRITER, SENIOR_UNDERWRITER -> true;
-                case VIEWER -> false;
-            };
-
-            // Then
-            if (mayRegister) {
-                assertThat(result).isEqualTo(Result.success(EXPECTED_ID));
-            } else {
-                assertThat(result).isEqualTo(Result.failure(
-                        new RegisterSubmissionError.RoleMayNotRegister(role)));
-            }
-        }
-
-        @Test
-        @DisplayName("the feature has exactly the three roles the specification names, and no "
-                + "fourth: a fourth would be an invented business concept")
-        void shouldContainExactlyThreeRolesInEnum() {
-            // Given & When & Then
-            assertThat(ActorRole.values()).containsExactly(
-                    ActorRole.VIEWER, ActorRole.UNDERWRITER, ActorRole.SENIOR_UNDERWRITER);
-        }
-
-        @Test
-        @DisplayName("a refused role records nothing and announces nothing, so the refusal is not "
-                + "an existence oracle either")
-        void shouldRecordNothingAndAnnounceNothingWhenRoleRefused() {
-            // Given & When
-            registerAs(new ActorContext(TENANT_A, "viewer-01", ActorRole.VIEWER), "V-1",
-                    VALID_LIMIT);
-
-            // Then
-            assertThat(repository.storedCount()).isZero();
-            assertThat(eventPublisher.publishedEvents()).isEmpty();
-        }
-
-        @Test
-        @DisplayName("the role gate is checked BEFORE any input validation, so a viewer sending "
-                + "rubbish learns about their role and nothing about the input rules")
-        void shouldCheckRoleGateBeforeInputValidationWhenInvalidPayloadSent() {
-            // Given & When
-            var result = registerAs(new ActorContext(TENANT_A, "viewer-01", ActorRole.VIEWER),
-                    null, null);
-
-            // Then
-            assertThat(result).isEqualTo(Result.failure(
-                    new RegisterSubmissionError.RoleMayNotRegister(ActorRole.VIEWER)));
-        }
-    }
-
     // ================================================================ concurrency
 
     @Nested
@@ -479,28 +412,6 @@ class SubmissionRegistrationAdversarialTest {
                     .allSatisfy(event -> assertThat(event.tenantId()).isEqualTo(TENANT_A));
         }
 
-        @Test
-        @DisplayName("an actor bound in one virtual thread is never visible from another: a "
-                + "ScopedValue binding does not leak across tasks the way a ThreadLocal would")
-        void shouldNotLeakScopedValueBindingAcrossVirtualThreadTasks() {
-            // Given & When
-            try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
-                CompletableFuture.supplyAsync(
-                        () -> registerAs(underwriterOf(TENANT_A), "BOUND-1", VALID_LIMIT), pool)
-                        .join();
-
-                var unbound = CompletableFuture.supplyAsync(
-                        () -> useCase.execute(
-                                new RegisterSubmissionCommand("UNBOUND-1", VALID_LIMIT)), pool)
-                        .join();
-
-                // Then
-                assertThat(unbound).isEqualTo(Result.failure(
-                        new RegisterSubmissionError.CallerNotIdentified()));
-            }
-
-            assertThat(repository.storedCount()).isEqualTo(1);
-        }
     }
 
     // ================================================================ masking
@@ -514,13 +425,11 @@ class SubmissionRegistrationAdversarialTest {
         private static final String ACTOR = "uw-secret-identity";
 
         @Test
-        @DisplayName("every one of the nine write-side refusal reasons, instantiated and printed, "
+        @DisplayName("every one of the seven domain refusal reasons, instantiated and printed, "
                 + "discloses neither the amount nor the actor")
         void shouldNeverDiscloseAmountOrActorInAnyWriteSideRefusalReason() {
             // Given
             var everyVariant = List.<RegisterSubmissionError>of(
-                    new RegisterSubmissionError.CallerNotIdentified(),
-                    new RegisterSubmissionError.RoleMayNotRegister(ActorRole.VIEWER),
                     new RegisterSubmissionError.ReferenceMissing(),
                     new RegisterSubmissionError.ReferenceTooLong(64, 65),
                     new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0000, 3),
@@ -548,7 +457,8 @@ class SubmissionRegistrationAdversarialTest {
             // When
             registerAs(caller, "MASK-1", new BigDecimal(SECRET));
 
-            var command = new RegisterSubmissionCommand("MASK-1", new BigDecimal(SECRET));
+            var command = SubmissionCommandFixtures.parsedCommand("MASK-1",
+                    new BigDecimal(SECRET));
             var snapshot = repository.storedSubmission(TENANT_A, "MASK-1").orElseThrow();
             var event = eventPublisher.publishedEvents().getFirst();
 

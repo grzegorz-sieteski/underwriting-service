@@ -2,7 +2,6 @@ package com.gs5.underwriting.submission.adapters.persistence;
 
 import module java.base;
 
-import com.gs5.underwriting.submission.domain.SubmissionSummaryView;
 import org.jspecify.annotations.Nullable;
 import org.springframework.data.jdbc.repository.query.Query;
 import org.springframework.data.repository.Repository;
@@ -59,7 +58,7 @@ interface SubmissionQueryJdbcRepository extends Repository<SubmissionJdbcEntity,
             ORDER BY registered_at DESC, id DESC
             LIMIT :limit OFFSET :offset
             """)
-    List<SubmissionSummaryView> findPage(
+    List<SubmissionSummaryJdbcProjection> findPage(
             @Param("tenantId") UUID tenantId,
             @Param("externalRef") @Nullable String externalRef,
             @Param("insuredLimitFrom") @Nullable BigDecimal insuredLimitFrom,

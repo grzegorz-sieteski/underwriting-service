@@ -6,14 +6,13 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * <strong>TODO — undecided, do not implement by guessing.</strong> This is the single seam behind
- * which two things are not yet decided:
+ * The access policy keeps operation permissions and identity-claim extraction at the edge:
  *
  * <ol>
- *   <li><strong>Which roles may register.</strong> The list is configured here, in one place, and
- *       nowhere else. No role set is named in this interface or in any test of it.</li>
+ *   <li><strong>Which roles may register or approve.</strong> Both operations currently allow
+ *       underwriters and senior underwriters.</li>
  *   <li><strong>Where the caller's tenant comes from</strong>, i.e. which identity claim carries it.
- *       No claim name is named in this interface or in any test of it.</li>
+ *       No identity source or claim name has been configured yet.</li>
  * </ol>
  *
  * <p>Implementations <strong>fail closed</strong>: a role the implementation does not recognise is
@@ -21,12 +20,15 @@ import java.util.Optional;
  */
 public interface AccessPolicy {
 
-    /** TODO — the list of roles permitted to register is undecided. A role not listed is refused. */
+    /** A role outside the configured registration policy is refused. */
     boolean mayRegister(ActorRole role);
 
+    /** A role outside the configured approval policy is refused. */
+    boolean mayApprove(ActorRole role);
+
     /**
-     * TODO — the source of the tenant is undecided. Returns the raw tenant text, which
-     * {@link AuthenticatedCaller#parse} then checks, or empty when the claims carry none.
+     * The source of the tenant is not configured. Returns the raw tenant text for parsing, or
+     * empty when the claims carry none.
      */
     Optional<String> tenantIdFrom(Map<String, String> identityClaims);
 }

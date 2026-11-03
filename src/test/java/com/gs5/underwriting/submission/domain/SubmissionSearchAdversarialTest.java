@@ -2,7 +2,6 @@ package com.gs5.underwriting.submission.domain;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.ActorRole;
-import com.gs5.underwriting.shared.kernel.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -65,17 +64,16 @@ class SubmissionSearchAdversarialTest {
         return new ActorContext(tenantId, "actor-of-" + tenantId, role);
     }
 
-    private Result<SubmissionPageView, SearchSubmissionsError> searchAs(ActorContext caller,
-                                                                        SearchSubmissionsQuery q) {
-        return ActorContext.callWith(caller, () -> useCase.ask(q));
+    private SubmissionPageView searchAs(ActorContext caller, SearchSubmissionsQuery query) {
+        return useCase.ask(caller, query);
     }
 
     private static SearchSubmissionsQuery unfiltered(int page, int size) {
-        return new SearchSubmissionsQuery(null, null, null, null, null, page, size);
+        return SearchSubmissionsQuery.parse(null, null, null, null, null, page, size);
     }
 
     private static SearchSubmissionsQuery byReference(String externalRef) {
-        return new SearchSubmissionsQuery(externalRef, null, null, null, null, 0, 100);
+        return SearchSubmissionsQuery.parse(externalRef, null, null, null, null, 0, 100);
     }
 
     // ================================================================ BOLA
@@ -105,8 +103,7 @@ class SubmissionSearchAdversarialTest {
 
             // Then
             assertThat(foreign).isEqualTo(nonexistent);
-            assertThat(foreign).isEqualTo(
-                    Result.success(new SubmissionPageView(List.of(), 0L, 0, 100)));
+            assertThat(foreign).isEqualTo(new SubmissionPageView(List.of(), 0L, 0, 100));
         }
 
         @Test
@@ -120,8 +117,7 @@ class SubmissionSearchAdversarialTest {
             var result = searchAs(caller, unfiltered(0, 100));
 
             // Then
-            assertThat(result).isEqualTo(
-                    Result.success(new SubmissionPageView(List.of(), 0L, 0, 100)));
+            assertThat(result).isEqualTo(new SubmissionPageView(List.of(), 0L, 0, 100));
         }
 
         @Test
@@ -135,9 +131,8 @@ class SubmissionSearchAdversarialTest {
             var result = searchAs(caller, byReference("SECRET-REF"));
 
             // Then
-            assertThat(result.isSuccess()).isTrue();
-            assertThat(SearchSubmissionsError.class.getPermittedSubclasses())
-                    .containsExactly(SearchSubmissionsError.CallerNotIdentified.class);
+            assertThat(result.submissions()).isEmpty();
+            assertThat(result.totalMatchCount()).isZero();
         }
 
         @Test
@@ -146,7 +141,7 @@ class SubmissionSearchAdversarialTest {
         void shouldNeverReturnOtherTenantRowsWhenFilterMatchesExactPropertiesOfForeignSubmission() {
             // Given
             var caller = actor(TENANT_A, ActorRole.SENIOR_UNDERWRITER);
-            var aimedAtTheOtherTenantsRow = new SearchSubmissionsQuery(
+            var aimedAtTheOtherTenantsRow = SearchSubmissionsQuery.parse(
                     "SECRET-REF",
                     new BigDecimal(SECRET_AMOUNT),
                     new BigDecimal(SECRET_AMOUNT),
@@ -156,7 +151,7 @@ class SubmissionSearchAdversarialTest {
             var result = searchAs(caller, aimedAtTheOtherTenantsRow);
 
             // Then
-            assertThat(result).isEqualTo(Result.success(new SubmissionPageView(List.of(), 0L, 0, 100)));
+            assertThat(result).isEqualTo(new SubmissionPageView(List.of(), 0L, 0, 100));
         }
 
         @Test
@@ -169,8 +164,7 @@ class SubmissionSearchAdversarialTest {
             // When & Then
             for (var page : List.of(0, 1, 2, 1000)) {
                 assertThat(searchAs(caller, unfiltered(page, 100)))
-                        .isEqualTo(Result.success(
-                                new SubmissionPageView(List.of(), 0L, page, 100)));
+                        .isEqualTo(new SubmissionPageView(List.of(), 0L, page, 100));
             }
         }
 
@@ -204,8 +198,8 @@ class SubmissionSearchAdversarialTest {
             var recordingUseCase = new SearchSubmissionsUseCase(recorder);
 
             // When
-            ActorContext.runWith(actor(TENANT_A, ActorRole.UNDERWRITER),
-                    () -> recordingUseCase.ask(unfiltered(Integer.MAX_VALUE, 100)));
+            recordingUseCase.ask(actor(TENANT_A, ActorRole.UNDERWRITER),
+                    unfiltered(Integer.MAX_VALUE, 100));
 
             // Then
             assertThat(recorder.lastOffset).isEqualTo(214_748_364_700L).isPositive();
@@ -220,9 +214,8 @@ class SubmissionSearchAdversarialTest {
             var recordingUseCase = new SearchSubmissionsUseCase(recorder);
 
             // When
-            ActorContext.runWith(actor(TENANT_A, ActorRole.UNDERWRITER),
-                    () -> recordingUseCase.ask(
-                            unfiltered(Integer.MAX_VALUE, SearchSubmissionsQuery.MAX_PAGE_SIZE)));
+            recordingUseCase.ask(actor(TENANT_A, ActorRole.UNDERWRITER),
+                    unfiltered(Integer.MAX_VALUE, SearchSubmissionsQuery.MAX_PAGE_SIZE));
 
             // Then
             assertThat(recorder.lastOffset)
@@ -235,7 +228,7 @@ class SubmissionSearchAdversarialTest {
                 + "of going through the controller")
         void shouldEnforceClampingWhenConstructingRecordDirectly() {
             // Given & When
-            var hostile = new SearchSubmissionsQuery(null, null, null, null, null,
+            var hostile = SearchSubmissionsQuery.parse(null, null, null, null, null,
                     Integer.MIN_VALUE, Integer.MAX_VALUE);
 
             // Then
@@ -255,15 +248,14 @@ class SubmissionSearchAdversarialTest {
 
             // When
             var first = searchAs(caller, unfiltered(0, 500));
-            var appliedSize = first.toOptional().orElseThrow().size();
+            var appliedSize = first.size();
 
             // Then
             assertThat(appliedSize).isEqualTo(SearchSubmissionsQuery.MAX_PAGE_SIZE);
 
             var pageNumber = 0;
             while (true) {
-                var view = searchAs(caller, unfiltered(pageNumber, appliedSize))
-                        .toOptional().orElseThrow();
+                var view = searchAs(caller, unfiltered(pageNumber, appliedSize));
                 if (view.submissions().isEmpty()) {
                     break;
                 }
@@ -284,8 +276,8 @@ class SubmissionSearchAdversarialTest {
             var caller = actor(TENANT_A, ActorRole.VIEWER);
 
             // When
-            var page0 = searchAs(caller, unfiltered(0, 500)).toOptional().orElseThrow();
-            var page1 = searchAs(caller, unfiltered(1, 500)).toOptional().orElseThrow();
+            var page0 = searchAs(caller, unfiltered(0, 500));
+            var page1 = searchAs(caller, unfiltered(1, 500));
 
             // Then
             assertThat(page0.size()).isEqualTo(SearchSubmissionsQuery.MAX_PAGE_SIZE);
@@ -317,7 +309,7 @@ class SubmissionSearchAdversarialTest {
 
             // Then
             assertThat(asRole).isEqualTo(asViewer);
-            assertThat(asRole.toOptional().orElseThrow().totalMatchCount()).isEqualTo(3L);
+            assertThat(asRole.totalMatchCount()).isEqualTo(3L);
         }
 
         @Test
@@ -370,8 +362,7 @@ class SubmissionSearchAdversarialTest {
                         .toList();
                 tasks.forEach(task -> {
                     var result = task.join();
-                    assertThat(result.isSuccess()).isTrue();
-                    answers.add(result.toOptional().orElseThrow());
+                    answers.add(result);
                 });
             }
 
@@ -414,8 +405,7 @@ class SubmissionSearchAdversarialTest {
                 // Then
                 readers.forEach(reader -> {
                     var result = reader.join();
-                    assertThat(result.isSuccess()).isTrue();
-                    var view = result.toOptional().orElseThrow();
+                    var view = result;
                     assertThat((long) view.submissions().size())
                             .isLessThanOrEqualTo(view.totalMatchCount());
                     assertThat(view.submissions()).doesNotContainNull().doesNotHaveDuplicates();
@@ -456,7 +446,7 @@ class SubmissionSearchAdversarialTest {
                 + "that is right)")
         void shouldMaskBothAmountBoundsWhenSearchSubmissionsQueryPrinted() {
             // Given
-            var query = new SearchSubmissionsQuery("S-1", LOWER, UPPER, at(0), at(1), 0, 100);
+            var query = SearchSubmissionsQuery.parse("S-1", LOWER, UPPER, at(0), at(1), 0, 100);
 
             // When
             var printed = query.toString();
@@ -487,23 +477,6 @@ class SubmissionSearchAdversarialTest {
                     .contains("S-1");
         }
 
-        @Test
-        @DisplayName("the search refusal hierarchy is exactly one variant carrying no component at "
-                + "all, so it cannot carry a value forbidden in a log")
-        void shouldHaveExactlyOneSearchRefusalReasonCarryingNoComponents() {
-            // C-3: this test used to claim a read-side AND write-side sweep while inspecting only
-            // SearchSubmissionsError, and asserted allSatisfy over an EMPTY list, which passes
-            // vacuously whatever it contains. The write side is swept by
-            // SubmissionRegistrationAdversarialTest. Here the size and the emptiness are asserted
-            // outright, so a second variant or a first component fails this instead of slipping by.
-            var variants = SearchSubmissionsError.class.getPermittedSubclasses();
-            var components = Arrays.stream(variants)
-                    .flatMap(variant -> Arrays.stream(variant.getRecordComponents()))
-                    .toList();
-
-            assertThat(variants).hasSize(1);
-            assertThat(components).isEmpty();
-        }
     }
 
     /** Captures the limit and offset the useCase computes, which no fake in the suite exposes. */

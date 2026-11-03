@@ -54,7 +54,7 @@ public final class LogSafeText {
     }
 
     private static String renderCodePoint(int codePoint) {
-        return Character.getType(codePoint) == Character.CONTROL
+        return ControlCharacters.isControl(codePoint)
                 ? String.format(Locale.ROOT, "\\u%04X", codePoint)
                 : Character.toString(codePoint);
     }

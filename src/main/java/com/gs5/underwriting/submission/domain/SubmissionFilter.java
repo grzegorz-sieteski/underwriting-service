@@ -26,15 +26,28 @@ public sealed interface SubmissionFilter {
     /**
      * Every supplied criterion can match something. A {@code null} means the criterion was not
      * supplied (BR-19), which includes an empty reference filter (BR-31).
-     *
-     * <p><strong>Pending:</strong> this record must mask both insured-limit bounds in its
-     * {@code toString()} (BR-22, strict reading). It does not yet, and that is not pinned here.
      */
     record Narrowing(@Nullable ExternalReference reference,
                      @Nullable BigDecimal insuredLimitFrom,
                      @Nullable BigDecimal insuredLimitTo,
                      @Nullable Instant registeredFrom,
                      @Nullable Instant registeredTo) implements SubmissionFilter {
+
+        private static final String MASKED = "***";
+
+        /**
+         * Masks both insured-limit bounds (BR-22, strict reading): a logged search for
+         * {@code from=1200.00, to=1200.00} that returns one row discloses that row's amount. The
+         * reference prints through its own escaping {@code toString()} (BR-23).
+         */
+        @Override
+        public String toString() {
+            return "Narrowing[reference=" + reference
+                    + ", insuredLimitFrom=" + MASKED
+                    + ", insuredLimitTo=" + MASKED
+                    + ", registeredFrom=" + registeredFrom
+                    + ", registeredTo=" + registeredTo + "]";
+        }
     }
 
     /** BR-30, BR-32: the reference filter provably matches nothing, so the store is never asked. */
@@ -44,16 +57,25 @@ public sealed interface SubmissionFilter {
     /**
      * Total. Calls {@link ExternalReference#parse} and folds the result; contains no character test
      * of its own. Insured-limit bounds are not revalidated against BR-11 or BR-12, and a
-     * contradictory range is still a {@link Narrowing} (BR-21).
+     * contradictory range is still a {@link Narrowing} (BR-21): unlike a control character it does
+     * not break the store, the predicate simply matches no row.
      *
-     * <p><strong>RED stub.</strong> Returns {@code null}; pinned by {@code SubmissionFilterTest}.
+     * <p>The same parse failure that registration turns into a refusal is, for a search, the true
+     * answer "none" — one parse, two folds.
      */
-    @SuppressWarnings("NullAway")
     static SubmissionFilter parse(@Nullable String reference,
                                   @Nullable BigDecimal insuredLimitFrom,
                                   @Nullable BigDecimal insuredLimitTo,
                                   @Nullable Instant registeredFrom,
                                   @Nullable Instant registeredTo) {
-        return null;
+        return ExternalReference.parse(reference).<SubmissionFilter>fold(
+                parsed -> new Narrowing(parsed, insuredLimitFrom, insuredLimitTo,
+                        registeredFrom, registeredTo),
+                error -> switch (error) {
+                    case ExternalReferenceError.Missing _ -> new Narrowing(null, insuredLimitFrom,
+                            insuredLimitTo, registeredFrom, registeredTo);
+                    case ExternalReferenceError.TooLong _ -> new MatchesNothing();
+                    case ExternalReferenceError.ControlCharacter _ -> new MatchesNothing();
+                });
     }
 }

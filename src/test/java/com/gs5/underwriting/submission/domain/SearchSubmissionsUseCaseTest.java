@@ -2,7 +2,6 @@ package com.gs5.underwriting.submission.domain;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.ActorRole;
-import com.gs5.underwriting.shared.kernel.Result;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,7 +13,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -22,13 +20,12 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Searching submissions: BR-16 to BR-28, and the single refusal reason Search has.
+ * Searching submissions: BR-16 to BR-28.
  *
  * <p>The shape of this class is the point of the specification: almost every test asserts a
  * <em>success</em>. Matching nothing, a contradictory range and a page past the end of the
  * matching set are all successful empty pages, and a role and another organisation's data never
- * produce a refusal either. There is exactly one way to be refused, and it is in the first
- * nested class.
+ * alter the result. Caller admission is covered at the access-gate boundary.
  */
 class SearchSubmissionsUseCaseTest {
 
@@ -74,68 +71,32 @@ class SearchSubmissionsUseCaseTest {
         return UUID.fromString("00000000-0000-0000-0000-00000000000" + n);
     }
 
-    private Result<SubmissionPageView, SearchSubmissionsError> searchAs(ActorContext actor,
-                                                                        SearchSubmissionsQuery q) {
-        return ActorContext.callWith(actor, () -> useCase.ask(q));
+    private SubmissionPageView searchAs(ActorContext actor, SearchSubmissionsQuery query) {
+        return useCase.ask(actor, query);
     }
 
     private static SearchSubmissionsQuery unfiltered(int page, int size) {
-        return new SearchSubmissionsQuery(null, null, null, null, null, page, size);
+        return SearchSubmissionsQuery.parse(null, null, null, null, null, page, size);
     }
 
     private static SearchSubmissionsQuery byReference(String externalRef) {
-        return new SearchSubmissionsQuery(externalRef, null, null, null, null, 0, 100);
+        return SearchSubmissionsQuery.parse(externalRef, null, null, null, null, 0, 100);
     }
 
     private static SearchSubmissionsQuery byAmount(String from, String to) {
-        return new SearchSubmissionsQuery(null,
+        return SearchSubmissionsQuery.parse(null,
                 from == null ? null : new BigDecimal(from),
                 to == null ? null : new BigDecimal(to),
                 null, null, 0, 100);
     }
 
     private static SearchSubmissionsQuery byMoment(Instant from, Instant to) {
-        return new SearchSubmissionsQuery(null, null, null, from, to, 0, 100);
+        return SearchSubmissionsQuery.parse(null, null, null, from, to, 0, 100);
     }
 
-    private static Result<SubmissionPageView, SearchSubmissionsError> page(
+    private static SubmissionPageView page(
             List<SubmissionSummaryView> rows, long totalMatchCount, int page, int size) {
-        return Result.success(new SubmissionPageView(rows, totalMatchCount, page, size));
-    }
-
-    // =================================================================== BR-01
-
-    @Nested
-    @DisplayName("The one and only reason a search is refused (BR-01)")
-    class TheOnlyRefusal {
-
-        @Test
-        @DisplayName("a search is refused when no caller is known")
-        void shouldRefuseSearchWhenCallerIsUnidentified() {
-            // Given
-            var query = unfiltered(0, 100);
-
-            // When
-            var result = useCase.ask(query);
-
-            // Then
-            assertThat(result).isEqualTo(
-                    Result.<SubmissionPageView, SearchSubmissionsError>failure(
-                            new SearchSubmissionsError.CallerNotIdentified()));
-        }
-
-        @Test
-        @DisplayName("search has exactly one refusal reason, which is deliberate and complete")
-        void shouldExposeExactlyOneRefusalReasonWhenInspectingErrorHierarchy() {
-            // Given & When
-            var variantNames = Arrays.stream(
-                            SearchSubmissionsError.class.getPermittedSubclasses())
-                    .map(Class::getSimpleName)
-                    .toList();
-
-            // Then
-            assertThat(variantNames).containsExactly("CallerNotIdentified");
-        }
+        return new SubmissionPageView(rows, totalMatchCount, page, size);
     }
 
     // =================================================================== BR-16
@@ -203,8 +164,7 @@ class SearchSubmissionsUseCaseTest {
             var result = searchAs(VIEWER_OF_A, query);
 
             // Then
-            assertThat(result.toOptional()).hasValueSatisfying(view ->
-                    assertThat(view.totalMatchCount()).isEqualTo(5L));
+            assertThat(result.totalMatchCount()).isEqualTo(5L);
         }
 
         @Test
@@ -313,7 +273,7 @@ class SearchSubmissionsUseCaseTest {
         @DisplayName("two criteria narrow together, not separately")
         void shouldCombineMultipleCriteriaWithAndWhenFiltering() {
             // Given
-            var query = new SearchSubmissionsQuery(null, new BigDecimal("200.00"), null,
+            var query = SearchSubmissionsQuery.parse(null, new BigDecimal("200.00"), null,
                     null, at(2), 0, 100);
 
             // When
@@ -328,7 +288,7 @@ class SearchSubmissionsUseCaseTest {
                 + "rules about what may be REGISTERED and are not re-imposed on a comparison value")
         void shouldAllowAnyScaleOrSignWhenFilterBoundsSupplied() {
             // Given
-            var query = new SearchSubmissionsQuery(null, new BigDecimal("-1"),
+            var query = SearchSubmissionsQuery.parse(null, new BigDecimal("-1"),
                     new BigDecimal("99999.5"), null, null, 0, 100);
 
             // When
@@ -398,7 +358,7 @@ class SearchSubmissionsUseCaseTest {
         @DisplayName("both ranges contradicting at once is still one empty success")
         void shouldReturnEmptySuccessWhenBothRangesAreContradictory() {
             // Given
-            var query = new SearchSubmissionsQuery(null, new BigDecimal("5000.00"),
+            var query = SearchSubmissionsQuery.parse(null, new BigDecimal("5000.00"),
                     new BigDecimal("1000.00"), at(4), at(0), 0, 100);
 
             // When
@@ -425,10 +385,9 @@ class SearchSubmissionsUseCaseTest {
             var result = searchAs(VIEWER_OF_A, query);
 
             // Then
-            assertThat(result.toOptional()).hasValueSatisfying(view ->
-                    assertThat(view.submissions())
-                            .extracting(SubmissionSummaryView::externalRef)
-                            .containsExactly("S-5", "S-4", "S-3", "S-2", "S-1"));
+            assertThat(result.submissions())
+                    .extracting(SubmissionSummaryView::externalRef)
+                    .containsExactly("S-5", "S-4", "S-3", "S-2", "S-1");
         }
     }
 
@@ -516,9 +475,7 @@ class SearchSubmissionsUseCaseTest {
             // When
             var totals = pages.stream()
                     .map(p -> searchAs(VIEWER_OF_A, unfiltered(p, 2)))
-                    .map(result -> result.toOptional()
-                            .map(SubmissionPageView::totalMatchCount)
-                            .orElse(-1L))
+                    .map(SubmissionPageView::totalMatchCount)
                     .toList();
 
             // Then
@@ -544,7 +501,7 @@ class SearchSubmissionsUseCaseTest {
                 + "zero")
         void shouldReturnEmptyPageWithZeroCountWhenEmptySetPagingExceeded() {
             // Given
-            var query = new SearchSubmissionsQuery("NOT-A-REFERENCE", null, null, null, null, 4, 2);
+            var query = SearchSubmissionsQuery.parse("NOT-A-REFERENCE", null, null, null, null, 4, 2);
 
             // When
             var result = searchAs(VIEWER_OF_A, query);
@@ -563,7 +520,6 @@ class SearchSubmissionsUseCaseTest {
             // When
             var paged = pages.stream()
                     .map(p -> searchAs(VIEWER_OF_A, unfiltered(p, 2)))
-                    .flatMap(result -> result.toOptional().stream())
                     .flatMap(view -> view.submissions().stream())
                     .toList();
 
@@ -583,14 +539,12 @@ class SearchSubmissionsUseCaseTest {
             var wholeSet = searchAs(VIEWER_OF_A, unfiltered(0, 100));
             var pagedByThree = Stream.of(0, 1, 2)
                     .map(p -> searchAs(VIEWER_OF_A, unfiltered(p, 3)))
-                    .flatMap(result -> result.toOptional().stream())
                     .flatMap(view -> view.submissions().stream())
                     .toList();
 
             // Then
             assertThat(pagedByThree).doesNotHaveDuplicates().hasSize(7);
-            assertThat(wholeSet.toOptional()).hasValueSatisfying(view ->
-                    assertThat(view.submissions()).isEqualTo(pagedByThree));
+            assertThat(wholeSet.submissions()).isEqualTo(pagedByThree);
         }
     }
 }

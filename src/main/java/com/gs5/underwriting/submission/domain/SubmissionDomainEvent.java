@@ -53,4 +53,23 @@ public sealed interface SubmissionDomainEvent {
                     + ", occurredAt=" + occurredAt + "]";
         }
     }
+
+    /** A submission was approved by a caller permitted to decide. */
+    record SubmissionApproved(UUID eventId,
+                             SubmissionId aggregateId,
+                             UUID tenantId,
+                             String approvedBy,
+                             Instant occurredAt) implements SubmissionDomainEvent {
+
+        private static final String MASKED = "***";
+
+        @Override
+        public String toString() {
+            return "SubmissionApproved[eventId=" + eventId
+                    + ", aggregateId=" + aggregateId
+                    + ", tenantId=" + tenantId
+                    + ", approvedBy=" + MASKED
+                    + ", occurredAt=" + occurredAt + "]";
+        }
+    }
 }

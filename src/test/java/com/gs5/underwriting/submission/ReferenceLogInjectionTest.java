@@ -17,10 +17,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * C-1 / SEC-03 / SEC-04 / SEC-02: every record that prints a caller-supplied reference must
  * print it escaped, and the record that holds the actor id first must not print it at all.
  *
- * <p>The escape had been applied at exactly one of the records that render {@code externalRef}.
- * {@code RegisterSubmissionCommand} is the worst of the misses: a reference BR-29 refuses is
- * guaranteed to pass through it, on the refusal path. A search filter is validated by nothing,
- * since BR-29 governs registration only.
+ * <p>Raw references are either escaped in read criteria or rejected/folded to a safe value before
+ * they are retained by a command or query.
  */
 class ReferenceLogInjectionTest {
 
@@ -29,20 +27,23 @@ class ReferenceLogInjectionTest {
     private static final String ESCAPED_NEWLINE = "\\u000A";
 
     @Test
-    @DisplayName("the register command prints a hostile reference escaped, never raw")
+    @DisplayName("a refused register input is not retained or rendered as raw text")
     void register_command_escapes_the_reference() {
-        var printed = new RegisterSubmissionCommand(HOSTILE, new BigDecimal("1.00")).toString();
+        var printed = RegisterSubmissionCommand.parse(HOSTILE, new BigDecimal("1.00"))
+                .errorToOptional()
+                .orElseThrow()
+                .toString();
 
-        assertThat(printed).doesNotContain("\n").contains(ESCAPED_NEWLINE);
+        assertThat(printed).doesNotContain("\n", HOSTILE);
     }
 
     @Test
     @DisplayName("the search query prints a hostile reference filter escaped, never raw")
     void search_query_escapes_the_reference() {
-        var printed = new SearchSubmissionsQuery(HOSTILE, null, null, null, null, 0, 10)
+        var printed = SearchSubmissionsQuery.parse(HOSTILE, null, null, null, null, 0, 10)
                 .toString();
 
-        assertThat(printed).doesNotContain("\n").contains(ESCAPED_NEWLINE);
+        assertThat(printed).doesNotContain("\n", HOSTILE);
     }
 
     @Test

@@ -9,6 +9,9 @@ import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.gs5.underwriting.submission.domain.SubmissionSnapshot;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
+import java.util.UUID;
+
 /**
  * The write side of the {@code submissions} table.
  *
@@ -45,14 +48,8 @@ class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
                         new RegisterSubmissionError.ReferenceAlreadyUsed(entity.externalRef()));
     }
 
-    /**
-     * Reads one of the caller's own rows back as a snapshot, version included.
-     *
-     * <p>Not part of {@link SubmissionCommandRepository}: no command in this feature loads a
-     * submission. It is the read-back half of the snapshot round trip the design requires of this
-     * adapter, and it is what proves the mapper carries {@code version} in both directions.
-     */
-    Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id) {
+    @Override
+    public Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id) {
         return repository.findOwn(tenantId, id).map(SubmissionPersistenceMapper::toSnapshot);
     }
 }

@@ -9,12 +9,9 @@ import com.gs5.underwriting.shared.kernel.Result;
  * The application boundary of the submission write side. There is no {@code *Service} class
  * between a controller and this useCase, because such a layer has nothing to do but delegate.
  *
- * <p>{@link #register} is a railway pipeline. Two of its properties are structural rather than
- * disciplinary: {@code Result.fromOptional(ActorContext.current(), ...)} makes BR-01 a value
- * instead of an unbound-{@code ScopedValue} throw, and {@code Result.peek} runs its side effect on
- * the success branch only, so a refusal from the insert cannot reach the publisher. The insert
- * comes first for the same reason — the BR-09 race is settled by the store, so nothing can be
- * announced until the row exists.
+ * <p>Caller identification and role permission are decided by the inbound access gate, before
+ * request data is parsed. This use case receives that admitted actor and a parsed command; its
+ * business refusals are the registration rules and the tenant-scoped uniqueness result.
  */
 public final class RegisterSubmissionUseCase {
 
@@ -34,20 +31,15 @@ public final class RegisterSubmissionUseCase {
     }
 
     /**
-     * Registers a submission for the identified caller's own organisation (BR-15), or returns one
-     * of the nine refusal reasons in {@link RegisterSubmissionError}.
+     * Registers a submission for the admitted caller's own organisation (BR-15).
      */
-    public Result<SubmissionId, RegisterSubmissionError> execute(RegisterSubmissionCommand command) {
-        return Result.<ActorContext, RegisterSubmissionError>fromOptional(
-                        ActorContext.current(),
-                        RegisterSubmissionError.CallerNotIdentified::new)
-                .flatMap(actor -> Submission.register(
-                        idGenerator.nextSubmissionId(), actor.tenantId(), actor.actorId(),
-                        actor.role(), command.externalRef(), command.insuredLimit(),
-                        clock.instant()))
-                .flatMap(submission -> repository.insert(submission.toSnapshot())
-                        .<RegisterSubmissionError>mapError(error -> error)
-                        .peek(_ -> eventPublisher.publish(
-                                submission.registeredEvent(idGenerator.nextEventId()))));
+    public Result<SubmissionId, RegisterSubmissionError> execute(
+            ActorContext actor, RegisterSubmissionCommand command) {
+        var submission = Submission.register(idGenerator.nextSubmissionId(), actor,
+                command.externalRef(), command.insuredLimit(), clock.instant());
+        return repository.insert(submission.toSnapshot())
+                .<RegisterSubmissionError>mapError(error -> error)
+                .peek(_ -> eventPublisher.publish(
+                        submission.registeredEvent(idGenerator.nextEventId())));
     }
 }

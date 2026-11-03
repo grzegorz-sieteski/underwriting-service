@@ -15,7 +15,7 @@ import com.gs5.underwriting.shared.kernel.LogSafeText;
  * both when written to a log — and only there: the caller still receives both, because a
  * serialiser works through the record accessors.
  */
-public record SubmissionSummaryView(UUID submissionId,
+public record SubmissionSummaryView(SubmissionId submissionId,
                                     String externalRef,
                                     BigDecimal insuredLimit,
                                     String registeredBy,
@@ -23,9 +23,17 @@ public record SubmissionSummaryView(UUID submissionId,
 
     private static final String MASKED = "***";
 
+    public SubmissionSummaryView(UUID submissionId,
+                                String externalRef,
+                                BigDecimal insuredLimit,
+                                String registeredBy,
+                                Instant registeredAt) {
+        this(new SubmissionId(submissionId), externalRef, insuredLimit, registeredBy, registeredAt);
+    }
+
     @Override
     public String toString() {
-        return "SubmissionSummaryView[submissionId=" + submissionId
+        return "SubmissionSummaryView[submissionId=" + submissionId.value()
                 + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                 + ", insuredLimit=" + MASKED
                 + ", registeredBy=" + MASKED

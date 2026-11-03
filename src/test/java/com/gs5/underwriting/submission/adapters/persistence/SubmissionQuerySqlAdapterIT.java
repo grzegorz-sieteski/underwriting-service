@@ -1,6 +1,7 @@
 package com.gs5.underwriting.submission.adapters.persistence;
 
 import com.gs5.underwriting.submission.domain.SubmissionSearchCriteria;
+import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.gs5.underwriting.submission.domain.SubmissionSummaryView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -196,7 +197,9 @@ class SubmissionQuerySqlAdapterIT {
             assertThat(page).allSatisfy(view ->
                     assertThat(view.submissionId()).isNotNull());
             assertThat(page).extracting(SubmissionSummaryView::submissionId)
-                    .containsExactly(uuid(5), uuid(4), uuid(3), uuid(2), uuid(1));
+                    .containsExactly(new SubmissionId(uuid(5)), new SubmissionId(uuid(4)),
+                            new SubmissionId(uuid(3)), new SubmissionId(uuid(2)),
+                            new SubmissionId(uuid(1)));
         }
 
         @Test
@@ -293,7 +296,7 @@ class SubmissionQuerySqlAdapterIT {
             // Then
             assertThat(page)
                     .extracting(SubmissionSummaryView::submissionId)
-                    .containsExactly(uuid(1));
+                    .containsExactly(new SubmissionId(uuid(1)));
         }
     }
 
@@ -493,7 +496,8 @@ class SubmissionQuerySqlAdapterIT {
             // Then
             assertThat(page)
                     .extracting(SubmissionSummaryView::submissionId)
-                    .containsExactly(uuid(7), uuid(6), uuid(3));
+                    .containsExactly(new SubmissionId(uuid(7)), new SubmissionId(uuid(6)),
+                            new SubmissionId(uuid(3)));
         }
     }
 }

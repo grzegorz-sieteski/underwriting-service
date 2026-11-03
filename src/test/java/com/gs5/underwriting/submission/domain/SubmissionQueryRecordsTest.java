@@ -49,7 +49,7 @@ class SubmissionQueryRecordsTest {
         @DisplayName("the page size is clamped into [1, 100] rather than refused")
         void shouldClampPageSizeWhenInstantiated(int requested, int applied) {
             // Given & When
-            var query = new SearchSubmissionsQuery(null, null, null, null, null, 0, requested);
+            var query = SearchSubmissionsQuery.parse(null, null, null, null, null, 0, requested);
 
             // Then
             assertThat(query.size()).isEqualTo(applied);
@@ -60,7 +60,7 @@ class SubmissionQueryRecordsTest {
         @DisplayName("the page number is clamped to zero or above, and zero is the first page")
         void shouldClampPageNumberWhenNegativeProvided(int requested, int applied) {
             // Given & When
-            var query = new SearchSubmissionsQuery(null, null, null, null, null, requested, 10);
+            var query = SearchSubmissionsQuery.parse(null, null, null, null, null, requested, 10);
 
             // Then
             assertThat(query.page()).isEqualTo(applied);
@@ -78,15 +78,22 @@ class SubmissionQueryRecordsTest {
         @DisplayName("the filters themselves are untouched by normalisation")
         void shouldPreserveFiltersUntouchedWhenNormalisingPageParameters() {
             // Given & When
-            var query = new SearchSubmissionsQuery("S-1", new BigDecimal("-1"),
+            var query = SearchSubmissionsQuery.parse("S-1", new BigDecimal("-1"),
                     new BigDecimal("2.5"), MOMENT, MOMENT, 0, 500);
 
             // Then
-            assertThat(query.externalRef()).isEqualTo("S-1");
-            assertThat(query.insuredLimitFrom()).isEqualTo(new BigDecimal("-1"));
-            assertThat(query.insuredLimitTo()).isEqualTo(new BigDecimal("2.5"));
-            assertThat(query.registeredFrom()).isEqualTo(MOMENT);
-            assertThat(query.registeredTo()).isEqualTo(MOMENT);
+            assertThat(query.filter()).isInstanceOfSatisfying(
+                    SubmissionFilter.Narrowing.class,
+                    narrowing -> {
+                        assertThat(narrowing.reference())
+                                .isNotNull()
+                                .extracting(ExternalReference::value)
+                                .isEqualTo("S-1");
+                        assertThat(narrowing.insuredLimitFrom()).isEqualTo(new BigDecimal("-1"));
+                        assertThat(narrowing.insuredLimitTo()).isEqualTo(new BigDecimal("2.5"));
+                        assertThat(narrowing.registeredFrom()).isEqualTo(MOMENT);
+                        assertThat(narrowing.registeredTo()).isEqualTo(MOMENT);
+                    });
         }
     }
 
@@ -138,7 +145,7 @@ class SubmissionQueryRecordsTest {
                 + "for one exact amount that returns one row would disclose that row's amount")
         void shouldMaskAmountBoundsWhenSearchSubmissionsQueryPrinted() {
             // Given
-            var query = new SearchSubmissionsQuery("S-1", AMOUNT, AMOUNT, MOMENT, MOMENT, 0, 10);
+            var query = SearchSubmissionsQuery.parse("S-1", AMOUNT, AMOUNT, MOMENT, MOMENT, 0, 10);
 
             // When & Then
             assertThat(query.toString())

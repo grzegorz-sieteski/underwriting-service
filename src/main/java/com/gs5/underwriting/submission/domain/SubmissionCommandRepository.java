@@ -2,6 +2,9 @@ package com.gs5.underwriting.submission.domain;
 
 import com.gs5.underwriting.shared.kernel.Result;
 
+import java.util.Optional;
+import java.util.UUID;
+
 /** Outbound port: where a registered submission is recorded. */
 public interface SubmissionCommandRepository {
 
@@ -17,4 +20,7 @@ public interface SubmissionCommandRepository {
      */
     Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> insert(
             SubmissionSnapshot snapshot);
+
+    /** Finds a submission by id within the caller's own tenant. */
+    Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id);
 }

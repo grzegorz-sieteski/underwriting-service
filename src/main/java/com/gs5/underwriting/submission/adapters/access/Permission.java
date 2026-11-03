@@ -22,27 +22,35 @@ public interface Permission {
     /**
      * Search: any identified caller. No role is consulted (BR-16), so the only refusal it produces
      * is {@link AccessRefusal.CallerNotIdentified}.
-     *
-     * <p><strong>RED stub.</strong> Returns {@code null}; pinned by {@code PermissionMatrixTest}.
      */
-    @SuppressWarnings("NullAway")
     static Permission anyIdentifiedCaller() {
-        return null;
+        return Permission::identified;
     }
 
     /**
      * Register: the caller must be identified and its role must be admitted by {@code policy}. A
      * role the policy does not admit is refused as {@link AccessRefusal.PermissionDenied}.
      *
-     * <p>The design names this {@code rolesOnly(first, others...)}. It goes through the
-     * {@link AccessPolicy} seam instead, because the list of roles that may register is not
-     * decided and must not be written down anywhere yet.
-     *
-     * <p><strong>RED stub.</strong> Returns {@code null}; pinned by {@code PermissionMatrixTest}
-     * and {@code OperationGateTest}.
+     * <p>The current configured policy admits underwriters and senior underwriters. Keeping the
+     * decision behind {@link AccessPolicy} lets it be changed without moving authorization into a
+     * controller or the domain use case.
      */
-    @SuppressWarnings("NullAway")
     static Permission registration(AccessPolicy policy) {
-        return null;
+        return caller -> identified(caller)
+                .ensure(admitted -> policy.mayRegister(admitted.role()),
+                        refused -> new AccessRefusal.PermissionDenied(refused.role()));
+    }
+
+    /** Approval: the caller must be identified and admitted by the approval policy. */
+    static Permission approval(AccessPolicy policy) {
+        return caller -> identified(caller)
+                .ensure(admitted -> policy.mayApprove(admitted.role()),
+                        refused -> new AccessRefusal.PermissionDenied(refused.role()));
+    }
+
+    /** BR-01, fail-closed: an absent caller is refused before any role is consulted. */
+    private static Result<AuthenticatedCaller, AccessRefusal> identified(
+            Optional<AuthenticatedCaller> caller) {
+        return Result.fromOptional(caller, AccessRefusal.CallerNotIdentified::new);
     }
 }

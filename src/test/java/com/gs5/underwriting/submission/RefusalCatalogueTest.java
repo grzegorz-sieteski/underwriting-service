@@ -21,9 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * where it is produced: {@code PermissionMatrixTest} and {@code OperationGateTest} show the search
  * gate refuses with nothing but {@code CallerNotIdentified}.
  *
- * <p>Fails today: {@code RegisterSubmissionError} still carries the two access refusals, so the union
- * has eleven entries with {@code CallerNotIdentified} twice and {@code RoleMayNotRegister}, which
- * the target renders from {@code PermissionDenied}.
+ * <p>Access refusals are owned by the gate; registration domain refusals are owned by the
+ * registration operation. The union is exactly the nine reasons visible to a caller.
  */
 class RefusalCatalogueTest {
 

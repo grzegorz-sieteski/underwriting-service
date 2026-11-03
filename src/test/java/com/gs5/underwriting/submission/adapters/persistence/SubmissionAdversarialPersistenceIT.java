@@ -95,7 +95,7 @@ class SubmissionAdversarialPersistenceIT {
 
     @AfterEach
     void emptyTheTable() {
-        jdbcTemplate.execute("TRUNCATE TABLE submissions");
+        jdbcTemplate.execute("TRUNCATE TABLE submission_approvals, submissions");
     }
 
     private static SubmissionSnapshot snapshot(UUID tenantId,

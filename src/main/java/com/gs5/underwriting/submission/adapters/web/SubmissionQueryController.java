@@ -3,8 +3,9 @@ package com.gs5.underwriting.submission.adapters.web;
 import module java.base;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
-import com.gs5.underwriting.shared.kernel.Result;
-import com.gs5.underwriting.submission.domain.SearchSubmissionsError;
+import com.gs5.underwriting.submission.adapters.access.AccessRefusal;
+import com.gs5.underwriting.submission.adapters.access.OperationGate;
+import com.gs5.underwriting.submission.adapters.access.Permission;
 import com.gs5.underwriting.submission.domain.SearchSubmissionsQuery;
 import com.gs5.underwriting.submission.domain.SubmissionPageView;
 import com.gs5.underwriting.submission.domain.SearchSubmissionsUseCase;
@@ -28,8 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
  * again inside {@link SearchSubmissionsQuery}, so the response always echoes what was applied.
  *
  * <p>A malformed page parameter such as {@code size=abc} is rejected by Spring's type conversion
- * before the useCase is reached, as a transport-level {@code 400}. That is not a business refusal
- * and deliberately does not become a second {@link SearchSubmissionsError} variant.
+ * as a transport-level {@code 400}. It is not a business refusal.
  *
  * <p>This controller touches nothing on the write side, which is an architecture rule and not a
  * convention: a query endpoint talks to a {@code *UseCase} and nothing else.
@@ -42,11 +42,13 @@ class SubmissionQueryController {
 
     private final SearchSubmissionsUseCase useCase;
     private final ActorContextResolver actorContextResolver;
+    private final OperationGate<RawSearchRequest, SubmissionPageView> gate;
 
     SubmissionQueryController(SearchSubmissionsUseCase useCase,
                               ActorContextResolver actorContextResolver) {
         this.useCase = useCase;
         this.actorContextResolver = actorContextResolver;
+        this.gate = new OperationGate<>(Permission.anyIdentifiedCaller(), this::searchForActor);
     }
 
     @GetMapping
@@ -58,17 +60,17 @@ class SubmissionQueryController {
             @RequestParam(required = false) @Nullable Instant registeredTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size) {
-        var query = new SearchSubmissionsQuery(reference, insuredLimitFrom, insuredLimitTo,
+        var request = new RawSearchRequest(reference, insuredLimitFrom, insuredLimitTo,
                 registeredFrom, registeredTo, page, size);
-        return searchAsResolvedCaller(query)
-                .fold(SubmissionQueryController::found, SubmissionQueryController::refused);
+        return gate.admit(actorContextResolver.resolve())
+                .fold(admission -> found(admission.run(request)),
+                        SubmissionQueryController::refused);
     }
 
-    private Result<SubmissionPageView, SearchSubmissionsError> searchAsResolvedCaller(
-            SearchSubmissionsQuery query) {
-        return actorContextResolver.resolve()
-                .map(actor -> ActorContext.callWith(actor, () -> useCase.ask(query)))
-                .orElseGet(() -> useCase.ask(query));
+    private SubmissionPageView searchForActor(ActorContext actor, RawSearchRequest request) {
+        return useCase.ask(actor, SearchSubmissionsQuery.parse(request.reference(),
+                request.insuredLimitFrom(), request.insuredLimitTo(), request.registeredFrom(),
+                request.registeredTo(), request.page(), request.size()));
     }
 
     private static ResponseEntity<Object> found(SubmissionPageView page) {
@@ -80,11 +82,14 @@ class SubmissionQueryController {
      * nothing, a contradictory range and a page past the end are all successes and never arrive
      * here.
      */
-    private static ResponseEntity<Object> refused(SearchSubmissionsError error) {
-        var problem = switch (error) {
-            case SearchSubmissionsError.CallerNotIdentified _ -> problemDetail(
+    private static ResponseEntity<Object> refused(AccessRefusal refusal) {
+        var problem = switch (refusal) {
+            case AccessRefusal.CallerNotIdentified _ -> problemDetail(
                     HttpStatus.UNAUTHORIZED, "caller-not-identified",
                     "The caller could not be identified.");
+            case AccessRefusal.PermissionDenied _ -> problemDetail(
+                    HttpStatus.FORBIDDEN, "permission-denied",
+                    "The caller may not perform this operation.");
         };
         return ResponseEntity.status(problem.getStatus())
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
@@ -97,4 +102,12 @@ class SubmissionQueryController {
         problem.setTitle(status.getReasonPhrase());
         return problem;
     }
+
+    private record RawSearchRequest(@Nullable String reference,
+                                    @Nullable BigDecimal insuredLimitFrom,
+                                    @Nullable BigDecimal insuredLimitTo,
+                                    @Nullable Instant registeredFrom,
+                                    @Nullable Instant registeredTo,
+                                    int page,
+                                    int size) { }
 }

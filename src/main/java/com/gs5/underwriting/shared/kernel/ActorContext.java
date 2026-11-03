@@ -74,14 +74,25 @@ public record ActorContext(UUID tenantId, String actorId, ActorRole role) {
      * 36-character UUID text; {@code actorId} must be non-blank, at most
      * {@link #MAX_ACTOR_ID_LENGTH} code points, free of category Cc, and is not trimmed.
      *
-     * <p><strong>RED stub.</strong> Returns {@code null}; pinned by {@code ActorContextParseTest}.
+     * <p>The canonical-text check is a pattern rather than {@code UUID.fromString}, because
+     * {@code fromString} accepts non-canonical spellings such as {@code 1-1-1-1-1} and would
+     * let two different claim strings name the same organisation.
      */
-    @SuppressWarnings("NullAway")
     public static Optional<ActorContext> parse(@Nullable String tenantId,
                                                @Nullable String actorId,
                                                @Nullable ActorRole role) {
-        return null;
+        if (tenantId == null || !CANONICAL_UUID.matcher(tenantId).matches()
+                || actorId == null || actorId.isBlank()
+                || actorId.codePointCount(0, actorId.length()) > MAX_ACTOR_ID_LENGTH
+                || ControlCharacters.firstIn(actorId).isPresent()
+                || role == null) {
+            return Optional.empty();
+        }
+        return Optional.of(new ActorContext(UUID.fromString(tenantId), actorId, role));
     }
+
+    private static final Pattern CANONICAL_UUID = Pattern.compile(
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     /** True when this actor may read data belonging to {@code otherTenantId}. */
     public boolean belongsToTenant(UUID otherTenantId) {

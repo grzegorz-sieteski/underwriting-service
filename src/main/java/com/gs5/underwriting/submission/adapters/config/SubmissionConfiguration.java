@@ -2,13 +2,18 @@ package com.gs5.underwriting.submission.adapters.config;
 
 import module java.base;
 
+import com.gs5.underwriting.submission.domain.ApproveSubmissionUseCase;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionUseCase;
+import com.gs5.underwriting.submission.domain.SubmissionApprovalRepository;
 import com.gs5.underwriting.submission.domain.SubmissionCommandRepository;
 import com.gs5.underwriting.submission.domain.SubmissionEventPublisher;
 import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.gs5.underwriting.submission.domain.SubmissionIdGenerator;
 import com.gs5.underwriting.submission.domain.SearchSubmissionsUseCase;
 import com.gs5.underwriting.submission.domain.SubmissionQueryRepository;
+import com.gs5.underwriting.submission.adapters.access.AccessPolicy;
+import com.gs5.underwriting.submission.adapters.access.Permission;
+import com.gs5.underwriting.shared.kernel.ActorRole;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -23,6 +28,36 @@ import org.springframework.context.annotation.Configuration;
  */
 @Configuration
 class SubmissionConfiguration {
+
+    @Bean
+    AccessPolicy submissionAccessPolicy() {
+        return new AccessPolicy() {
+            @Override
+            public boolean mayRegister(ActorRole role) {
+                return role.canDecide();
+            }
+
+            @Override
+            public boolean mayApprove(ActorRole role) {
+                return role.canDecide();
+            }
+
+            @Override
+            public Optional<String> tenantIdFrom(Map<String, String> identityClaims) {
+                return Optional.empty();
+            }
+        };
+    }
+
+    @Bean
+    Permission registrationPermission(AccessPolicy submissionAccessPolicy) {
+        return Permission.registration(submissionAccessPolicy);
+    }
+
+    @Bean
+    Permission approvalPermission(AccessPolicy submissionAccessPolicy) {
+        return Permission.approval(submissionAccessPolicy);
+    }
 
     /**
      * One {@code Clock}, declared here because no shared configuration package exists yet. The
@@ -66,5 +101,14 @@ class SubmissionConfiguration {
     @Bean
     SearchSubmissionsUseCase searchSubmissionsUseCase(SubmissionQueryRepository repository) {
         return new SearchSubmissionsUseCase(repository);
+    }
+
+    @Bean
+    ApproveSubmissionUseCase approveSubmissionUseCase(SubmissionCommandRepository commandRepository,
+                                                     SubmissionApprovalRepository approvalRepository,
+                                                     SubmissionEventPublisher eventPublisher,
+                                                     Clock clock) {
+        return new ApproveSubmissionUseCase(commandRepository, approvalRepository,
+                eventPublisher, clock);
     }
 }

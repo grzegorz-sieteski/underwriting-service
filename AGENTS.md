@@ -32,7 +32,7 @@ underwriting-service/
 │   ├── adr/                           @architect output
 │   └── workflow/                      @orchestrator state boards
 ├── requests/                          @qa-explorer HTTP Client files
-├── openapi/                           API contract for the frontend repository
+├── openapi/                           API contract (OpenAPI specification)
 ├── scripts/check-write-lock.sh        phase boundary check
 ├── .github/
 │   ├── copilot-instructions.md        always active: bans + router
@@ -42,7 +42,7 @@ underwriting-service/
 └── src/
     ├── main/java/com/gs5/underwriting/
     │   ├── shared/kernel/             Result, ActorContext, ActorRole — keep tiny
-    │   └── <module>/                  domain/ · query/ · adapters/
+    │   └── <module>/                  domain/ · adapters/
     └── test/java/com/gs5/underwriting/
         └── ArchitectureRulesTest.java structural gate
 ```
@@ -50,8 +50,7 @@ underwriting-service/
 ## Architecture in one paragraph
 
 Each business module is self-contained: `domain/` is the write side in pure Java with a
-package-private aggregate behind a `*UseCase`; `query/` is the read side returning
-projection records and cannot see `domain/`; `adapters/` holds web, persistence, messaging and
+package-private aggregate behind a `*UseCase`; `adapters/` holds web, persistence, messaging and
 Spring wiring. Business failures are values — `Result<T, E>` with a `sealed interface *Error`
 per operation — so the compiler forces every caller to handle exactly the failures that operation
 can produce. There are no `*Service` classes and no `throw` statements in `src/main`.
@@ -63,7 +62,7 @@ can produce. There are no `*Service` classes and no `throw` statements in `src/m
 | 0 | `@orchestrator` | state board | `docs/workflow/` | verifies every other gate |
 | 1 | `@business-analyst` | specification | `docs/specs/` | no unresolved `ASSUMPTION` marker |
 | 2 | `@architect` | technical design | `docs/adr/` | covers every command in the spec |
-| 3 | `@test-designer` | contracts + failing tests | `src/test/`, stubs in `domain/`+`query/` | `test-compile` passes, `test` **fails** |
+| 3 | `@test-designer` | contracts + failing tests | `src/test/`, stubs in `domain/` | `test-compile` passes, `test` **fails** |
 | 4 | `@developer` | production code | `src/main/` | `verify` passes, `src/test/` untouched |
 | 5 | `@qa-explorer` | exploratory findings | `requests/`, `src/test/` | `src/main/` untouched |
 | 6 | `@code-reviewer` | review report | nothing | `[APPROVED]` |

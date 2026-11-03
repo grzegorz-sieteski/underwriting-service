@@ -6,6 +6,9 @@ import com.gs5.underwriting.shared.kernel.LogSafeText;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.Result;
+import com.gs5.underwriting.submission.adapters.access.AccessRefusal;
+import com.gs5.underwriting.submission.adapters.access.OperationGate;
+import com.gs5.underwriting.submission.adapters.access.Permission;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionCommand;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionError;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionUseCase;
@@ -24,14 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>Two things about the shape of this class are load-bearing.
  *
- * <p><strong>The actor is bound around the useCase call, fail-closed.</strong> When
- * {@link ActorContextResolver} names a caller, the useCase runs inside
- * {@code ActorContext.callWith(actor, ...)}; when it does not, the useCase is called
- * <em>unbound</em>, so {@code CallerNotIdentified} is produced in the domain, in one place, for web
- * and non-web callers alike. The controller does not decide BR-01.
+ * <p><strong>The access gate runs before parsing.</strong> It returns an {@link
+ * com.gs5.underwriting.submission.adapters.access.Admission} only after identifying the caller
+ * and checking the role. The request body is parsed inside that admitted operation.
  *
- * <p><strong>The fold is an exhaustive switch with no {@code default} branch,</strong> so the
- * compiler reports a future tenth refusal reason instead of a 500 appearing in production.
+ * <p><strong>Both folds are exhaustive switches with no {@code default} branch,</strong> so the
+ * compiler reports a new business or access refusal instead of a 500 appearing in production.
  */
 @RestController
 @RequestMapping("/api/submissions")
@@ -41,26 +42,30 @@ class SubmissionCommandController {
 
     private final RegisterSubmissionUseCase useCase;
     private final ActorContextResolver actorContextResolver;
+    private final OperationGate<RegisterSubmissionRequest,
+            Result<SubmissionId, RegisterSubmissionError>> gate;
 
     SubmissionCommandController(RegisterSubmissionUseCase useCase,
-                                ActorContextResolver actorContextResolver) {
+                                ActorContextResolver actorContextResolver,
+                                Permission registrationPermission) {
         this.useCase = useCase;
         this.actorContextResolver = actorContextResolver;
+        this.gate = new OperationGate<>(registrationPermission, this::registerForActor);
     }
 
     @PostMapping
     ResponseEntity<Object> register(@RequestBody RegisterSubmissionRequest request) {
-        var command = new RegisterSubmissionCommand(request.externalRef(), request.insuredLimit());
-        return registerAsResolvedCaller(command)
-                .fold(SubmissionCommandController::created,
-                        SubmissionCommandController::refused);
+        return gate.admit(actorContextResolver.resolve())
+                .fold(admission -> admission.run(request)
+                                .fold(SubmissionCommandController::created,
+                                        SubmissionCommandController::refused),
+                        SubmissionCommandController::refusedAccess);
     }
 
-    private Result<SubmissionId, RegisterSubmissionError> registerAsResolvedCaller(
-            RegisterSubmissionCommand command) {
-        return actorContextResolver.resolve()
-                .map(actor -> ActorContext.callWith(actor, () -> useCase.execute(command)))
-                .orElseGet(() -> useCase.execute(command));
+    private Result<SubmissionId, RegisterSubmissionError> registerForActor(
+            ActorContext actor, RegisterSubmissionRequest request) {
+        return RegisterSubmissionCommand.parse(request.externalRef(), request.insuredLimit())
+                .flatMap(command -> useCase.execute(actor, command));
     }
 
     private static ResponseEntity<Object> created(SubmissionId id) {
@@ -81,12 +86,6 @@ class SubmissionCommandController {
      */
     private static ResponseEntity<Object> refused(RegisterSubmissionError error) {
         var problem = switch (error) {
-            case RegisterSubmissionError.CallerNotIdentified _ -> problemDetail(
-                    HttpStatus.UNAUTHORIZED, "caller-not-identified",
-                    "The caller could not be identified.");
-            case RegisterSubmissionError.RoleMayNotRegister(var role) -> problemDetail(
-                    HttpStatus.FORBIDDEN, "role-may-not-register",
-                    "The role " + role + " may not register a submission.");
             case RegisterSubmissionError.ReferenceMissing _ -> problemDetail(
                     HttpStatus.BAD_REQUEST, "reference-missing",
                     "externalRef is required and must contain at least one character.");
@@ -117,6 +116,20 @@ class SubmissionCommandController {
                     HttpStatus.CONFLICT, "reference-already-used",
                     "The reference '" + LogSafeText.escapeControlCharacters(externalRef) + "' is already used by a submission of your "
                             + "organisation.");
+        };
+        return ResponseEntity.status(problem.getStatus())
+                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem);
+    }
+
+    private static ResponseEntity<Object> refusedAccess(AccessRefusal refusal) {
+        var problem = switch (refusal) {
+            case AccessRefusal.CallerNotIdentified _ -> problemDetail(
+                    HttpStatus.UNAUTHORIZED, "caller-not-identified",
+                    "The caller could not be identified.");
+            case AccessRefusal.PermissionDenied(var role) -> problemDetail(
+                    HttpStatus.FORBIDDEN, "permission-denied",
+                    "The role " + role + " may not register a submission.");
         };
         return ResponseEntity.status(problem.getStatus())
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)

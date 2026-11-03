@@ -3,7 +3,6 @@ package com.gs5.underwriting.submission.domain;
 import module java.base;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
-import com.gs5.underwriting.shared.kernel.Result;
 
 /**
  * The application boundary of the submission read side.
@@ -26,13 +25,10 @@ public final class SearchSubmissionsUseCase {
 
     /**
      * Returns one page of the caller's own organisation's submissions, plus the total match count
-     * of the whole matching set — or the single refusal reason Search has.
+     * of the whole matching set. Caller admission is enforced by the inbound adapter.
      */
-    public Result<SubmissionPageView, SearchSubmissionsError> ask(SearchSubmissionsQuery query) {
-        return Result.<ActorContext, SearchSubmissionsError>fromOptional(
-                        ActorContext.current(),
-                        SearchSubmissionsError.CallerNotIdentified::new)
-                .map(actor -> pageFor(actor.tenantId(), query));
+    public SubmissionPageView ask(ActorContext actor, SearchSubmissionsQuery query) {
+        return pageFor(actor.tenantId(), query);
     }
 
     /**
@@ -40,12 +36,20 @@ public final class SearchSubmissionsUseCase {
      * {@code Integer.MAX_VALUE} overflows an {@code int} and would silently go negative.
      */
     private SubmissionPageView pageFor(UUID tenantId, SearchSubmissionsQuery query) {
-        var criteria = new SubmissionSearchCriteria(tenantId, query.externalRef(),
-                query.insuredLimitFrom(), query.insuredLimitTo(),
-                query.registeredFrom(), query.registeredTo());
-        return new SubmissionPageView(
-                repository.findPage(criteria, query.size(), (long) query.page() * query.size()),
-                repository.countMatching(criteria),
-                query.page(), query.size());
+        return switch (query.filter()) {
+            case SubmissionFilter.MatchesNothing _ ->
+                    new SubmissionPageView(List.of(), 0, query.page(), query.size());
+            case SubmissionFilter.Narrowing(var reference, var limitFrom, var limitTo,
+                                           var registeredFrom, var registeredTo) -> {
+                var criteria = new SubmissionSearchCriteria(tenantId,
+                        reference == null ? null : reference.value(),
+                        limitFrom, limitTo, registeredFrom, registeredTo);
+                yield new SubmissionPageView(
+                        repository.findPage(criteria, query.size(),
+                                (long) query.page() * query.size()),
+                        repository.countMatching(criteria),
+                        query.page(), query.size());
+            }
+        };
     }
 }
