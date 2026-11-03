@@ -4,10 +4,10 @@ import module java.base;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.Result;
-import com.gs5.underwriting.submission.query.SearchSubmissionsError;
-import com.gs5.underwriting.submission.query.SearchSubmissionsQuery;
-import com.gs5.underwriting.submission.query.SubmissionPageView;
-import com.gs5.underwriting.submission.query.SearchSubmissionsUseCase;
+import com.gs5.underwriting.submission.domain.SearchSubmissionsError;
+import com.gs5.underwriting.submission.domain.SearchSubmissionsQuery;
+import com.gs5.underwriting.submission.domain.SubmissionPageView;
+import com.gs5.underwriting.submission.domain.SearchSubmissionsUseCase;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;

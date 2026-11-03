@@ -1,7 +1,7 @@
 package com.gs5.underwriting.submission.adapters.persistence;
 
-import com.gs5.underwriting.submission.query.SubmissionSearchCriteria;
-import com.gs5.underwriting.submission.query.SubmissionSummaryView;
+import com.gs5.underwriting.submission.domain.SubmissionSearchCriteria;
+import com.gs5.underwriting.submission.domain.SubmissionSummaryView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;

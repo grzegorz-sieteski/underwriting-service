@@ -7,8 +7,8 @@ import com.gs5.underwriting.submission.domain.SubmissionCommandRepository;
 import com.gs5.underwriting.submission.domain.SubmissionEventPublisher;
 import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.gs5.underwriting.submission.domain.SubmissionIdGenerator;
-import com.gs5.underwriting.submission.query.SearchSubmissionsUseCase;
-import com.gs5.underwriting.submission.query.SubmissionQueryRepository;
+import com.gs5.underwriting.submission.domain.SearchSubmissionsUseCase;
+import com.gs5.underwriting.submission.domain.SubmissionQueryRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 

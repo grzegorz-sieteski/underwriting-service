@@ -3,6 +3,7 @@ package com.gs5.underwriting.submission.domain;
 import module java.base;
 
 import com.gs5.underwriting.shared.kernel.LogSafeText;
+import com.gs5.underwriting.shared.kernel.Result;
 
 import org.jspecify.annotations.Nullable;
 
@@ -32,6 +33,24 @@ public record RegisterSubmissionCommand(@Nullable String externalRef,
 
     /** Masks the value a mask is for. */
     private static final String MASKED = "***";
+
+    /**
+     * Parses raw input into a command, judging in the specification's order: the reference first
+     * (missing, too long, control character), then the amount (missing, not positive, wrong
+     * precision). The first failure is the refusal; nothing later is examined.
+     *
+     * <p>The reference's own {@link ExternalReferenceError} is mapped here, exhaustively, onto the
+     * three {@link RegisterSubmissionError} reference variants, so nothing a caller sees changes.
+     *
+     * <p><strong>RED stub.</strong> Returns {@code null}; pinned by
+     * {@code RegisterSubmissionCommandParseTest}. The target record holds the two value objects
+     * instead of raw components; that change belongs to the implementation.
+     */
+    @SuppressWarnings("NullAway")
+    public static Result<RegisterSubmissionCommand, RegisterSubmissionError> parse(
+            @Nullable String externalRef, @Nullable BigDecimal insuredLimit) {
+        return null;
+    }
 
     /**
      * BR-22 — the insured limit never appears in a log, not in full and not rounded. BR-23 — the

@@ -1,4 +1,4 @@
-package com.gs5.underwriting.submission.query;
+package com.gs5.underwriting.submission.domain;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.ActorRole;

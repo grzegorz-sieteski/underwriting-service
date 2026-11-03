@@ -1,5 +1,7 @@
 package com.gs5.underwriting;
 
+import com.gs5.underwriting.shared.kernel.ActorContext;
+import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaModifier;
@@ -8,10 +10,16 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
+import java.math.BigDecimal;
+
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleName;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameEndingWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 
@@ -50,7 +58,7 @@ class ArchitectureRulesTest {
     @ArchTest
     static final ArchRule write_and_read_models_stay_pure_java =
             noClasses()
-                    .that().resideInAnyPackage("..domain..", "..query..")
+                    .that().resideInAPackage("..domain..")
                     .should().dependOnClassesThat().resideInAnyPackage(
                             "..adapters..",
                             "org.springframework..",
@@ -62,8 +70,9 @@ class ArchitectureRulesTest {
                             "org.hibernate..",
                             "com.querydsl..",
                             "org.jooq..")
-                    .because("domain/ and query/ may use plain Java, shared.kernel and JSpecify only; "
-                            + "anything else makes the business rules untestable without a container");
+                    .because("domain/, which holds both the write and the read side, may use plain Java, "
+                            + "shared.kernel and JSpecify only; anything else makes the business rules "
+                            + "untestable without a container");
 
     @ArchTest
     static final ArchRule orm_and_query_builders_are_absent_everywhere =
@@ -77,47 +86,263 @@ class ArchitectureRulesTest {
                     .because("persistence is plain Spring Data JDBC with native SQL mapped to records; "
                             + "models reach for @Entity and JPAQueryFactory on reflex, so block them outright");
 
-    // ------------------------------------------------------------------ CQRS
-
-    @ArchTest
-    static final ArchRule read_model_does_not_see_write_model =
-            noClasses()
-                    .that().resideInAPackage("..query..")
-                    .should().dependOnClassesThat().resideInAPackage("..domain..")
-                    .because("a projection that can touch the aggregate will eventually load it");
-
-    @ArchTest
-    static final ArchRule write_model_does_not_see_read_model =
-            noClasses()
-                    .that().resideInAPackage("..domain..")
-                    .should().dependOnClassesThat().resideInAPackage("..query..")
-                    .because("the write side must not be shaped by what a screen happens to display");
+    // -------------------------------------------------- CQS, without folders (design §5.6, §15.10)
 
     /*
      * `archRule.failOnEmptyShould` is TRUE globally (src/test/resources/archunit.properties), with
      * no per-rule exceptions: every rule in this class matches at least one class, so a rule that
      * stops matching is a typo and fails the build rather than passing silently.
      *
-     * These two rules carried a temporary `allowEmptyShould(true)` while the RED phase had written
-     * domain/ and query/ but no adapters/web/. The controllers now exist, so both allowances are
-     * gone. They were confirmed redundant by breaking the rule on purpose — pointing
-     * SubmissionQueryController at domain/ produced "query_controllers_touch_only_the_read_side ...
-     * was violated (2 times)" and a BUILD FAILURE — which is the only way to know a structural
-     * gate is actually looking at something.
+     * Command-query separation here is a separation of RESPONSIBILITY, not of folders. The read side
+     * lives in domain/ beside the write side, and a read use case is told from a write use case by
+     * the one public method it exposes — `ask` or `execute` — never by its package and never by a
+     * name prefix. A prefix is a hint to a reader; the method is what the build reads.
+     *
+     * Removed with the query/ package, because each one keyed on it: read_model_does_not_see_write_model,
+     * write_model_does_not_see_read_model, the two package-based controller rules
+     * (command_controllers_touch_only_the_write_side, query_controllers_touch_only_the_read_side),
+     * and use_cases_have_exactly_one_public_method_named_for_their_side, which inferred `ask` from
+     * the `.query` package.
+     *
+     * API NOTE, checked against ArchUnit 1.5.1 with javac: the design writes the forbidden targets as
+     * `dependOnClassesThat().haveSimpleName(..).or().haveSimpleNameEndingWith(..)`. That does NOT
+     * compile — `or()` does not exist on ClassesShouldConjunction. The targets are therefore one
+     * combined predicate passed to `dependOnClassesThat(DescribedPredicate)`, which does exist and
+     * means exactly what the design intends.
      */
-    @ArchTest
-    static final ArchRule command_controllers_touch_only_the_write_side =
-            noClasses()
-                    .that().haveSimpleNameEndingWith("CommandController")
-                    .should().dependOnClassesThat().resideInAPackage("..query..")
-                    .because("a command endpoint talks to its *UseCase in domain/ and nothing else");
+
+    /** A public method with this name. A use case's one public method is what makes it read or write. */
+    private static DescribedPredicate<JavaClass> exposingPublicMethodNamed(String name) {
+        return new DescribedPredicate<>("exposing a public method named '" + name + "'") {
+            @Override
+            public boolean test(JavaClass type) {
+                return type.getMethods().stream().anyMatch(method ->
+                        method.getName().equals(name)
+                                && method.getModifiers().contains(JavaModifier.PUBLIC));
+            }
+        };
+    }
+
+    /** A use case, read or write by the method it exposes. Selecting on both keeps JDK and Spring types out. */
+    private static DescribedPredicate<JavaClass> useCaseExposing(String name) {
+        return simpleNameEndingWith("UseCase").and(exposingPublicMethodNamed(name));
+    }
 
     @ArchTest
-    static final ArchRule query_controllers_touch_only_the_read_side =
+    static final ArchRule no_query_package_exists =
+            noClasses()
+                    .should().resideInAPackage("..query..")
+                    .because("CQS is a separation of responsibility, not of folders. Read use cases live in "
+                            + "domain/ beside the write side. A query/ package reintroduces the import ban "
+                            + "that forced duplication and primitive obsession");
+
+    @ArchTest
+    static final ArchRule read_use_cases_do_not_depend_on_the_write_side =
+            noClasses()
+                    .that().haveSimpleNameEndingWith("UseCase")
+                    .and(exposingPublicMethodNamed("ask"))
+                    .should().dependOnClassesThat(
+                            simpleName("Submission")
+                                    .or(simpleNameEndingWith("CommandRepository"))
+                                    .or(simpleNameEndingWith("EventPublisher"))
+                                    .or(simpleNameEndingWith("IdGenerator"))
+                                    .or(simpleNameEndingWith("Command")))
+                    .because("a read use case (ask) must not touch the aggregate, a command port, or a "
+                            + "command: a read cannot change state, and the rule keeps it that way");
+
+    @ArchTest
+    static final ArchRule write_use_cases_do_not_depend_on_the_read_side =
+            noClasses()
+                    .that().haveSimpleNameEndingWith("UseCase")
+                    .and(exposingPublicMethodNamed("execute"))
+                    .should().dependOnClassesThat(
+                            simpleNameEndingWith("QueryRepository")
+                                    .or(simpleNameEndingWith("View"))
+                                    .or(simpleNameEndingWith("Query"))
+                                    .or(simpleName("SubmissionFilter"))
+                                    .or(simpleName("SubmissionSearchCriteria")))
+                    .because("a write use case (execute) must not read: a write that depends on a query "
+                            + "port or a view is deciding on data it did not load through its own port");
+
+    @ArchTest
+    static final ArchRule aggregate_does_not_depend_on_read_types =
+            noClasses()
+                    .that().haveSimpleName("Submission")
+                    .should().dependOnClassesThat(
+                            simpleNameEndingWith("View")
+                                    .or(simpleNameEndingWith("Query"))
+                                    .or(simpleName("SubmissionFilter"))
+                                    .or(simpleName("SubmissionSearchCriteria")))
+                    .because("the aggregate protects the write model; a projection must not shape it");
+
+    /*
+     * One UseCase = one business operation = one public method, and that method declares whether
+     * it reads or writes.
+     *
+     * DEVIATION from the design's verbatim text, on purpose: §15.10 requires `parameters.size() == 1`,
+     * but §5.5 and §3 give the target signatures as `ask(ActorContext, SearchSubmissionsQuery)` and
+     * `execute(ActorContext, RegisterSubmissionCommand)` — two parameters, because the admitted actor
+     * is passed in. The verbatim rule would fail the design's own target forever. This version
+     * requires exactly one *Query (ask) or *Command (execute) parameter, and allows the admitted
+     * ActorContext beside it and nothing else. Both today's one-parameter form and the target pass.
+     */
+    @ArchTest
+    static final ArchRule use_cases_expose_exactly_one_public_method_named_ask_or_execute =
+            classes()
+                    .that().haveSimpleNameEndingWith("UseCase")
+                    .should(new ArchCondition<JavaClass>(
+                            "expose exactly one public method, named 'ask' (taking a *Query) or "
+                                    + "'execute' (taking a *Command), optionally beside the ActorContext") {
+                        @Override
+                        public void check(JavaClass useCase, ConditionEvents events) {
+                            var publicMethods = useCase.getMethods().stream()
+                                    .filter(method -> method.getModifiers().contains(JavaModifier.PUBLIC))
+                                    .toList();
+                            if (publicMethods.size() != 1) {
+                                events.add(SimpleConditionEvent.violated(useCase,
+                                        useCase.getName() + " must expose exactly one public method, but has "
+                                                + publicMethods.stream().map(JavaMethod::getName).toList()));
+                                return;
+                            }
+                            var method = publicMethods.getFirst();
+                            var suffix = switch (method.getName()) {
+                                case "ask" -> "Query";
+                                case "execute" -> "Command";
+                                default -> "";
+                            };
+                            var parameters = method.getRawParameterTypes();
+                            var operationParameters = parameters.stream()
+                                    .filter(parameter -> !suffix.isEmpty()
+                                            && parameter.getSimpleName().endsWith(suffix))
+                                    .count();
+                            var othersAreTheActor = parameters.stream()
+                                    .filter(parameter -> suffix.isEmpty()
+                                            || !parameter.getSimpleName().endsWith(suffix))
+                                    .allMatch(parameter -> parameter.isEquivalentTo(ActorContext.class));
+                            if (suffix.isEmpty() || operationParameters != 1 || !othersAreTheActor) {
+                                events.add(SimpleConditionEvent.violated(useCase,
+                                        useCase.getName() + "." + method.getName() + " must be 'ask(*Query)' or "
+                                                + "'execute(*Command)', optionally with the ActorContext"));
+                            }
+                        }
+                    })
+                    .because("each UseCase is a single business operation with one reason to change, and its "
+                            + "one public method declares whether it reads or writes");
+
+    @ArchTest
+    static final ArchRule query_controllers_depend_on_no_write_use_case =
             noClasses()
                     .that().haveSimpleNameEndingWith("QueryController")
-                    .should().dependOnClassesThat().resideInAPackage("..domain..")
-                    .because("a query endpoint talks to its *UseCase in query/ and nothing else");
+                    .should().dependOnClassesThat(useCaseExposing("execute"))
+                    .because("a query endpoint may call only an ask use case; calling execute from it would "
+                            + "let a read request change state");
+
+    @ArchTest
+    static final ArchRule command_controllers_depend_on_no_read_use_case =
+            noClasses()
+                    .that().haveSimpleNameEndingWith("CommandController")
+                    .should().dependOnClassesThat(useCaseExposing("ask"))
+                    .because("a command endpoint may call only an execute use case; calling ask from it would "
+                            + "let a write request depend on a read");
+
+    // ------------------------------------------- parse, don't validate (design §15.9)
+
+    /** A method with at least one String or BigDecimal parameter: raw input. */
+    private static final DescribedPredicate<JavaMethod> TAKING_RAW_INPUT =
+            new DescribedPredicate<>("taking a String or BigDecimal parameter") {
+                @Override
+                public boolean test(JavaMethod method) {
+                    return method.getRawParameterTypes().stream().anyMatch(parameter ->
+                            parameter.isEquivalentTo(String.class)
+                                    || parameter.isEquivalentTo(BigDecimal.class));
+                }
+            };
+
+    /** SubmissionFilter itself, or a record nested in it. */
+    private static final DescribedPredicate<JavaClass> SUBMISSION_FILTER_OR_NESTED =
+            new DescribedPredicate<>("SubmissionFilter or a type nested in it") {
+                @Override
+                public boolean test(JavaClass type) {
+                    return type.getSimpleName().equals("SubmissionFilter")
+                            || type.getEnclosingClass()
+                                    .map(enclosing -> enclosing.getSimpleName().equals("SubmissionFilter"))
+                                    .orElse(false);
+                }
+            };
+
+    /*
+     * `methods()` excludes constructors, so a record's canonical constructor is never caught: that is
+     * how views, the snapshot, the event, the error records and the criteria hold String and
+     * BigDecimal without tripping this. Synthetic methods are excluded too — a lambda body compiles
+     * to a synthetic `lambda$...` method whose parameters are its captures, which nobody calls and
+     * nobody can name `parse`. That exclusion is not in the design's text and is flagged as such.
+     */
+    @ArchTest
+    static final ArchRule raw_input_enters_only_through_parse =
+            methods()
+                    .that().areDeclaredInClassesThat().resideInAPackage("..domain..")
+                    .and().doNotHaveModifier(JavaModifier.SYNTHETIC)
+                    .and(TAKING_RAW_INPUT)
+                    .should().haveName("parse")
+                    .because("raw input enters the domain only as the parameter of a method named parse; "
+                            + "anywhere else a String or BigDecimal parameter is an unparsed value reaching "
+                            + "business code");
+
+    /*
+     * Input objects only: commands, queries and the search filter. Output records — views, criteria,
+     * snapshot — are out of scope by design (§5.3). Static fields are excluded: a constant is not
+     * input. The filter's BigDecimal and Instant bounds are allowed on purpose, since every value of
+     * those types is a legal comparison value; its reference is an ExternalReference, so a String
+     * there would mean the parse was bypassed.
+     *
+     * The command/query selector is ONE combined predicate passed to areDeclaredInClassesThat(...),
+     * not `.or()` on the fluent chain, which would widen the whole rule.
+     */
+    @ArchTest
+    static final ArchRule commands_and_queries_carry_only_parsed_values =
+            CompositeArchRule.of(
+                            noFields()
+                                    .that().areDeclaredInClassesThat(
+                                            simpleNameEndingWith("Command").or(simpleNameEndingWith("Query")))
+                                    .and().areNotStatic()
+                                    .should().haveRawType(String.class)
+                                    .orShould().haveRawType(BigDecimal.class))
+                    .and(noFields()
+                            .that().areDeclaredInClassesThat(SUBMISSION_FILTER_OR_NESTED)
+                            .and().areNotStatic()
+                            .should().haveRawType(String.class))
+                    .because("domain objects hold no raw input fields: a command, a query or the filter "
+                            + "holds only values that went through parse");
+
+    /*
+     * Rule 1 of §15.1: a type that guards an invariant is a final class with a private constructor,
+     * never a record, because a record's canonical constructor is public. A record cannot satisfy
+     * this rule, so an invariant guarded by a record is caught.
+     */
+    @ArchTest
+    static final ArchRule guarded_types_have_no_public_constructor =
+            classes()
+                    .that().arePublic()
+                    .and().areNotRecords()
+                    .and().areNotInterfaces()
+                    .and().areNotEnums()
+                    .and().resideInAnyPackage("..domain..", "..shared.kernel..", "..adapters.access..")
+                    .and().haveSimpleNameNotEndingWith("UseCase")
+                    .and().doNotHaveSimpleName("OperationGate")
+                    .should(new ArchCondition<JavaClass>("have no public constructor") {
+                        @Override
+                        public void check(JavaClass type, ConditionEvents events) {
+                            type.getConstructors().stream()
+                                    .filter(constructor -> constructor.getModifiers().contains(JavaModifier.PUBLIC))
+                                    .forEach(constructor -> events.add(SimpleConditionEvent.violated(type,
+                                            type.getName() + " has a public constructor, so its invariant "
+                                                    + "can be bypassed: " + constructor.getFullName())));
+                        }
+                    })
+                    .because("raw input must enter a guarded type only through parse; a public "
+                            + "constructor is a second way in");
+
+    // ------------------------------------------------------------- records
 
     @ArchTest
     static final ArchRule commands_and_queries_are_standalone_records =
@@ -139,42 +364,6 @@ class ArchitectureRulesTest {
                     .because("entry points are single-operation *UseCase classes; a *Service or *Facade "
                             + "collects unrelated operations, every new feature edits the same file, and "
                             + "an anaemic model and a god object grow back");
-
-    /*
-     * One UseCase = one business operation = one public method.
-     *
-     * A facade can grow from two methods to fifty and no structural rule can say where it went
-     * wrong. A UseCase cannot: this rule fails the build the moment a second public method appears,
-     * so a new operation has to arrive as a new class with its own constructor holding only the
-     * ports that operation needs.
-     *
-     * The method name is pinned too, because the count alone would accept `run` or `handle`:
-     * `execute` on the write side (it changes state), `ask` on the read side (it does not). The
-     * name tells a reader which one they are calling without opening the class.
-     */
-    @ArchTest
-    static final ArchRule use_cases_have_exactly_one_public_method_named_for_their_side =
-            classes()
-                    .that().haveSimpleNameEndingWith("UseCase")
-                    .should(new ArchCondition<JavaClass>(
-                            "have exactly one public method: execute in domain/, ask in query/") {
-                        @Override
-                        public void check(JavaClass useCase, ConditionEvents events) {
-                            var publicMethods = useCase.getMethods().stream()
-                                    .filter(method -> method.getModifiers().contains(JavaModifier.PUBLIC))
-                                    .toList();
-                            var expectedName = useCase.getPackageName().endsWith(".query") ? "ask" : "execute";
-                            var conforms = publicMethods.size() == 1
-                                    && publicMethods.getFirst().getName().equals(expectedName);
-                            if (!conforms) {
-                                events.add(SimpleConditionEvent.violated(useCase,
-                                        useCase.getName() + " must expose exactly one public method named '"
-                                                + expectedName + "', but has "
-                                                + publicMethods.stream().map(JavaMethod::getName).toList()));
-                            }
-                        }
-                    })
-                    .because("each UseCase is a single business operation with one reason to change");
 
     @ArchTest
     static final ArchRule no_grab_bag_classes =

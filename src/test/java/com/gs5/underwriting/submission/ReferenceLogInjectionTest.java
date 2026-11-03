@@ -3,8 +3,8 @@ package com.gs5.underwriting.submission;
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.ActorRole;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionCommand;
-import com.gs5.underwriting.submission.query.SearchSubmissionsQuery;
-import com.gs5.underwriting.submission.query.SubmissionSearchCriteria;
+import com.gs5.underwriting.submission.domain.SearchSubmissionsQuery;
+import com.gs5.underwriting.submission.domain.SubmissionSearchCriteria;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

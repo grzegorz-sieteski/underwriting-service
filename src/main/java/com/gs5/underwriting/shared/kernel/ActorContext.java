@@ -2,6 +2,8 @@ package com.gs5.underwriting.shared.kernel;
 
 import module java.base;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * The authenticated caller, propagated to the domain without a framework dependency.
  *
@@ -59,6 +61,26 @@ public record ActorContext(UUID tenantId, String actorId, ActorRole role) {
     @Override
     public String toString() {
         return "ActorContext[tenantId=" + tenantId + ", actorId=***, role=" + role + "]";
+    }
+
+    /** The width of {@code registered_by VARCHAR(255)}: the largest actor id the store can hold. */
+    public static final int MAX_ACTOR_ID_LENGTH = 255;
+
+    /**
+     * Builds a caller from raw claims, or returns empty when anything is missing or malformed.
+     *
+     * <p>Fail-closed: the result is never partial and never carries a reason, since a reason would
+     * be an oracle for someone probing token validation. {@code tenantId} must be the canonical
+     * 36-character UUID text; {@code actorId} must be non-blank, at most
+     * {@link #MAX_ACTOR_ID_LENGTH} code points, free of category Cc, and is not trimmed.
+     *
+     * <p><strong>RED stub.</strong> Returns {@code null}; pinned by {@code ActorContextParseTest}.
+     */
+    @SuppressWarnings("NullAway")
+    public static Optional<ActorContext> parse(@Nullable String tenantId,
+                                               @Nullable String actorId,
+                                               @Nullable ActorRole role) {
+        return null;
     }
 
     /** True when this actor may read data belonging to {@code otherTenantId}. */

@@ -1,4 +1,4 @@
-package com.gs5.underwriting.submission.query;
+package com.gs5.underwriting.submission.domain;
 
 import java.math.BigDecimal;
 import java.time.Instant;

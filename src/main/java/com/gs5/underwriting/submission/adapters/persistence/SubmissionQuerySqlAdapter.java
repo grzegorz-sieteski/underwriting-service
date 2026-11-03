@@ -2,9 +2,9 @@ package com.gs5.underwriting.submission.adapters.persistence;
 
 import module java.base;
 
-import com.gs5.underwriting.submission.query.SubmissionQueryRepository;
-import com.gs5.underwriting.submission.query.SubmissionSearchCriteria;
-import com.gs5.underwriting.submission.query.SubmissionSummaryView;
+import com.gs5.underwriting.submission.domain.SubmissionQueryRepository;
+import com.gs5.underwriting.submission.domain.SubmissionSearchCriteria;
+import com.gs5.underwriting.submission.domain.SubmissionSummaryView;
 import org.springframework.stereotype.Component;
 
 /**

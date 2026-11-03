@@ -1,4 +1,4 @@
-package com.gs5.underwriting.submission.query;
+package com.gs5.underwriting.submission.domain;
 
 /**
  * Every reason searching submissions can be refused — exhaustively, exactly one.

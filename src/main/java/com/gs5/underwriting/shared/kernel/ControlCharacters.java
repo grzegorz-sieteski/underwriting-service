@@ -1,0 +1,38 @@
+package com.gs5.underwriting.shared.kernel;
+
+import java.util.Optional;
+
+/**
+ * The single definition of Unicode general category {@code Cc}: U+0000–U+001F and U+007F–U+009F.
+ *
+ * <p>Defined once here because {@code domain/}, {@code query/} and {@code adapters/} all need it and
+ * {@code query/} may not import {@code domain/}. Three private copies would be three places for the
+ * category to drift.
+ *
+ * <p><strong>RED stub.</strong> {@link #firstIn} returns {@code null}; its behaviour is pinned by
+ * {@code ControlCharactersTest}. Implementing it is stage 4's job.
+ */
+public final class ControlCharacters {
+
+    private ControlCharacters() {
+    }
+
+    /**
+     * The first character of category {@code Cc} in {@code text}, with its code point and its
+     * zero-based index counted in <strong>code points</strong>, or empty when there is none.
+     */
+    @SuppressWarnings("NullAway")
+    public static Optional<Found> firstIn(String text) {
+        return null;
+    }
+
+    /**
+     * An offending character: its code point as a number, never the character itself, so that an
+     * error record carrying it cannot forge a log line.
+     *
+     * @param codePoint the offending code point
+     * @param index     its zero-based index in code points
+     */
+    public record Found(int codePoint, int index) {
+    }
+}
