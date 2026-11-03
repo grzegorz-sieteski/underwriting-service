@@ -569,3 +569,10 @@ database that is kept. From then on, any change needs a V3 migration.
 already contains the test changes, so the gate reports "OK" for changes it was built to block.
 Its baseline must be pinned to the last reviewed commit (`b0319f7`) before the gate is relied on
 again. Not fixed in this entry.
+
+## Decisions on 2026-11-03, second round (product owner)
+
+- **Status codes for approval are approved:** `404` for not found (including a malformed
+  identity), `403` for "approver registered this submission", `409` for "already approved".
+- **The `architect.agent.md` change is accepted.** It removes `query/` from the architect's
+  rules to match design revision 4. It was not part of any brief, so this entry is its record.
