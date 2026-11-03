@@ -8,30 +8,30 @@ Every business number here traces to the spec. The one number the spec deliberat
 the maximum page size — is recorded in [§7](#7-engineering-decision-maximum-page-size) as an
 engineering decision with its reasoning. Nothing else in this document invents a business rule.
 
-> **Revision 3 — read this first.** Two product-owner decisions reshape the module. Everything
-> below has been brought into line with them; the places that moved are named here so nobody has
-> to diff.
+> **Revision 4 — read this first.** The module has two packages, `domain/` and `adapters/`. There is
+> no `query/` package. Read use cases live in `domain/` next to write use cases.
 >
-> - **Parse, don't validate.** A use case only ever receives values that are valid by
->   construction: `ExternalReference` and `InsuredLimit` on the write side, `SubmissionFilter` and
->   `ReferenceCriterion` on the read side, `ActorContext` for the caller. Raw `String` and
->   `BigDecimal` enter `domain/` and `query/` only as the parameter of a method named `parse`.
->   See [§15](#15-value-objects).
-> - **Authorisation is an adapter concern.** Who may call which use case is decided by one guard,
->   applied where the use cases are wired, in this order: identify the caller (401), check the
->   permission for that use case (403), parse the request, execute. The domain knows no roles,
->   produces no 401 or 403 and does not re-check. A rule that depends on data stays in the domain.
->   See [§16](#16-the-access-guard).
+> - **Why.** The ban on `query/` importing `domain/` forced duplication and primitive obsession, and
+>   it has already happened in this repository. `ReferenceCriterion` duplicated `ExternalReference`.
+>   `ControlCharacters` had to be placed in the kernel only so two packages could both reach it.
+>   Views carried raw `UUID` and `String` instead of `SubmissionId` and domain types. CQS is a
+>   separation of *responsibility*, not of folders, and it is now enforced by the one public method
+>   each use case exposes (`ask` or `execute`), not by a package ([§5.6](#56-cqs-enforced-without-folders)).
+> - **Parse, don't validate** is unchanged: a use case receives only values that are valid by
+>   construction, and raw input enters only through a method named `parse` ([§15](#15-value-objects)).
+> - **Authorisation is an adapter concern** and the order is unchanged: identify the caller (401),
+>   check the permission for that use case (403), parse the request, execute ([§16](#16-the-access-guard)).
+>   `OperationGate` keeps **two** type parameters, as the product owner asked ([§16.2](#162-the-shape)).
 > - **The caller-facing contract is unchanged.** Registration is still refused for exactly nine
->   reasons and search for exactly one. They are now produced in two layers: registration as
->   2 + 7, search as 1 + 0. See [§3.2](#32-refusals-nine-as-the-caller-sees-them) and
->   [§5.2](#52-refusals-search-still-has-exactly-one).
-> - **Two earlier designs were rejected** and are recorded so they are not reintroduced: parse
->   first and judge the role second, and a domain-owned permission re-checked by the use case.
->   See [§17](#17-rejected-designs).
-> - **What moves** — every class, test and invariant this touches — is listed in
->   [§18](#18-what-moves).
-> - **Questions for the product owner** are collected in [§11](#11-open-questions).
+>   reasons. Search is still refused for exactly one, now proven by a test rather than by the type
+>   ([§5.2](#52-refusals-search-still-has-exactly-one)).
+> - **`ReferenceCriterion` is deleted.** Search filters reuse `ExternalReference`. An empty reference
+>   is "not supplied" (BR-31), and a reference with a control character is "matches nothing" (BR-30).
+> - **`ControlCharacters` stays in `shared/kernel`,** for a reason that is now the only one left
+>   ([§15.5](#155-the-single-definition-of-category-cc)).
+> - **The change list** of every class, test, rule, instruction, skill, agent and AGENTS.md section
+>   that prescribes `query/` is in [§18.4](#184-documents-and-rules-outside-this-design).
+> - **Questions for the product owner** are in [§11.1](#111-questions-for-the-product-owner).
 
 ---
 
@@ -40,18 +40,17 @@ engineering decision with its reasoning. Nothing else in this document invents a
 Covers, and only covers, the two operations the spec puts in scope:
 
 - **register a submission** — one command; **nine** refusal reasons as the caller sees them
-  (BR-01, BR-02, BR-04..BR-06, BR-09..BR-12, BR-29): two decided at the adapter, seven in the
-  domain
-- **search submissions** — one query; **one** refusal reason as the caller sees it (BR-01),
-  decided at the adapter. The query side itself refuses nothing (BR-16..BR-28, BR-30)
+  (BR-01, BR-02, BR-04..BR-06, BR-09..BR-12, BR-29): two decided at the adapter, seven in the domain
+- **search submissions** — one query; **one** refusal reason as the caller sees it (BR-01), decided
+  at the adapter. The read use case refuses nothing of its own (BR-16..BR-28, BR-30, BR-31)
 
-Module: **`submission`** — one business capability, nameable without "and" because registration
-and search are the write and read side of the same capability, not two capabilities.
+Module: **`submission`** — one business capability, with a write side and a read side.
 
 ```
 com.gs5.underwriting.submission
-├── domain/      WRITE side.  Pure Java. Aggregate package-private. Knows no roles.
-├── query/       READ side.   Projections only. Cannot import domain/. Knows no roles.
+├── domain/      Everything the business does: write use cases (execute) and read use cases (ask),
+│                 their commands, queries, views, ports, value objects and the package-private
+│                 aggregate. Pure Java. Knows no roles.
 └── adapters/
     ├── access/       the guard: who may call which use case. Plain Java, no Spring.
     ├── web/
@@ -60,69 +59,67 @@ com.gs5.underwriting.submission
     └── config/       the one place that may see a raw use case
 ```
 
-There is **no `application` package and no `*Service` or `*Facade` class.** The use case *is* the
-application boundary; Checkstyle `noServiceSuffixDeclaration` plus ArchUnit
-`no_procedural_service_or_facade_layer` fail the build on the alternative.
+There is no `query/` package and no `application` package, and no `*Service` or `*Facade` class.
+Checkstyle `noServiceSuffixDeclaration` and ArchUnit `no_procedural_service_or_facade_layer` fail the
+build on the alternatives, and ArchUnit `no_query_package_exists` ([§15.10](#1510-cqs-rules-verbatim))
+fails it on a `query/` package.
 
-`domain/` and `query/` import only `java.*`, `com.gs5.underwriting.shared.kernel.*` and
+`domain/` imports only `java.*`, `com.gs5.underwriting.shared.kernel.*` and
 `org.jspecify.annotations.*`. Each package carries a `package-info.java` with `@NullMarked`.
 
 **"The domain knows no roles" is enforced, not hoped for.** `ActorRole` lives in
-`adapters/access/`, and the existing ArchUnit rule `write_and_read_models_stay_pure_java` already
-forbids `domain/` and `query/` from depending on anything in `..adapters..`. Putting the role
-there is what turns the product owner's decision into a build failure rather than a convention.
+`adapters/access/`, and the existing ArchUnit rule `write_and_read_models_stay_pure_java` forbids
+`domain/` from depending on anything in `..adapters..`.
+
+**CQS without folders.** The read side and the write side are both in `domain/`, so nothing in the
+package tree separates them. What separates them is the one public method each use case exposes,
+and ArchUnit checks that the method and the dependencies agree with it ([§5.6](#56-cqs-enforced-without-folders)).
+A read use case cannot depend on the aggregate, a command repository or an event publisher. A write
+use case cannot depend on a query repository or a view.
 
 ---
 
 ## 2. File inventory
 
 ```
-shared/kernel/                              (stays tiny: four types)
-├── Result.java                             unchanged
-├── ActorContext.java                       CHANGED: final class, tenantId + actorId only, parse(...)
-├── ControlCharacters.java                  NEW: the single definition of Unicode category Cc
-└── LogSafeText.java                        CHANGED: delegates the category test to ControlCharacters
+shared/kernel/                          (four types)
+├── Result.java                         unchanged
+├── ActorContext.java                   final class: tenantId + actorId; parse(...); no role
+├── ControlCharacters.java              the single definition of Unicode category Cc (stays here, §15.5)
+└── LogSafeText.java                    delegates the category test to ControlCharacters
 
 submission/
 ├── domain/
-│   ├── package-info.java                   @NullMarked
-│   ├── SubmissionId.java                   public record
-│   ├── ExternalReference.java              NEW  public final class — value object, parse(...)
-│   ├── InsuredLimit.java                   NEW  public final class — value object, parse(...)
-│   ├── RegisterSubmissionCommand.java      public record of the two value objects + parse(...)
-│   ├── RegisterSubmissionError.java        public sealed interface — 7 variants
-│   ├── RegisterSubmissionUseCase.java      public final class — execute(ActorContext, Command)
-│   ├── SubmissionCommandRepository.java    public interface — outbound port
-│   ├── SubmissionEventPublisher.java       public interface — outbound port
-│   ├── SubmissionIdGenerator.java          public interface — outbound port
-│   ├── SubmissionSnapshot.java             public record — persistence contract
-│   ├── SubmissionDomainEvent.java          public sealed interface
-│   └── Submission.java                     PACKAGE-PRIVATE aggregate
-├── query/
-│   ├── package-info.java                   @NullMarked
-│   ├── SubmissionFilter.java               NEW  public sealed interface — Narrowing | MatchesNothing
-│   ├── ReferenceCriterion.java             NEW  public final class — query-side value object
-│   ├── SearchSubmissionsQuery.java         public record (filter + page request; clamps the page)
-│   ├── SearchSubmissionsUseCase.java       public final class — ask(ActorContext, Query)
-│   ├── SubmissionSearchCriteria.java       public record — tenant + five filters
-│   ├── SubmissionSummaryView.java          public record — one result row
-│   ├── SubmissionPageView.java             public record — page + total count
-│   └── SubmissionQueryRepository.java      public interface — read port, returns views
-│                                           (SearchSubmissionsError is DELETED — see §5.2)
+│   ├── package-info.java               @NullMarked
+│   ├── SubmissionId.java               public record
+│   ├── ExternalReference.java          public final class — value object; parse returns ExternalReferenceError
+│   ├── ExternalReferenceError.java     public sealed interface — 3 variants, shared by both sides (§15.2)
+│   ├── InsuredLimit.java               public final class — value object, parse(...)
+│   ├── RegisterSubmissionCommand.java  public record of the two value objects, parse(...)
+│   ├── RegisterSubmissionError.java    public sealed interface — 7 variants
+│   ├── RegisterSubmissionUseCase.java  public final class — execute(ActorContext, Command)
+│   ├── SubmissionCommandRepository.java    public interface — outbound port (write)
+│   ├── SubmissionEventPublisher.java       public interface — outbound port (write)
+│   ├── SubmissionIdGenerator.java          public interface — outbound port (write)
+│   ├── SubmissionSnapshot.java         public record — persistence contract
+│   ├── SubmissionDomainEvent.java      public sealed interface
+│   ├── Submission.java                 PACKAGE-PRIVATE aggregate
+│   ├── SearchSubmissionsQuery.java     public record — filter, page, size
+│   ├── SubmissionFilter.java           public sealed interface — Narrowing | MatchesNothing (§5.1)
+│   ├── SearchSubmissionsUseCase.java   public final class — ask(ActorContext, Query)
+│   ├── SubmissionSearchCriteria.java   public record — tenant + four filters + reference
+│   ├── SubmissionSummaryView.java      public record — one result row, domain types
+│   ├── SubmissionPageView.java         public record — page + total count
+│   └── SubmissionQueryRepository.java  public interface — outbound port (read)
+│                                       (no ReferenceCriterion; no SearchSubmissionsError — both deleted)
 └── adapters/
-    ├── access/       NEW   ActorRole (moved out of the kernel), AuthenticatedCaller,
-    │                       AccessRefusal + CallerNotIdentified + PermissionDenied,
-    │                       Permission, OperationGate, Admission
-    ├── web/                SubmissionCommandController, SubmissionQueryController,
-    │                       RegisterSubmissionRequest (gains toCommand()), RegisterRefusal (union),
-    │                       ActorContextResolver (now yields Optional<AuthenticatedCaller>)
-    ├── persistence/        SubmissionJdbcEntity, SubmissionCommandJdbcRepository,
-    │                       SubmissionQueryJdbcRepository, SubmissionCommandSqlAdapter,
-    │                       SubmissionQuerySqlAdapter, SubmissionPersistenceMapper   (package-private)
-    ├── ?                   the SubmissionEventPublisher adapter. Technology and package are a
-    │                       deferred adapter decision — see §12. This design does not name a
-    │                       transport, a topic, a message key, a wire contract or a relay.
-    └── config/             SubmissionConfiguration — builds the guarded gates
+    ├── access/       ActorRole (moved from the kernel), AuthenticatedCaller, AccessRefusal,
+    │                 CallerNotIdentified, PermissionDenied, Permission, OperationGate, Admission
+    ├── web/          SubmissionCommandController, SubmissionQueryController, RegisterSubmissionRequest,
+    │                 RegisterRefusal (union), ActorContextResolver
+    ├── persistence/  command and query adapters, JDBC repositories, entity, mapper (package-private)
+    ├── <publishing adapter, deferred — §12.1>
+    └── config/       SubmissionConfiguration — builds the two gates; declares the permission table
 
 ```
 
@@ -340,7 +337,7 @@ public interface SubmissionIdGenerator {
 
 `SubmissionEventPublisher` taking the domain event is **the whole of this module's knowledge about
 publishing.** There is no transport, no topic, no message key, no wire contract and no relay
-anywhere in `domain/`, `query/` or this document's schema. `publish` returns `void` and not a
+anywhere in `domain/` or this document's schema. `publish` returns `void` and not a
 `Result`, because the spec lists no refusal reason for announcing a fact: a `Result` there would
 force the use case to invent a tenth error variant for something the business never described as an
 outcome.
@@ -529,22 +526,27 @@ the factories:
 
 ## 5. Queries (read side)
 
-| Query record | Use case method | Returns | View records |
+The read side lives in `domain/`, next to the write side. It is separated from the write side by
+**responsibility, not by folder**: a read use case is discriminated by its one public method, `ask`,
+and is forbidden from depending on anything that changes state; a write use case is `execute` and
+is forbidden from depending on anything that only reads. The rules are in [§5.6](#56-cqs-enforced-without-folders).
+
+| Read type | Use case method | Returns | Takes |
 |---|---|---|---|
-| `SearchSubmissionsQuery` | `ask(ActorContext actor, SearchSubmissionsQuery query)` | `SubmissionPageView` | `SubmissionPageView`, `SubmissionSummaryView` |
+| `SearchSubmissionsUseCase` | `ask(ActorContext actor, SearchSubmissionsQuery query)` | `SubmissionPageView` | `SearchSubmissionsQuery` |
 
-`query/` imports nothing from `domain/` — not `SubmissionId`, not `SubmissionSnapshot`, and now not
-`ExternalReference` either. The read side carries raw `UUID` and has its own value object for the
-one input that needs one ([§5.1](#51-the-query-record-and-the-filter-parse)).
+The read side uses the domain's own types wherever they exist. `SubmissionId` and the reference
+type are the same classes the write side uses, so a view cannot disagree with the aggregate about
+what an identifier or a reference is. What is removed is the duplicate: there is no second
+reference type for filters ([§5.1](#51-the-query-record-and-the-filter-parse)).
 
-**The return type is the view itself, not a `Result`.** The query side refuses nothing: every
+**The return type is the view itself, not a `Result`.** The read side refuses nothing: every
 search that reaches it succeeds, including the ones that match nothing (BR-20), have a
-contradictory range (BR-21), lie past the end (BR-27) or carry a control character in the
-reference filter (BR-30). A `Result<_, E>` needs an `E` with at least one variant, and a sealed
-interface cannot have zero; inventing a placeholder variant to keep the shape would be exactly the
-"speculative variant" this design forbids. The repository rule that every use case returns a
-`Result` was written when every use case could refuse, and needs a carve-out
-([§11.2](#112-repository-conventions-this-design-asks-to-change)).
+contradictory range (BR-21), lie past the end (BR-27), carry a control character in the reference
+filter (BR-30) or have an empty reference filter (BR-31). A `Result<_, E>` needs an `E` with at
+least one variant, and a sealed interface cannot have zero; a placeholder variant would be exactly
+the speculative variant this design forbids. The rule that every use case returns a `Result` was
+written when every use case could refuse, and needs a carve-out ([§11.2](#112-repository-conventions-this-design-asks-to-change), R1).
 
 ### 5.1 The query record and the filter parse
 
@@ -562,15 +564,15 @@ public record SearchSubmissionsQuery(SubmissionFilter filter, int page, int size
 
 public sealed interface SubmissionFilter {
 
-    /** Every supplied criterion can match something: safe to hand to the store. */
-    record Narrowing(@Nullable ReferenceCriterion reference,
+    /** Every supplied criterion can match something. Safe to hand to the store. */
+    record Narrowing(@Nullable ExternalReference reference,
                      @Nullable BigDecimal insuredLimitFrom,
                      @Nullable BigDecimal insuredLimitTo,
                      @Nullable Instant registeredFrom,
                      @Nullable Instant registeredTo) implements SubmissionFilter { }
                      // toString masks both insured-limit bounds (BR-22, strict reading)
 
-    /** BR-30: the reference filter provably matches nothing. The store is never asked. */
+    /** BR-30: the reference filter contains a control character and provably matches nothing. */
     record MatchesNothing() implements SubmissionFilter { }
 
     /** Total: never fails, never refuses. */
@@ -580,93 +582,77 @@ public sealed interface SubmissionFilter {
                                   @Nullable Instant registeredFrom,
                                   @Nullable Instant registeredTo);
 }
-
-public final class ReferenceCriterion {          // a final class: it guards an invariant
-    static Optional<ReferenceCriterion> parse(String text);   // empty iff text contains a category-Cc character
-    public String value();
-}
 ```
 
-All five filters are optional (BR-19) and combine with AND (BR-18). In `Narrowing`, `null` means
-"this criterion was not supplied" — a meaning, not unparsed input — and it survives to a bound SQL
-parameter (`:param IS NULL OR ...`), which an `Optional` cannot. Filter bounds are **not**
-re-validated against BR-11 or BR-12: those are rules about what may be *registered*, and a bound may
-be negative, zero, or carry any scale. `SearchSubmissionsQuery` prints safely by composition,
-because `Narrowing` masks the bounds itself.
+`ExternalReference` is the write side's own value object, reused. The search filter does not have
+a second reference type. The mapping from its parse result to the filter is this, and it is the
+whole of the search-side reference rule:
 
-**How `query/` represents a filter that can match nothing.** `SubmissionFilter.parse` is total: it
-never fails, it returns one of two shapes.
+| Input reference | `ExternalReference.parse` result | Filter |
+|---|---|---|
+| absent (`null`) | — | `reference = null`: not supplied, narrows nothing (BR-19) |
+| present but empty, `""` | `Missing` | `reference = null`: **treated as not supplied (BR-31)** |
+| contains a category-Cc character | `ControlCharacter` | **`MatchesNothing` (BR-30)** |
+| 65 or more code points | `TooLong` | **`MatchesNothing` (BR-32)** |
+| valid | `Result.success(reference)` | `reference = that ExternalReference` (BR-07, compared exactly) |
 
-- `Narrowing` — every criterion is satisfiable. Its `reference`, if present, is a
-  `ReferenceCriterion`, a value that **cannot contain a control character**, so nothing in a
-  `Narrowing` can make the store fail.
-- `MatchesNothing` — the reference filter contains a category-Cc character. No such reference can
-  have been registered, because BR-29 refuses every one, so the search matches nothing. This is the
-  whole of BR-30, as a type.
+The too-long row is BR-32, which extends BR-30: a reference filter longer than 64 characters matches nothing, because no reference that long can have been registered (BR-05). It is a success with an empty page and a total of zero, never a refusal, and the filter is never shortened to make it match. A filter of exactly 64 is compared normally. Length is counted the way BR-05 counts it; how that is, is an open question ([§11.1](#111-questions-for-the-product-owner), Q8).
 
-**Why a type and not a check in front of the database.** The defect this fixes (SEC-10) is that a
-filter containing U+0000 reached PostgreSQL, which cannot represent it, and answered `500` for an
-input the spec calls a successful empty search. A guard in front of the store is one more place to
-forget. Here the port's input, `SubmissionSearchCriteria`, is built only from a `Narrowing`, a
-`Narrowing` holds only a `ReferenceCriterion`, and a `ReferenceCriterion` cannot be built from text
-containing a control character. **The adapter never sends such a filter to the database because
-there is no value it could send.** The filter is never "cleaned up": no character is stripped or
-replaced to make it match something (BR-30), and a filter of spaces only is an ordinary
-`ReferenceCriterion`, because SPACE is not a control character.
+**The mapping is one function, not a second implementation.** `SubmissionFilter.parse` calls
+`ExternalReference.parse` and folds the result. It contains no character test of its own. A reader
+who wants to know what a search filter accepts reads the same method a registration reads, and
+the two cannot drift.
 
-**Why `query/` has its own value object and does not reuse `ExternalReference`.** Two reasons.
-`query/` cannot import `domain/` (ArchUnit and the package-private aggregate agree). And the
-semantics differ: an invalid reference at registration is a *refusal*, an invalid reference as a
-filter is a *successful empty search*; sharing the type would force one of the two to be wrong.
-What is shared is the definition of the category itself, in the kernel (`ControlCharacters`,
-[§15.5](#155-the-single-definition-of-category-cc)), so the two cannot drift.
+**Why a search filter failing is not a refusal.** The register parse maps the same failure to a
+refusal, because a registration with that reference is a request the business cannot honour. A
+search with that reference is a question whose true answer is "none", and the spec asks for an
+empty success, not an error (BR-30). One parse with two folds is the honest expression of that:
+the failure is the same fact; what it means depends on the operation.
 
-**Only the reference needs a value object.** The other four criteria are `BigDecimal` and
-`Instant`, and every value of those types is a legal comparison value (the spec says so for the
-amounts). A contradictory range (BR-21) is deliberately *not* given a `MatchesNothing`
-representation: unlike BR-30 it does not break the store, the predicate `>= 5000 AND <= 1000` simply
-matches no row, and a second code path for it would be a second implementation of a rule the SQL
-already implements correctly. The distinction is this design's rule in miniature: **a typed
-representation is for what the store *cannot* represent, not for what it merely finds empty.**
-`MatchesNothing` can gain a reason later without touching its callers if that ever changes.
+**Why a type and not a check in front of the database.** SEC-10 was a filter containing U+0000
+reaching PostgreSQL, which cannot represent it, and answering `500` for a search the spec calls a
+successful empty one. Here the store's input, `SubmissionSearchCriteria`, is built only from a
+`Narrowing`, and a `Narrowing` holds only an `ExternalReference`, which cannot contain a control
+character. **The adapter never sends such a filter to the database because there is no value it
+could send.**
+
+**Only the reference needs a value object.** The other four criteria are `BigDecimal` and `Instant`,
+and every value of those types is a legal comparison value (the spec says so for the amounts). A
+contradictory range (BR-21) is deliberately not a `MatchesNothing`: unlike BR-30 it does not break
+the store, the predicate `>= 5000 AND <= 1000` simply matches no row, and a second code path for
+it would be a second implementation of a rule the SQL already implements. The distinction is this
+design's rule in miniature: **a typed representation is for what the store cannot represent, not
+for what it merely finds empty.**
 
 **Page numbering is 0-based** (`offset = page * size`), confirmed by the product owner. The page
-request normalises itself inside the record's compact constructor, so the use case, the adapter and
-the response body cannot disagree about what was applied: `size` is clamped into
-`[MIN_PAGE_SIZE, MAX_PAGE_SIZE]` and `page` to `>= 0`, and an out-of-range request clamps and never
-refuses ([§7](#7-engineering-decision-maximum-page-size)).
+request normalises itself inside the record's compact constructor ([§7](#7-engineering-decision-maximum-page-size)).
 
 ### 5.2 Refusals: search still has exactly one
 
 The spec's list for search is exhaustive and deliberate: **one** reason, caller not identified
-(BR-01), because once the caller is known every search succeeds. That is unchanged. What the
-sentence means now that the query side returns no error:
+(BR-01). That is unchanged. What it means for the read side:
 
 - It is a property of the **service**, not of a domain type. `SearchSubmissionsError` is
-  **deleted**; its single variant was always the access concern's, and is now `CallerNotIdentified`
-  in `adapters/access`.
-- It is **typed**, not merely documented. The search gate is built with the permission
-  `anyIdentifiedCaller()`, whose refusal type is `CallerNotIdentified` alone
-  ([§16.2](#162-the-shape)), so `OperationGate.admit` for search returns
-  `Result<Admission<...>, CallerNotIdentified>` and the search controller's `switch` has exactly
-  one case. A second reason would not compile.
-- It is **tested**. The contract test asserts that search is never refused for a role (BR-16) by
-  driving every `ActorRole` value through the gate, and that matching nothing, a contradictory
-  range, a page past the end and a control character in the reference filter are all successes
-  with an empty page and a total of zero.
-
-`CallerNotIdentified` is the same record the register endpoint uses. That sharing is deliberate
-([§3.2](#32-refusals-nine-as-the-caller-sees-them)).
+  **deleted**; its single variant is the access concern's, `CallerNotIdentified` in `adapters/access`.
+- It is **proven by a test, not by the type — accepted by the product owner.** `OperationGate` has two type parameters, so the gate's refusal type is `AccessRefusal`, shared by both operations. The search controller's `switch` therefore has two arms: `CallerNotIdentified` (`401`) and `PermissionDenied` (`403`). The second arm can never run for search, because search's permission is `anyIdentifiedCaller()`, which cannot refuse on role. It is written rather than omitted so the `switch` stays exhaustive with no `default`. The previous revision proved this in the type, with a third type parameter; the product owner chose two parameters and accepted that the proof moves to a test. This is settled, not open.
+- It is **tested**. The contract test drives every `ActorRole` through the gate (BR-16), asserts that
+  search never produces `PermissionDenied`, and checks
+  that matching nothing, a contradictory range, a page past the end, a control character in the
+  reference filter, an empty reference filter and a reference filter longer than 64 (BR-32) are all successes with an empty page and a total
+  of zero.
 
 ### 5.3 Views
 
 ```java
-public record SubmissionSummaryView(UUID submissionId, String externalRef, BigDecimal insuredLimit,
-                                    String registeredBy, Instant registeredAt) {
+public record SubmissionSummaryView(SubmissionId submissionId,
+                                    String externalRef,
+                                    BigDecimal insuredLimit,
+                                    String registeredBy,
+                                    Instant registeredAt) {
     @Override
     public String toString() {   // BR-22 amount, OPEN-01 actorId
         return "SubmissionSummaryView[submissionId=" + submissionId
-                + ", externalRef=" + externalRef
+                + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                 + ", insuredLimit=***, registeredBy=***"
                 + ", registeredAt=" + registeredAt + "]";
     }
@@ -682,21 +668,22 @@ public record SubmissionPageView(List<SubmissionSummaryView> submissions,
 }
 ```
 
-`SubmissionSummaryView` carries the four fields the spec lists — reference, insured limit,
-registering caller, registration moment — plus `submissionId`. **The id is confirmed by the product
-owner**, who accepted the reasoning: search is the only way to discover a submission's identity, and
-future operations need it to name a submission. It is not sensitive. This is settled, not an open
-question.
+**A view carries what the store holds, as the store holds it** — decided by the product owner. The reference is a `String` and the insured limit a `BigDecimal`, not an `ExternalReference` and an `InsuredLimit`. The reason: a view is *output read from our own store*, not input from a client, and parse-don't-validate applies at the input boundary. Parsing a stored value again on the way out would need a branch for a failure the schema already rules out ([§9.4](#94-query-adapter)), and that branch could only be a hard failure or a new error path. Neither is wanted, and neither is needed.
 
-`totalMatchCount` is `long` and counts the **whole** matching set, ignoring which page was asked
-for (BR-26) — reported with every page including an empty one. `page` and `size` echo what was
-actually applied, which is what makes clamping safe (see [§7](#7-engineering-decision-maximum-page-size)).
+**`SubmissionId` stays typed,** because wrapping a `UUID` in it cannot fail: there is no branch to write. That is the line between the two: a domain type goes on a view when constructing it is total, and the stored primitive stays when constructing the type would be a parse.
+
+This does not bring back the duplication revision 4 removed. The search *filter* is input, and it still goes through `ExternalReference.parse` ([§5.1](#51-the-query-record-and-the-filter-parse)); there is still no `ReferenceCriterion`.
+
+The view masks the amount and the caller in its own `toString` (BR-22, OPEN-01) and escapes the reference (BR-23), because it is a raw holder: nothing in its types does that for it. `registeredBy` is a `String` for the same reason as before, and for the reason above.
+
+`totalMatchCount` is `long` and counts the whole matching set, ignoring the page (BR-26). `page` and
+`size` echo what was applied ([§7](#7-engineering-decision-maximum-page-size)).
 
 ### 5.4 Read port and criteria
 
 ```java
 public record SubmissionSearchCriteria(UUID tenantId,
-                                       @Nullable ReferenceCriterion reference,
+                                       @Nullable ExternalReference reference,
                                        @Nullable BigDecimal insuredLimitFrom,
                                        @Nullable BigDecimal insuredLimitTo,
                                        @Nullable Instant registeredFrom,
@@ -710,18 +697,13 @@ public interface SubmissionQueryRepository {
 }
 ```
 
-**`tenantId` lives inside the criteria and only the use case can build one.** It is not a filter the
-caller supplies and not something an adapter may forget: BR-17 is a business rule, so the tenant
-predicate is part of the port's vocabulary. Two methods rather than one because BR-26 needs the
-count of the whole matching set while the page is bounded by `LIMIT`; they share one criteria value
-so the two predicates cannot drift apart.
+`tenantId` lives inside the criteria and only the use case can build one (BR-17). The read port is an
+outbound port in the same way the write port is: it has its own package-free interface in
+`domain/`, and it speaks domain types. `reference` is an `ExternalReference`, so the persistence
+adapter unwraps `reference.value()` into the bound parameter, and the SQL in [§6](#6-sql-shape) is
+unchanged.
 
-The only change in this revision is the type of `reference`: it was a `String` and is now the value
-object, so the persistence adapter unwraps `reference.value()` into the bound parameter and the SQL
-in [§6](#6-sql-shape) is unchanged.
-
-`offset` is `long`: `page * size` with `page` near `Integer.MAX_VALUE` overflows an `int` and would
-silently produce a negative offset. The use case computes `(long) query.page() * query.size()`.
+`offset` is `long`: `page * size` near `Integer.MAX_VALUE` overflows an `int`.
 
 ### 5.5 Query use case
 
@@ -734,8 +716,7 @@ public final class SearchSubmissionsUseCase {
 }
 ```
 
-Its shape is a `switch` over the sealed filter with **no `default`**, so a third filter shape added
-later fails to compile here instead of being silently treated as one of the two:
+A `switch` over the sealed filter with **no `default`**, so a third filter shape fails to compile here:
 
 ```java
 return switch (query.filter()) {
@@ -745,17 +726,34 @@ return switch (query.filter()) {
 };
 ```
 
-- **`MatchesNothing` answers without touching the repository:** an empty page, a total of zero, and
-  the applied page and size echoed (BR-30, BR-20, BR-26). A test asserts that the repository fake
-  received no call, which is the test that proves the database is never sent such a filter.
-- **`Narrowing`** builds a `SubmissionSearchCriteria` from `actor.tenantId()` and the filter, and
-  asks the repository for the page and the total.
-- **The use case never reads a role.** There is none to read (BR-16: a role neither narrows nor
-  widens a search), and the actor it receives is the one the gate admitted. It reads
-  `actor.tenantId()`, which is the only thing BR-17 allows to decide what comes back.
-- **BR-20, BR-21 and BR-27 still need no code branch.** A predicate of `>= 5000 AND <= 1000`
-  matches no row, so the page is empty and the count is zero; an `OFFSET` past the end returns no
-  rows while the count stays true. Each of the three is a test assertion, not a special case.
+- **`MatchesNothing` answers without touching the repository:** an empty page, a total of zero, and the
+  applied page and size echoed (BR-30, BR-20, BR-26). A test asserts the repository fake received no call.
+- **`Narrowing`** builds the criteria from `actor.tenantId()` and the filter, and asks the repository
+  for the page and the total.
+- **The use case never reads a role.** There is none to read (BR-16), and the actor it receives is
+  the one the gate admitted.
+- **BR-20, BR-21, BR-27 still need no code branch.**
+
+### 5.6 CQS enforced without folders
+
+Command-query separation here is a separation of **responsibility**. It is not a separation of
+folders, and the rules below enforce it without one. There are two kinds of use case in `domain/`,
+told apart by the single public method each one exposes, which the existing ArchUnit rule already
+pins by name:
+
+| Kind | Public method | Takes | Returns | Must not depend on |
+|---|---|---|---|---|
+| read | `ask` | a `*Query` | a `*View` (or a view page) | `Submission`, any `*CommandRepository`, any `*EventPublisher`, any `*IdGenerator` |
+| write | `execute` | a `*Command` | a `Result<_, ...>` | any `*QueryRepository`, any `*View` |
+
+The discriminator is the method name and nothing else, because the name is what the rule can read
+from the class without any prefix guessing. `SearchSubmissionsUseCase` is a read use case because it
+exposes `ask`. A new read use case that is named `GetSubmissionUseCase` but exposes `ask` is still
+a read use case, and a class named `FindSomethingUseCase` that exposes `execute` is still a write
+use case. That is the point of not using prefixes. A name is a hint for a reader; the method is
+what the build checks.
+
+The rules themselves are in [§15.10](#1510-cqs-rules-verbatim).
 
 ---
 
@@ -1161,11 +1159,15 @@ inserts nothing; the same reference under a different `tenant_id` inserts normal
 
 ### 9.4 Query adapter
 
-`SubmissionQuerySqlAdapter implements SubmissionQueryRepository` destructures the
-`SubmissionSearchCriteria` into the bound parameters of the two statements in [§6](#6-sql-shape) —
-unwrapping `reference.value()` into the `externalRef` parameter, so the SQL is unchanged — and
-returns the projection records untouched. It never loads `SubmissionJdbcEntity` and never sees the
-aggregate (it cannot: `Submission` is package-private in another package).
+`SubmissionQuerySqlAdapter implements SubmissionQueryRepository`, in `adapters/persistence`. It is a
+driven adapter for a port declared in `domain/`, exactly as the command adapter is. It unwraps
+`criteria.reference()` into `reference.value()` for the bound `externalRef` parameter, so the SQL in
+[§6](#6-sql-shape) is unchanged, and it returns the views it builds from rows.
+
+**Building a view from a row does not parse.** The adapter copies the stored reference and amount into the view as `String` and `BigDecimal`, and wraps the stored id in a `SubmissionId`, which cannot fail ([§5.3](#53-views)). There is no failure branch, so there is no `throw`, no new error type and no refusal path on a search, which must not refuse. The values are trusted because the store will hold nothing else: `VARCHAR(64)` bounds the length, `CHECK (length > 0)` excludes the empty string, the control-character `CHECK` excludes every category-Cc character except U+0000, which PostgreSQL cannot store, and the two insured-limit `CHECK`s hold the amount to BR-11 and BR-12. Every row the database can hold is one the write side could have registered.
+
+The adapter never loads `SubmissionJdbcEntity` into a use case and never sees the aggregate, which
+is package-private in `domain/`.
 
 ---
 
@@ -1270,6 +1272,8 @@ before the guard's behaviour can be called final.
   operations, both remain exactly true, and the spec deliberately names no layer. Confirm that
   reading, since the use case itself now refuses far less than the list ([§3.2](#32-refusals-nine-as-the-caller-sees-them)).
 
+8. **How are BR-05's "64 characters" counted?** Raised by the analyst and not decided by the spec. This design counts **code points**, because that is what PostgreSQL `VARCHAR(64)` counts, so an accepted reference cannot overflow the column. UTF-16 code units would refuse a reference of 64 emoji that code points accept. BR-32 inherits the same count. This is the design's reading, **not** a decision; it is a question for the product owner.
+
 ### 11.2 Repository conventions this design asks to change
 
 For the coordinator, not the product owner. Each is a place where a written repository rule says
@@ -1296,6 +1300,7 @@ something this revision contradicts, and the next reviewer will cite it unless i
   `ActorContextTest`, which is a separable decision. Delete them, or keep them for the next module.
 - **R6 — `ActorRole.canDecide()` is deleted.** It has no consumer, and "may decide" is a different
   concept from "may register"; keeping it invites its reuse as the register permission.
+- **R9 — The `query/` package and its prescriptions.** Every instruction, skill, agent and AGENTS.md line that names `query/`, with the wording it needs, is listed in [§18.4](#184-documents-and-rules-outside-this-design). It includes the two architect-audit lines that prescribe `query/`.
 - **R7 — Two existing ArchUnit rule messages are now stale, though their logic still holds.**
   `command_controllers_touch_only_the_write_side` and `query_controllers_touch_only_the_read_side`
   say a controller "talks to its `*UseCase`"; it now talks to an `OperationGate`. The conditions
@@ -1315,11 +1320,7 @@ something this revision contradicts, and the next reviewer will cite it unless i
    the gate answers `401`, never an invented caller ([§13.1](#131-web-edge)). What remains open is
    the identity source itself — an open dependency for stage 4 and for `@sec-reviewer`. A
    header-trusting resolver is not authentication and must never ship outside a test profile.
-3. **"At most 64 characters" — code points or UTF-16 code units?** BR-29 restricts the reference's
-   character set only to the extent of excluding category Cc, so a reference may still contain
-   supplementary characters, where the two measures differ. Code points chosen, because it matches
-   PostgreSQL `VARCHAR(64)` and so cannot overflow the column. A reference of 64 emoji is accepted
-   under this reading and would be refused under the other.
+3. **How BR-05 counts characters** is now a question for the product owner, Q8 in [§11.1](#111-questions-for-the-product-owner). Code points are used until it is answered.
 4. **Masking the insured-limit filter bounds.** An interpretation of BR-22, not a stated rule.
    Flagged rather than applied silently.
 5. **"Newest first" is not a total order.** `registered_at` is not unique, so BR-24 alone cannot
@@ -1362,13 +1363,8 @@ something this revision contradicts, and the next reviewer will cite it unless i
     What the compiler and the build *do* enforce is that the use case is unreachable without an
     `Admission` ([§16.3](#163-the-order-at-the-edge)). Said plainly so nobody believes it is
     stronger than it is.
-13. **`ExternalReference.parse` returns `RegisterSubmissionError`,** a per-operation type, from a
-    value object that other operations will want. Acceptable with one operation. When a second one
-    needs the reference, split the value object's own small error type and map it into each
-    operation's variants rather than sharing this one.
-14. **`OperationGate<C, R, X>` has three type parameters.** The third buys search's one-case
-    `switch`. If it is judged too heavy, dropping it makes `PermissionDenied` a reachable branch
-    of the search controller that a test must prove unreachable; nothing else changes.
+13. **Resolved in revision 4.** `ExternalReference.parse` returns its own `ExternalReferenceError`, shared by both sides. Each operation maps its three variants into its own error ([§15.2](#152-externalreference)). The cost is three records declared in two places.
+14. **Resolved in revision 4.** `OperationGate` has two type parameters, as the product owner decided. The proof that search has one refusal moved from the type to a test ([§5.2](#52-refusals-search-still-has-exactly-one)).
 
 ### Settled since the first revision of this document
 
@@ -1388,6 +1384,9 @@ something this revision contradicts, and the next reviewer will cite it unless i
 - **A control character in the reference filter matches nothing and is a success (BR-30)** —
   decided on 2026-11-02 after review found it answered `500` (SEC-10). Represented as a type
   ([§5.1](#51-the-query-record-and-the-filter-parse)).
+- **Search's one refusal is proven by a test, not by the type** — the `OperationGate<C, R>` downgrade was accepted by the product owner ([§5.2](#52-refusals-search-still-has-exactly-one)).
+- **A reference filter longer than 64 matches nothing (BR-32)** — decided by the product owner; it extends BR-30, and exactly 64 is compared normally ([§5.1](#51-the-query-record-and-the-filter-parse)).
+- **Views carry stored values as `String` and `BigDecimal`** — decided by the product owner: parse-don't-validate applies at the input boundary, and a view is output from our own store ([§5.3](#53-views), [§9.4](#94-query-adapter)).
 - **Parse, don't validate** — decided by the product owner on 2026-11-02 ([§15](#15-value-objects)).
 - **Authorisation is an adapter concern** — decided by the product owner on 2026-11-02
   ([§16](#16-the-access-guard)). The two designs it replaced are in [§17](#17-rejected-designs).
@@ -1460,7 +1459,7 @@ any eventual recipient recognise a repeat. It is not a transport artefact, so it
 
 **No decision is made here, and that is the design.** The domain publishes a business fact through
 a port. What sits behind that port is an adapter decision, and this module can be built, tested and
-reviewed without it: nothing in `domain/`, `query/`, the schema in [§8](#8-schema) or the two
+reviewed without it: nothing in `domain/`, the schema in [§8](#8-schema) or the two
 use cases changes with the answer.
 
 Stage 4 chooses **the simplest adapter that satisfies the port and is genuinely testable.** The
@@ -1506,9 +1505,9 @@ above. There is no relay in `src/main`, and this design does not require one.
 class SubmissionConfiguration {
 
     // The permission table: who may call which use case, as data, declared in exactly one place.
-    private static final Permission<AccessRefusal> REGISTER_SUBMISSION =
+    private static final Permission REGISTER_SUBMISSION =
             Permission.rolesOnly(ActorRole.UNDERWRITER, ActorRole.SENIOR_UNDERWRITER);  // BR-02, BR-03
-    private static final Permission<CallerNotIdentified> SEARCH_SUBMISSIONS =
+    private static final Permission SEARCH_SUBMISSIONS =
             Permission.anyIdentifiedCaller();                                           // BR-16
 
     @Bean
@@ -1519,14 +1518,14 @@ class SubmissionConfiguration {
 
     @Bean
     OperationGate<RegisterSubmissionCommand,
-                  Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>,
-                  AccessRefusal> registerSubmissionGate(SubmissionCommandRepository repository,
-                                                        SubmissionEventPublisher eventPublisher,
-                                                        SubmissionIdGenerator idGenerator,
-                                                        Clock clock);
+                  Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>>
+            registerSubmissionGate(SubmissionCommandRepository repository,
+                                   SubmissionEventPublisher eventPublisher,
+                                   SubmissionIdGenerator idGenerator,
+                                   Clock clock);
 
     @Bean
-    OperationGate<SearchSubmissionsQuery, SubmissionPageView, CallerNotIdentified>
+    OperationGate<SearchSubmissionsQuery, SubmissionPageView>
             searchSubmissionsGate(SubmissionQueryRepository repository);
 }
 ```
@@ -1534,11 +1533,11 @@ class SubmissionConfiguration {
 How it fits together:
 
 ```
-any inbound adapter            OperationGate<C, R, X>                      raw use case
+any inbound adapter            OperationGate<C, R>                         raw use case
 (controller, consumer, job)    ┌─────────────────────────────┐
-        │                      │ Permission<X>               │       NOT a bean. Built inside the
+        │                      │ Permission                  │       NOT a bean. Built inside the
         │ admit(caller) ─────> │   check(caller)             │       @Bean method and handed to the
-        │ <── Admission | X ── │                             │       gate as a method reference.
+        │ <── Admission | Refusal │                           │       gate as a method reference.
         │                      └─────────────────────────────┘       Only adapters/config can even
         │  (parse the request — only now)                            name its class.
         └── admission.run(input) ──────────────────────────────────> execute(actor, command)
@@ -1554,7 +1553,7 @@ any inbound adapter            OperationGate<C, R, X>                      raw u
 ```
 
 The use cases are **plain classes constructed in the configuration**, not `@Component`-scanned:
-that is what keeps `domain/` and `query/` free of Spring imports. The adapters are package-private
+that is what keeps `domain/` free of Spring imports. The adapters are package-private
 `@Component`s; Spring Data repository interfaces are package-private and discovered automatically.
 
 **The raw use cases are not beans.** Each is constructed inside the `@Bean` method of its gate and
@@ -1661,21 +1660,25 @@ contract test ([§16.7](#167-tests)) pins them.
 
 ```
 GET /api/submissions?reference=&insuredLimitFrom=&insuredLimitTo=&registeredFrom=&registeredTo=&page=&size=
-  1. caller    = actorContextResolver.resolve()
-  2. admission = searchGate.admit(caller)              401 ends here. It is the only refusal.
+  1. caller    = actorContextResolver.resolve()        Optional<AuthenticatedCaller>
+  2. admission = searchGate.admit(caller)              401 or 403 end here. 403 is unreachable for
+                                                        search by construction; §5.2 explains.
   3. filter    = SubmissionFilter.parse(reference, from, to, registeredFrom, registeredTo)
-                                                       total: it cannot refuse
+                                                        total: it cannot refuse
   4. page      = admission.run(new SearchSubmissionsQuery(filter, page, size))
   5. 200 with SubmissionPageView
 ```
 
-The controller's refusal `switch` has exactly one case, because the gate's refusal type is
-`CallerNotIdentified` alone. The transport defaults are `page=0` — the first page — and `size=100`,
-the maximum, which keeps the design to one page-size number ([§7](#7-engineering-decision-maximum-page-size)).
+The controller's refusal `switch` has two arms, `CallerNotIdentified` (`401`) and `PermissionDenied`
+(`403`), and no `default`. The second arm is unreachable for search and is proven so by a test
+([§16.7](#167-tests)), not by the type. The transport defaults are `page=0`, the first page, and
+`size=100`, the maximum, which keeps the design to one page-size number ([§7](#7-engineering-decision-maximum-page-size)).
 
-The filter parse is total and silent, so its position relative to the guard changes no response;
-it runs after the guard anyway, which keeps the spec's statement that the only thing judged before
-a search runs is that the caller is identified literally true.
+The filter parse is total and silent, so its position relative to the guard changes no response. It
+runs after the guard anyway, which keeps the spec's statement true: the only thing judged before a
+search runs is that the caller is identified.
+
+
 
 ### 13.4 Identifying the caller, fail-closed
 
@@ -1749,7 +1752,7 @@ Explicitly out of scope, so the next agent does not add it:
 - **No second refusal reason on Search.** Oversized page requests clamp
   ([§7](#7-engineering-decision-maximum-page-size)); a filter that can match nothing succeeds
   ([§5.1](#51-the-query-record-and-the-filter-parse)).
-- **No permission check, and no role, in `domain/` or `query/`.** No `ActorRole` import, and no
+- **No permission check, and no role, in `domain/`.** No `ActorRole` import, and no
   re-check "for safety": the product owner rejected it ([§17.2](#172-a-domain-owned-permission-re-checked-by-the-use-case)),
   and the existing purity rule makes it a build failure.
 - **No rule that depends on data in the guard.** The guard decides from the caller and the
@@ -1792,16 +1795,16 @@ is non-null, and that only holds if nothing `@Nullable` has to reach the domain.
    components' types: `SubmissionId`, the commands, the views, the errors.
 2. **`parse` returns a `Result` when the spec names the refusal, and an `Optional` when it does
    not.** `Result<_, RegisterSubmissionError>` for the write-side values, whose failures the spec
-   lists; `Optional` for `ActorContext`, `AuthenticatedCaller` and `ReferenceCriterion`. No `throw`
+   lists; `Optional` for `ActorContext` and `AuthenticatedCaller`, whose failures carry no reason the spec names. No `throw`
    and no `Objects.requireNonNull` — Checkstyle `noThrowNew` and `noRequireNonNull` fail the build.
 3. **Raw input enters only as the parameter of a method named `parse`.** That parameter may be
    `@Nullable`, because absence is data (and for BR-04 and BR-10 it is a named refusal). Nowhere
-   else in `domain/` or `query/` does a method take a raw `String` or `BigDecimal`
+   else in `domain/` does a method take a raw `String` or `BigDecimal`
    ([§15.9](#159-enforcement)).
 4. **Immutable, with value equality** on the wrapped value (Checkstyle `EqualsHashCode` requires
    `equals` and `hashCode` together).
 5. **It owns its own log-safety.** `InsuredLimit.toString()` prints `***`. A valid
-   `ExternalReference` or `ReferenceCriterion` cannot contain a control character, so its text is
+   `ExternalReference` cannot contain a control character, so its text is
    already inert. A record holding one therefore prints safely *by composition*, and the class of
    defect where a record forgot its mask (SEC-02, SEC-03, SEC-04) cannot recur through a value
    object. Raw holders — the snapshot, the event, the summary view, the filter bounds — keep their
@@ -1822,23 +1825,52 @@ public final class ExternalReference {
     /** BR-05 — counted in code points. */
     public static final int MAX_LENGTH = 64;
 
-    public static Result<ExternalReference, RegisterSubmissionError> parse(@Nullable String text);
+    public static Result<ExternalReference, ExternalReferenceError> parse(@Nullable String text);
 
     public String value();
     // equals / hashCode on value(); toString prints the value (no control character can be in it)
 }
+
+public sealed interface ExternalReferenceError {
+    record Missing() implements ExternalReferenceError { }                          // BR-04
+    record TooLong(int maxLength, int actualLength) implements ExternalReferenceError { }   // BR-05
+    record ControlCharacter(int codePoint, int index) implements ExternalReferenceError { } // BR-29
+}
 ```
+
+**The value object has its own error type.** Previously `parse` returned `RegisterSubmissionError`,
+which made the value object depend on one operation's failure type. The search filter then had to
+read a registration error and handle variants that a reference can never produce. Both sides now
+share `ExternalReferenceError`, which has exactly the three things a reference can be refused for,
+and each operation maps those three into its own type.
+
+The register mapping is one total, exhaustive function, in `RegisterSubmissionCommand.parse`:
+
+```java
+return switch (error) {
+    case ExternalReferenceError.Missing _                 -> new RegisterSubmissionError.ReferenceMissing();
+    case ExternalReferenceError.TooLong(var max, var len) -> new RegisterSubmissionError.ReferenceTooLong(max, len);
+    case ExternalReferenceError.ControlCharacter(var cp, var at) ->
+            new RegisterSubmissionError.ReferenceContainsControlCharacter(cp, at);
+};
+```
+
+The search mapping is in [§5.1](#51-the-query-record-and-the-filter-parse), and it is the same
+exhaustive shape with a different meaning for each arm. The three `RegisterSubmissionError`
+reference variants keep their names and their wire contract, so nothing a caller sees changes. The
+cost is three records declared in two places, which is the price of a value object that does not
+depend on an operation.
 
 The three checks run in the spec's order, inside `parse`, and the first failure is the result:
 
 | Input | Outcome |
 |---|---|
-| `null`, `""` | `ReferenceMissing` (BR-04) |
+| `null`, `""` | `Missing` (BR-04) |
 | `" "`, `"   "` | valid — present, non-empty, no control character, not normalised away (BR-07) |
 | exactly 64 code points, including 64 emoji (128 UTF-16 units) | valid |
-| 65 code points | `ReferenceTooLong(64, 65)` (BR-05) |
-| 65 code points, one of them a TAB | `ReferenceTooLong` — length is judged before content |
-| `"AB\tCD"`, `"\u0000"`, `"\u0085"` | `ReferenceContainsControlCharacter(codePoint, index)` (BR-29) |
+| 65 code points | `TooLong(64, 65)` (BR-05) |
+| 65 code points, one of them a TAB | `TooLong` — length is judged before content |
+| `"AB\tCD"`, `"\u0000"`, `"\u0085"` | `ControlCharacter(codePoint, index)` (BR-29) |
 | `"a b"`, `"  a  "` | valid, preserved exactly (BR-07) |
 
 - **`isEmpty()`, not `isBlank()`.** BR-04 refuses a reference that "contains no characters at all",
@@ -1847,16 +1879,14 @@ The three checks run in the spec's order, inside `parse`, and the first failure 
   character" is narrower than "whitespace". TAB and NEWLINE are both; **SPACE (U+0020) is only
   whitespace**.
 - **The test is the category, not a list.** `ControlCharacters.firstIn` ([§15.5](#155-the-single-definition-of-category-cc))
-  is exactly Unicode category Cc — U+0000–U+001F and U+007F–U+009F. `Character.isWhitespace` and a
-  `\s` regex are both wrong: they disagree with the category over most of the upper range, and
-  U+0085 NEXT LINE is the case that catches them. The product owner chose the whole category over
-  the narrow NUL-only fix so that no second control character has to be discovered later.
-- **Code points, not `String.length()`.** The reported index is a code-point index, counted the same
-  way BR-05 counts length, so the two refusals measure positions alike.
+  is exactly Unicode category Cc. `Character.isWhitespace` and a `\s` regex are both wrong: they
+  disagree with the category over most of the upper range, and U+0085 NEXT LINE is the case that
+  catches them.
+- **Code points, not `String.length()`.** The reported index is a code-point index, the same way
+  BR-05 counts length.
 - **No trimming, no case folding, no normalisation** (BR-07). Hence `COLLATE "C"` on the column.
-- **Storage fit:** at most 64 code points fits `VARCHAR(64)` exactly, since PostgreSQL counts
-  characters, and the absence of every Cc character includes U+0000, which no text column can hold.
-  The value object is where U+0000 is stopped now, instead of the driver.
+- **Storage fit:** at most 64 code points fits `VARCHAR(64)`, since PostgreSQL counts characters, and
+  excluding every Cc character excludes U+0000, which no text column can hold ([§15.8](#158-storage-fit-in-one-table)).
 
 ### 15.3 `InsuredLimit`
 
@@ -1906,10 +1936,24 @@ unnoticed.
 
 ### 15.5 The single definition of category Cc
 
-The category test currently exists in `Submission` and, separately, in `LogSafeText`, and a third
-copy would appear in `query/`, which cannot import `domain/`. The kernel's own justification for
-`LogSafeText` — "three private copies would be three places for the category to drift" — applies
-to the rule itself, so it moves there once:
+`ControlCharacters` **stays in `shared/kernel`.** Its justification changed in this revision, and the
+honest account is this.
+
+It moved into the kernel originally so that `query/` and `domain/` could both reach it. `query/` no
+longer exists, so that reason is gone. The rule would now fit in `domain/`, and it is worth asking
+whether it should move back.
+
+It should not, because the kernel also holds `ActorContext`, and `ActorContext.parse` validates the
+caller's `actorId` against the same category ([§15.6](#156-the-caller-from-claims)). The kernel may
+not depend on `domain/`, so if `ControlCharacters` moved to `domain/`, the caller type would either
+have to lose its validating factory, which reopens the gap [§15.6](#156-the-caller-from-claims)
+exists to close, or move out of the kernel, which means moving `ActorContext` too. Either is a
+larger change than the one it avoids.
+
+The cost of keeping it in the kernel is that the kernel holds one character-class fact that a
+business rule also uses. That is a fact about Unicode, not a business rule, so it does not make the
+kernel a home for domain logic. It stays at four types in the kernel, and that count does not
+include a second home for the definition.
 
 ```java
 // shared/kernel
@@ -1923,9 +1967,8 @@ public final class ControlCharacters {
 }
 ```
 
-Callers: `ExternalReference`, `ReferenceCriterion`, `ActorContext.parse` (for `actorId`) and
-`LogSafeText`. The kernel stays tiny: it gains this type and loses `ActorRole`, so it holds four
-types — `Result`, `ActorContext`, `ControlCharacters`, `LogSafeText`.
+Callers: `ExternalReference`, `ActorContext.parse` (for `actorId`) and `LogSafeText`. `ReferenceCriterion`
+is no longer a caller, because it no longer exists.
 
 ### 15.6 The caller from claims
 
@@ -1980,12 +2023,29 @@ public final class AuthenticatedCaller {
   `AuthenticatedCaller.parse(tenant.toString(), "uw-01", "UNDERWRITER")` — so every test exercises
   the production path instead of a test-only constructor.
 
-### 15.7 The read-side counterpart
+### 15.7 The search filter reuses `ExternalReference`
 
-`ReferenceCriterion` and `SubmissionFilter` are specified in
-[§5.1](#51-the-query-record-and-the-filter-parse): `query/` has its own value object because it
-cannot import `domain/` and because an invalid reference means a different thing there (a
-successful empty search, not a refusal). Both sides use the same `ControlCharacters`.
+`ReferenceCriterion` **is deleted.** It existed only because `query/` could not import `domain/`, so
+it duplicated `ExternalReference`'s rule with a different name and a different meaning. Once the
+read side is in `domain/`, the duplicate has no reason to exist.
+
+The search filter is the same value object with a different reading of its failures. Its complete
+mapping is in [§5.1](#51-the-query-record-and-the-filter-parse), and summarised here:
+
+| Reference filter | `ExternalReference.parse` | Filter |
+|---|---|---|
+| absent | — | not supplied, narrows nothing (BR-19) |
+| present but empty | `Missing` | **not supplied (BR-31)** |
+| contains a category-Cc character | `ControlCharacter` | **`MatchesNothing` (BR-30)** |
+| more than 64 code points | `TooLong` | **`MatchesNothing` (BR-32)** |
+| valid | success | the reference, compared exactly (BR-07) |
+
+The difference in meaning is the point, and it is why the failure is not a refusal on this side.
+A registration with a bad reference is a request the business cannot honour. A search with one asks
+a question whose true answer is "none". The spec asks for an empty success (BR-30, BR-31), so the
+same failure folds into a different outcome.
+
+---
 
 ### 15.8 Storage fit, in one table
 
@@ -1995,34 +2055,182 @@ successful empty search, not a refusal). Both sides use the same `ControlCharact
 | `InsuredLimit` | strictly positive, scale 2, any magnitude | `NUMERIC`, `CHECK (> 0)`, `CHECK (scale = 2)` | exact up to PostgreSQL's digit limit (Q5) |
 | `ActorContext.actorId` | non-blank, up to 255 code points, no category Cc | `registered_by VARCHAR(255)` | exact; needs the width IT |
 | `ActorContext.tenantId` | any canonical UUID | `UUID` | exact |
-| `ReferenceCriterion` | any text without category Cc, any length | a bound parameter compared with a `VARCHAR(64)` column | holds — a longer value simply matches nothing; the container's request-size limit bounds it in practice and no business bound exists |
+| the search reference filter | any text | a bound parameter, compared with the `VARCHAR(64)` column | holds: a longer value is `MatchesNothing` (BR-32), a control character is `MatchesNothing` (BR-30), and the request-size limit bounds it in practice |
+
+---
 
 ### 15.9 Enforcement
 
-Three ArchUnit rules pin the principle, each to be broken on purpose once (`AGENTS.md` requires
-that of any structural gate, and `failOnEmptyShould` is `true`, so each must match something).
+Three ArchUnit rules pin the principle, each to be broken on purpose once. They cover `domain/` alone,
+because the read side is in it. `failOnEmptyShould` is `true`, so each must match something.
 
-- **`raw_input_enters_only_through_parse`** — a method declared in a class in `..domain..` or
-  `..query..` that takes a `String` or a `BigDecimal` must be named `parse`. Constructors are not
-  methods, so the egress records (errors, snapshot, event, views) are not caught; they are filled
-  by valid code, not by callers.
-- **`commands_and_queries_carry_only_parsed_values`** — no field of a class whose name ends in
-  `Command` or `Query` has type `String` or `BigDecimal`. This is the rule the product owner asked
-  for: *domain objects hold no raw input fields.*
+- **`raw_input_enters_only_through_parse`** — a *method* declared in a class in `..domain..` that has a parameter of type `String` or `BigDecimal` must be named `parse`. It is written over `methods()`, and ArchUnit's `methods()` excludes constructors, so a record's canonical constructor is never caught. That is how views (`SubmissionSummaryView`), the snapshot, the event, the error records and the search criteria hold `String` and `BigDecimal` without tripping it: they receive those values through a constructor and expose them through accessors, which take no parameter.
+- **`commands_and_queries_carry_only_parsed_values`** — no *field* of a class whose simple name ends in `Command` or `Query` has raw type `String` or `BigDecimal`, and no field of `SubmissionFilter` or of a record nested in it has raw type `String`. That is the whole of its scope: commands, queries and the filter, which are the inputs. A view's name ends in `View`, the criteria's in `Criteria`, the snapshot's in `Snapshot`, so none of them is selected. The filter's `BigDecimal` and `Instant` bounds are allowed on purpose, because every value of those types is a legal comparison value; its reference is an `ExternalReference`, so a `String` there would mean the parse was bypassed.
+
+  The selector combines the two name tests as one predicate, `simpleNameEndingWith("Command").or(simpleNameEndingWith("Query"))`, passed to `areDeclaredInClassesThat(...)`, rather than as `.or()` on the fluent chain, which would widen the whole rule. *Domain objects hold no raw input fields* is now exactly what it says: input objects. Output records are out of its scope by design, and the reason is recorded in [§5.3](#53-views).
 - **`guarded_types_have_no_public_constructor`** — a public class that is not a record, interface or
-  enum, in `..domain..`, `..query..`, `..shared.kernel..` or `..adapters.access..`, and is not a
-  `*UseCase` or `OperationGate`, has no public constructor. This is what keeps rule 1 true as new
-  value objects arrive: a record cannot satisfy it, so an invariant guarded by a record is caught.
+  enum, in `..domain..`, `..shared.kernel..` or `..adapters.access..`, and is not a `*UseCase` or an
+  `OperationGate`, has no public constructor. A record cannot satisfy it, so an invariant guarded by a
+  record is caught.
 
-Tests, all pure and fast, with no use case and no fake in sight: `ExternalReferenceTest` (the table
-above, plus a supplementary character before the offender to prove the index is in code points),
-`InsuredLimitTest` (`ZERO`, `0.00`, `-0.01`, `0.01`, `1200`, `1200.5`, `1200.005`, `1E+2`, a huge
-magnitude, and that `toString` never shows the amount), `RegisterSubmissionCommandParseTest` (a
-reference error beats an amount error when both are present), `ControlCharactersTest` (the
-boundaries U+001F, U+0020, U+007E, U+007F, U+009F, U+00A0), `SubmissionFilterTest` (a category-Cc
-reference is `MatchesNothing`; spaces only is `Narrowing`; `null` is no criterion; a contradictory
-range is still `Narrowing`), and two integration tests asserting `ExternalReference.MAX_LENGTH`
-and `ActorContext.MAX_ACTOR_ID_LENGTH` equal the actual column widths.
+Tests, all pure and fast, with no use case and no fake in sight: `ExternalReferenceTest` (the table in
+[§15.2](#152-externalreference), plus a supplementary character before the offender to prove the index
+is in code points), `InsuredLimitTest`, `RegisterSubmissionCommandParseTest`, `ControlCharactersTest`,
+`SubmissionFilterTest` (a category-Cc reference is `MatchesNothing`; spaces only is `Narrowing`; `null`
+is no criterion; `""` is no criterion; a contradictory range is still `Narrowing`), and two integration
+tests asserting `ExternalReference.MAX_LENGTH` and `ActorContext.MAX_ACTOR_ID_LENGTH` equal the actual
+column widths.
+
+---
+
+### 15.10 CQS rules, verbatim
+
+These replace the query-package rules. Every rule discriminates by the public method each use case
+exposes, never by a package and never by a name prefix. A name prefix is a hint to a reader, not a
+property the build can check, and a prefix rule written with `.and()` followed by `.or()` matches
+every class that starts with the prefix anywhere in the tree, because `.or()` applies to the whole
+chain.
+
+```java
+// ---------------------------------------------------------------- CQS, without folders
+
+/** A public method with this name. The name of a use case's one public method is what makes it read or write. */
+private static DescribedPredicate<JavaClass> exposingPublicMethodNamed(String name) {
+    return new DescribedPredicate<>("exposing a public method named '" + name + "'") {
+        @Override
+        public boolean test(JavaClass type) {
+            return type.getMethods().stream().anyMatch(method ->
+                    method.getName().equals(name)
+                            && method.getModifiers().contains(JavaModifier.PUBLIC));
+        }
+    };
+}
+
+@ArchTest
+static final ArchRule no_query_package_exists =
+        noClasses()
+                .should().resideInAPackage("..query..")
+                .because("CQS is a separation of responsibility, not of folders. Read use cases live in "
+                        + "domain/ beside the write side. A query/ package reintroduces the import ban "
+                        + "that forced duplication and primitive obsession");
+
+@ArchTest
+static final ArchRule read_use_cases_do_not_depend_on_the_write_side =
+        noClasses()
+                .that().haveSimpleNameEndingWith("UseCase")
+                .and(exposingPublicMethodNamed("ask"))
+                .should().dependOnClassesThat()
+                .haveSimpleName("Submission")
+                .or().haveSimpleNameEndingWith("CommandRepository")
+                .or().haveSimpleNameEndingWith("EventPublisher")
+                .or().haveSimpleNameEndingWith("IdGenerator")
+                .or().haveSimpleNameEndingWith("Command")
+                .because("a read use case (ask) must not touch the aggregate, a command port, or a "
+                        + "command: a read cannot change state, and the rule keeps it that way");
+
+@ArchTest
+static final ArchRule write_use_cases_do_not_depend_on_the_read_side =
+        noClasses()
+                .that().haveSimpleNameEndingWith("UseCase")
+                .and(exposingPublicMethodNamed("execute"))
+                .should().dependOnClassesThat()
+                .haveSimpleNameEndingWith("QueryRepository")
+                .or().haveSimpleNameEndingWith("View")
+                .or().haveSimpleNameEndingWith("Query")
+                .or().haveSimpleName("SubmissionFilter")
+                .or().haveSimpleName("SubmissionSearchCriteria")
+                .because("a write use case (execute) must not read: a write that depends on a query "
+                        + "port or a view is deciding on data it did not load through its own port");
+
+@ArchTest
+static final ArchRule aggregate_does_not_depend_on_read_types =
+        noClasses()
+                .that().haveSimpleName("Submission")
+                .should().dependOnClassesThat()
+                .haveSimpleNameEndingWith("View")
+                .or().haveSimpleNameEndingWith("Query")
+                .or().haveSimpleName("SubmissionFilter")
+                .or().haveSimpleName("SubmissionSearchCriteria")
+                .because("the aggregate protects the write model; a projection must not shape it");
+
+@ArchTest
+static final ArchRule use_cases_expose_exactly_one_public_method_named_ask_or_execute =
+        classes()
+                .that().haveSimpleNameEndingWith("UseCase")
+                .should(new ArchCondition<JavaClass>(
+                        "expose exactly one public method, named 'ask' (taking a *Query) or "
+                                + "'execute' (taking a *Command)") {
+                    @Override
+                    public void check(JavaClass useCase, ConditionEvents events) {
+                        var publicMethods = useCase.getMethods().stream()
+                                .filter(method -> method.getModifiers().contains(JavaModifier.PUBLIC))
+                                .toList();
+                        if (publicMethods.size() != 1) {
+                            events.add(SimpleConditionEvent.violated(useCase,
+                                    useCase.getName() + " must expose exactly one public method, but has "
+                                            + publicMethods.stream().map(JavaMethod::getName).toList()));
+                            return;
+                        }
+                        var method = publicMethods.getFirst();
+                        var parameters = method.getRawParameterTypes();
+                        var takesOne = parameters.size() == 1;
+                        var conforms = switch (method.getName()) {
+                            case "ask" -> takesOne && parameters.getFirst().getSimpleName().endsWith("Query");
+                            case "execute" -> takesOne && parameters.getFirst().getSimpleName().endsWith("Command");
+                            default -> false;
+                        };
+                        if (!conforms) {
+                            events.add(SimpleConditionEvent.violated(useCase,
+                                    useCase.getName() + "." + method.getName() + " must be 'ask(*Query)' or "
+                                            + "'execute(*Command)'"));
+                        }
+                    }
+                })
+                .because("each UseCase is a single business operation with one reason to change, and its "
+                        + "one public method declares whether it reads or writes");
+
+@ArchTest
+static final ArchRule query_controllers_depend_on_no_write_use_case =
+        noClasses()
+                .that().haveSimpleNameEndingWith("QueryController")
+                .should().dependOnClassesThat(exposingPublicMethodNamed("execute"))
+                .because("a query endpoint may call only an ask use case; calling execute from it would "
+                        + "let a read request change state");
+
+@ArchTest
+static final ArchRule command_controllers_depend_on_no_read_use_case =
+        noClasses()
+                .that().haveSimpleNameEndingWith("CommandController")
+                .should().dependOnClassesThat(exposingPublicMethodNamed("ask"))
+                .because("a command endpoint may call only an execute use case; calling ask from it would "
+                        + "let a write request depend on a read");
+```
+
+Four points about these rules, each of which the build can check.
+
+- **The discriminator is the method.** `exposingPublicMethodNamed` reads the one public method that
+  each use case already pins. A class named `GetSubmissionUseCase` that exposes `ask` is a read use
+  case, and a class named `FindSomethingUseCase` that exposes `execute` is a write use case. The name
+  is a hint for a reader and is never a condition the build checks.
+- **`use_cases_expose_exactly_one_public_method_named_ask_or_execute` discriminates the other way
+  round.** It fails a use case that exposes neither name, or both, or the right name with the wrong
+  parameter. Without it, a class with no `ask` and no `execute` would pass both read and write rules
+  vacuously.
+- **The target predicate is where `.or()` belongs.** In the read and write rules the `.or()` chains
+  sit inside `dependOnClassesThat()`, where they select the forbidden targets. The source is selected
+  once, by `that(...)` and `.and(...)`. Nothing in the source selection uses `.or()`, so the prefix
+  trap cannot arise.
+- **`failOnEmptyShould` is `true`.** Each rule matches at least one class today:
+  `SearchSubmissionsUseCase` for the read rule, `RegisterSubmissionUseCase` for the write rule,
+  `SubmissionQueryController` and `SubmissionCommandController` for the controller rules, and
+  `Submission` for the aggregate rule. `no_query_package_exists` matches every class in the tree.
+  Each must be broken on purpose once, as `AGENTS.md` requires of any structural gate.
+
+**Stated uncertainty.** The predicate-taking form `dependOnClassesThat(DescribedPredicate)` and the
+`JavaMethod.getRawParameterTypes()` accessor are the two ArchUnit API calls here I have not compiled
+against ArchUnit 1.5.1 in this session. They are the first things `@test-designer` should confirm, and
+if either is absent the fallback is an `ArchCondition` on the source class that walks its
+`getDirectDependenciesFromSelf()`.
 
 ---
 
@@ -2069,23 +2277,23 @@ public sealed interface AccessRefusal permits CallerNotIdentified, PermissionDen
 public record CallerNotIdentified() implements AccessRefusal { }
 public record PermissionDenied(ActorRole role) implements AccessRefusal { }
 
-public sealed interface Permission<X extends AccessRefusal> {
+public interface Permission {
 
-    Result<AuthenticatedCaller, X> check(Optional<AuthenticatedCaller> caller);
+    Result<AuthenticatedCaller, AccessRefusal> check(Optional<AuthenticatedCaller> caller);
 
-    /** Search: any identified caller. No role is consulted (BR-16). It can refuse only CallerNotIdentified. */
-    static Permission<CallerNotIdentified> anyIdentifiedCaller();
+    /** Search: any identified caller. No role is consulted (BR-16). Cannot refuse on role. */
+    static Permission anyIdentifiedCaller();
 
     /** Register: exactly these roles, and nobody else. Fail-closed: a new role is not in the set. */
-    static Permission<AccessRefusal> rolesOnly(ActorRole first, ActorRole... others);
+    static Permission rolesOnly(ActorRole first, ActorRole... others);
 }
 
-public final class OperationGate<C, R, X extends AccessRefusal> {
+public final class OperationGate<C, R> {
 
     /** Public only so adapters/config can build it; ArchUnit forbids anyone else (§16.4). */
-    public OperationGate(Permission<X> permission, BiFunction<ActorContext, C, R> operation);
+    public OperationGate(Permission permission, BiFunction<ActorContext, C, R> operation);
 
-    public Result<Admission<C, R>, X> admit(Optional<AuthenticatedCaller> caller);
+    public Result<Admission<C, R>, AccessRefusal> admit(Optional<AuthenticatedCaller> caller);
 }
 
 public final class Admission<C, R> {                  // no public constructor: only OperationGate mints one
@@ -2095,27 +2303,33 @@ public final class Admission<C, R> {                  // no public constructor: 
 }
 ```
 
-Checked, not asserted: this shape was compiled with `javac` 25 in a scratch directory — a register
-gate refuses a Viewer with `PermissionDenied`, a search gate admits the same Viewer, an empty
-caller is `CallerNotIdentified` for both, and nothing in it needs a cast.
+**Two type parameters, as the product owner decided.** The gate's refusal type is `AccessRefusal`,
+which both operations share. The previous revision carried a third type parameter so that search's
+refusal type could be `CallerNotIdentified` alone, and the search `switch` could be proven to have one
+case by the type. That cost was accepted by the product owner: search's `switch` has two arms, and the second is proven
+unreachable by a test ([§5.2](#52-refusals-search-still-has-exactly-one)).
+
+`Permission` is no longer generic, because nothing needs the refusal type to vary per permission. Each
+permission returns `AccessRefusal`, and `anyIdentifiedCaller` returns only `CallerNotIdentified` in
+practice. Nothing in the type system stops `anyIdentifiedCaller` from returning `PermissionDenied`,
+which is why the contract test asserts it does not.
+
+Checked, not asserted: this shape was compiled with `javac` 25 in a scratch directory in the previous
+revision. The two-parameter form differs only by removing one type argument, and `@test-designer` should
+compile it before relying on it.
 
 - **Permissions are data, declared once.** The two `Permission` values are constants in
-  `SubmissionConfiguration` ([§13](#13-wiring)). The evaluation logic lives exactly once, inside the
-  two implementations of `Permission`, so there is no `if (role == ...)` in a controller, a use case
-  or anywhere else. `rolesOnly` takes `first` plus `others`, so an empty set — a permission that
-  silently denies everyone — cannot be written.
-- **`Permission` is a polymorphic method, not a `switch` in the gate,** which is why no cast is
-  needed: each implementation knows its own refusal type, and the gate simply returns what the
-  permission returns. That is also what lets search's gate carry `CallerNotIdentified` alone
-  ([§5.2](#52-refusals-search-still-has-exactly-one)).
-- **`Admission` is the proof, and the only door.** The controller never holds a reference to the
-  use case. It holds a gate; the gate gives it an `Admission` or a refusal; the `Admission` runs the
-  operation. `run` supplies the *admitted* actor, so the adapter cannot substitute a different one
-  for the use case — there is no confused-deputy gap between "who was checked" and "who the use
-  case believes is asking".
-- **No permission is evaluated inside the use case.** The use case is handed an `ActorContext`
-  and uses its tenant and identity; it has nothing to re-check, because it is never reached by a
-  caller the gate refused.
+  `SubmissionConfiguration` ([§13](#13-wiring)). The evaluation logic lives exactly once, inside the two
+  implementations, so there is no `if (role == ...)` in a controller, a use case or anywhere else.
+  `rolesOnly` takes `first` plus `others`, so an empty set, a permission that silently denies everyone,
+  cannot be written.
+- **`Admission` is the proof, and the only door.** The controller never holds a reference to the use
+  case. It holds a gate; the gate gives it an `Admission` or a refusal; the `Admission` runs the
+  operation. `run` supplies the *admitted* actor, so the adapter cannot substitute a different one.
+- **No permission is evaluated inside a use case.** A use case is handed an `ActorContext` and uses its
+  tenant and identity. It has nothing to re-check, because it is never reached by a refused caller.
+
+---
 
 ### 16.3 The order at the edge
 
@@ -2151,7 +2365,7 @@ failure. Each must match something (`failOnEmptyShould` is `true`) and each is t
 purpose once.
 
 - **A1 — `raw_use_cases_are_reachable_only_from_wiring`** — no class in `..adapters..` outside
-  `..adapters.config..` depends on a class in `..domain..` or `..query..` whose simple name ends in
+  `..adapters.config..` depends on a class in `..domain..` whose simple name ends in
   `UseCase`. *Because a second inbound path that injects a raw use case skips the permission check;
   the only handle it can be given is an `Admission`.* This is the rule that pins the bypass. To
   break it on purpose: inject `RegisterSubmissionUseCase` into `SubmissionCommandController` and
@@ -2164,7 +2378,7 @@ purpose once.
 
 Because the raw use case is also not a Spring bean ([§13](#13-wiring)), there is no bean for a
 careless `@Autowired` to find. The domain's blindness is pinned by a rule that already exists:
-`write_and_read_models_stay_pure_java` forbids `domain/` and `query/` from touching anything in
+`write_and_read_models_stay_pure_java` forbids `domain/` from touching anything in
 `..adapters..`, and `ActorRole` and every guard type are now in `..adapters.access..`. Test code is
 excluded from the analysis (`DoNotIncludeTests`), which is how the unit tests construct a use case
 directly.
@@ -2178,7 +2392,7 @@ reviewer will see the permission it was given.
 ### 16.5 `ActorContext` and `ActorRole`
 
 Does registration still need the role? **No.** The adapter authorises, so neither `Submission` nor
-`RegisterSubmissionUseCase` takes one, and nothing in `domain/` or `query/` can name it.
+`RegisterSubmissionUseCase` takes one, and nothing in `domain/` can name it.
 
 | Type | Before | After | Why |
 |---|---|---|---|
@@ -2261,8 +2475,7 @@ All of these run without Spring and in milliseconds.
   that this design argues for ([§3.2](#32-refusals-nine-as-the-caller-sees-them)).
 - **Search returns a plain view,** an exception to "every use case returns a `Result`" (R1).
 - **The aggregate cannot fail** ([§4.1](#41-what-the-aggregate-looks-like-when-it-receives-value-objects)).
-- **Three type parameters on the gate.** The third buys search's one-case `switch`; see
-  [§11.3](#113-engineering-items-carried), item 14.
+- **Two type parameters, and a weaker search proof.** `OperationGate<C, R>` shares `AccessRefusal` between both operations, so search's `switch` has a second arm that is proven unreachable by a test rather than by the type ([§5.2](#52-refusals-search-still-has-exactly-one)).
 - **Framework conversion precedes the guard** (Q1). Closing it is a decision about whether to own
   JSON parsing, not a defect in the guard.
 
@@ -2351,60 +2564,69 @@ source is chosen (Q1). The per-use-case *permission* stays in the gate.
 | Class | Change |
 |---|---|
 | `shared.kernel.ActorContext` | record to `final class`; `tenantId` and `actorId` only; private constructor; `parse`; role removed |
-| `shared.kernel.ActorRole` | moved to `submission.adapters.access`; `canDecide()` deleted |
-| `shared.kernel.ControlCharacters` | **new** |
+| `shared.kernel.ActorRole` | **moved to `submission.adapters.access`**; `canDecide()` deleted |
+| `shared.kernel.ControlCharacters` | **stays** (§15.5) |
 | `shared.kernel.LogSafeText` | delegates the category test to `ControlCharacters` |
-| `domain.ExternalReference`, `domain.InsuredLimit` | **new** |
-| `domain.RegisterSubmissionCommand` | raw components replaced by the two value objects; gains `parse`; the two constants move out |
-| `domain.RegisterSubmissionError` | loses `CallerNotIdentified` and `RoleMayNotRegister` (to `adapters.access`): nine variants become seven |
-| `domain.RegisterSubmissionUseCase` | `execute(ActorContext, RegisterSubmissionCommand)`; returns `Result<SubmissionId, ReferenceAlreadyUsed>`; no `ActorContext.current()`, no `fromOptional`, no widening |
-| `domain.Submission` | `register` is total; the validation helpers are deleted; value-object fields; `reconstitute` returns `Optional` and re-parses; no `ActorRole` |
-| `query.SubmissionFilter`, `query.ReferenceCriterion` | **new** |
-| `query.SearchSubmissionsQuery` | five raw filters replaced by one `SubmissionFilter` |
-| `query.SearchSubmissionsUseCase` | `ask(ActorContext, SearchSubmissionsQuery)` returns `SubmissionPageView`; a `switch` over the filter |
-| `query.SearchSubmissionsError` | **deleted** |
-| `query.SubmissionSearchCriteria` | `externalRef: String` becomes `reference: ReferenceCriterion` |
-| `adapters.access.*` | **new:** `ActorRole`, `AuthenticatedCaller`, `AccessRefusal`, `CallerNotIdentified`, `PermissionDenied`, `Permission`, `OperationGate`, `Admission` |
-| `adapters.web.ActorContextResolver` | yields `Optional<AuthenticatedCaller>` |
-| `adapters.web.RegisterSubmissionRequest` | gains `toCommand()` |
-| `adapters.web.RegisterRefusal` | **new** union |
-| `adapters.web.SubmissionCommandController` | the five-step flow; a nine-case flat `switch`; no `ActorContext.callWith` |
-| `adapters.web.SubmissionQueryController` | the flow in [§13.3](#133-the-search-request-step-by-step); a one-case `switch`; calls `SubmissionFilter.parse` |
-| `adapters.persistence.SubmissionQuerySqlAdapter` | unwraps `reference.value()` |
-| `adapters.persistence.SubmissionPersistenceMapper` | handles `Optional` from `reconstitute` |
-| `adapters.config.SubmissionConfiguration` | builds the two gates; declares the permission table; raw use cases are no longer beans |
+| `submission.domain.ExternalReference` | **new** value object; `parse` returns `ExternalReferenceError`; `MAX_LENGTH` |
+| `submission.domain.ExternalReferenceError` | **new** sealed interface, three variants, shared by both sides |
+| `submission.domain.InsuredLimit` | **new** value object |
+| `submission.domain.RegisterSubmissionCommand` | raw components replaced by the two value objects; `parse` maps `ExternalReferenceError` to the three reference variants |
+| `submission.domain.RegisterSubmissionError` | loses `CallerNotIdentified` and `RoleMayNotRegister` (to `adapters.access`): nine variants become seven |
+| `submission.domain.RegisterSubmissionUseCase` | `execute(ActorContext, RegisterSubmissionCommand)`; returns `Result<SubmissionId, ReferenceAlreadyUsed>` |
+| `submission.domain.Submission` | `register` is total; validation helpers deleted; value-object fields; `reconstitute` returns `Optional` and re-parses; no `ActorRole` |
+| `submission.domain.SearchSubmissionsQuery` | **moved from `query/`**; five raw filters replaced by one `SubmissionFilter`; page normalised |
+| `submission.domain.SubmissionFilter` | **moved from `query/`**; `parse` folds `ExternalReferenceError` (§5.1) |
+| `submission.domain.SearchSubmissionsUseCase` | **moved from `query/`**; `ask(ActorContext, SearchSubmissionsQuery)` returns `SubmissionPageView`; a `switch` over the filter |
+| `submission.domain.SubmissionSearchCriteria` | **moved from `query/`**; `reference` is an `ExternalReference` |
+| `submission.domain.SubmissionSummaryView` | **moved from `query/`**; `SubmissionId` in place of `UUID`; the reference and amount stay `String` and `BigDecimal` (§5.3) |
+| `submission.domain.SubmissionPageView` | **moved from `query/`** |
+| `submission.domain.SubmissionQueryRepository` | **moved from `query/`** |
+| `submission.query.ReferenceCriterion` | **deleted** |
+| `submission.query.SearchSubmissionsError` | **deleted** |
+| `submission.query.package-info.java` | **deleted** |
+| `submission.adapters.access.*` | **new:** `ActorRole` (moved), `AuthenticatedCaller`, `AccessRefusal`, `CallerNotIdentified`, `PermissionDenied`, `Permission` (non-generic), `OperationGate<C, R>`, `Admission<C, R>` |
+| `submission.adapters.web.ActorContextResolver` | yields `Optional<AuthenticatedCaller>` |
+| `submission.adapters.web.RegisterSubmissionRequest` | gains `toCommand()` |
+| `submission.adapters.web.RegisterRefusal` | **new** union |
+| `submission.adapters.web.SubmissionCommandController` | the five-step flow; a nine-case flat `switch`; no `ActorContext.callWith` |
+| `submission.adapters.web.SubmissionQueryController` | the flow in §13.3; a two-arm `switch`; imports from `domain/` |
+| `submission.adapters.persistence.SubmissionQuerySqlAdapter` | imports from `domain/`; unwraps `reference.value()`; copies stored values into views without parsing (§9.4) |
+| `submission.adapters.persistence.SubmissionPersistenceMapper` | handles `Optional` from `reconstitute` |
+| `submission.adapters.config.SubmissionConfiguration` | builds the two gates; declares the permission table; raw use cases are no longer beans |
 | migrations, SQL | none |
 
 ### 18.2 Tests
 
-Counted from the current tree.
+Counted from the tree in the previous revision. Recount at implementation: the counts are the design's
+best figure, not a build result.
 
-- **`new ActorContext(...)`: 18 sites in 6 files** become fixture calls built on `parse`, and the
-  `ActorRole` import in 6 test files changes package.
+- **Moved from `query/` to `domain/`:** `SearchSubmissionsUseCaseTest`, `SubmissionFilterTest`,
+  `SubmissionQueryRecordsTest`, `SubmissionSearchAdversarialTest`, and `InMemorySubmissionQueryRepository`
+  (a test fake, which is `domain/`'s concern and not an adapter's).
+- **`new ActorContext(...)`: 18 sites in 6 files** become fixture calls built on `parse`; the
+  `ActorRole` import changes package in every file that uses it.
 - **`new RegisterSubmissionCommand(...)`: 10 sites in 4 files** become `RegisterSubmissionCommand.parse`
   or value-object fixtures.
 - **`new SearchSubmissionsQuery(...)`: 18 sites in 4 files** build their filter through
   `SubmissionFilter.parse`.
+- **`ReferenceCriterion` and `SearchSubmissionsError` appear in the query tests**; those assertions move
+  to `SubmissionFilterTest` and to the gate tests.
+- **`CallerNotIdentified` is asserted in 4 files**; those assertions move to the gate tests.
 - **The role tests** (`RegisterSubmissionUseCaseTest`'s role group and its viewer-before-control-character
-  case; `RoleMayNotRegister` appears in 2 files) can no longer be written against the use case at
-  all, which is the point. They move to `PermissionMatrixTest`, `OperationGateTest` and the edge order
-  tests.
-- **`CallerNotIdentified` is asserted in 4 files** (both use-case tests and both adversarial tests);
-  those assertions move to the gate tests. **`SearchSubmissionsError` appears in 2 files** and goes.
-- **The validation-order tests** in `RegisterSubmissionUseCaseTest` and
-  `SubmissionRegistrationAdversarialTest` move to `ExternalReferenceTest`, `InsuredLimitTest` and
+  case) can no longer be written against the use case, which is the point. They move to
+  `PermissionMatrixTest`, `OperationGateTest` and the edge order tests.
+- **The validation-order tests** move to `ExternalReferenceTest`, `InsuredLimitTest` and
   `RegisterSubmissionCommandParseTest`: pure, with no use case and no fake.
 - **`ActorContextTest`:** the `canDecide` and role assertions leave, the parse tests arrive, the
   scoped-value tests stay (R5).
-- **`ReferenceLogInjectionTest`:** builds raw commands and queries today. Part of what it proved is
-  now unrepresentable for a value object; keep it for the raw holders (snapshot, event, error,
-  views).
-- **`InMemorySubmissionQueryRepository`** takes a `ReferenceCriterion` and needs no knowledge of
-  category Cc.
-- **Integration tests** that build commands through the register use case (3 test files use it) go
-  through `parse`.
-- **New:** gate, parse, edge-order and catalogue tests, `ControlCharactersTest`,
-  `SubmissionFilterTest`, the two width ITs, and six ArchUnit rules.
+- **`ReferenceLogInjectionTest`:** builds raw commands and queries today; keep it for the raw holders
+  (snapshot, event, error, views).
+- **`ArchitectureRulesTest`:** see §18.4.
+- **Integration tests** that build commands through the register use case go through `parse`.
+- **Every file that imports `com.gs5.underwriting.submission.query.*`** is rewritten to import from
+  `domain`. The count is taken at implementation with `grep -rl "submission.query" src`.
+- **New:** gate, parse, edge-order and catalogue tests, `ControlCharactersTest`, `SubmissionFilterTest`
+  (now including the BR-30 and BR-31 cases), the two width ITs, and the CQS rules in §15.10.
 
 ### 18.3 Invariants
 
@@ -2413,14 +2635,63 @@ Counted from the current tree.
 | BR-01 caller identified | each use case, `fromOptional(ActorContext.current())` | `OperationGate.admit` |
 | BR-02, BR-03 role may register | `Submission.register` | `Permission.rolesOnly`, declared in config |
 | BR-16 every role may search | the search use case never read a role | `Permission.anyIdentifiedCaller`; no role consulted |
-| BR-04, BR-05, BR-29 | `Submission.register` | `ExternalReference.parse` |
+| BR-04, BR-05, BR-29 | `Submission.register` | `ExternalReference.parse`, mapped into the register error |
 | BR-10, BR-11, BR-12 | `Submission.register` | `InsuredLimit.parse` |
-| BR-30 | unspecified in code; the filter reached the store and answered `500` | `SubmissionFilter.parse` yields `MatchesNothing` |
+| BR-30 | the filter reached the store and answered `500` | `SubmissionFilter.parse` maps `ControlCharacter` to `MatchesNothing` |
+| BR-31 | not specified in code | `SubmissionFilter.parse` maps `Missing` to not supplied |
+| BR-32 | not specified in code | `SubmissionFilter.parse` maps `TooLong` to `MatchesNothing` |
 | BR-06, BR-09 | the store, via a unique index | unchanged |
 | BR-15 ownership | the aggregate | unchanged |
 | BR-17 tenant isolation | the use case passes `actor.tenantId()` | unchanged |
-| BR-22, BR-23 masking | per-record `toString` | per-record, and the value objects now mask themselves |
-| a caller's identity is well-formed | nothing: any string, `null` possible | `ActorContext.parse`, `AuthenticatedCaller.parse` |
+| BR-22, BR-23 masking | per-record `toString` | per-record, and value objects mask themselves |
+| a caller's identity is well-formed | nothing | `ActorContext.parse`, `AuthenticatedCaller.parse` |
+| read and write are separated | by the `query/` package | by the CQS ArchUnit rules (§15.10) |
+
+### 18.4 Documents and rules outside this design
+
+Every place that prescribes the `query/` package, or the read side as a package, found by searching
+`.github/`, `AGENTS.md`, `docs/specs/` and `src/test/` for the word `query`. Each line is listed with
+what it says now and what it must say.
+
+| File | Line(s) | Says now | Must say |
+|---|---|---|---|
+| `src/test/.../ArchitectureRulesTest.java` | 45 | comment: `query/` reading a constant in `domain/` is invisible | comment about `domain/` alone |
+| same | 53, 65 | `write_and_read_models_stay_pure_java` covers `..domain..` and `..query..` | covers `..domain..` only |
+| same | 85–94 | `read_model_does_not_see_write_model`, `write_model_does_not_see_read_model` | **delete both**; replaced by §15.10 |
+| same | 102–104 | comment about `query/` and `adapters/web/` | delete the stale comment |
+| same | 112–120 | `command_controllers_touch_only_the_write_side`, `query_controllers_touch_only_the_read_side`, on `..query..` | **replace** with `query_controllers_depend_on_no_write_use_case` and `command_controllers_depend_on_no_read_use_case` (§15.10) |
+| same | 157–176 | `use_cases_have_exactly_one_public_method_named_for_their_side`, which infers `ask` from a package ending in `.query` | **replace** with `use_cases_expose_exactly_one_public_method_named_ask_or_execute` (§15.10) |
+| same | 126 | `commands_and_queries_are_standalone_records` | unchanged |
+| `.github/copilot-instructions.md` | 50 | bans Spring, Jackson and Kafka imports in `domain/` or `query/` | `domain/` |
+| same | 65 | layout tree: `query/` READ side | remove; note that read use cases are in `domain/` |
+| same | 69 | `domain/` and `query/` may depend only on `java.*`, kernel, jspecify | `domain/` only |
+| same | 84 | read side in `query/`: `SearchSubmissionsUseCase.ask(...)` | read side in `domain/`, distinguished by `ask` |
+| `.github/instructions/domain-cqrs-purity.instructions.md` | 2–3 | description and `applyTo: "**/{domain,query}/**/*.java"` | `applyTo: "**/domain/**/*.java"`; description without `query/` |
+| same | 95–101 | section "`query/` is a separate world": `query/` cannot import `domain/`, a `*UseCase` validates and returns a projection | **delete the section**; replace with the CQS rule: discriminated by `ask`/`execute` |
+| same | 108 | `*UseCase` class with one public method, `execute` in `domain/`, `ask` in `query/` | `execute` for a write, `ask` for a read, both in `domain/` |
+| `.github/instructions/java25-functional-style.instructions.md` | 56 | side effects in adapters, not in `domain/` or `query/` | `domain/` |
+| `.github/instructions/testing-tdd.instructions.md` | 19 | no Mockito for `domain/` or `query/` | `domain/` |
+| `.github/instructions/security-owasp-java.instructions.md` | 84 | adapter tokens never leak into domain or query interfaces | `domain/` |
+| `.github/skills/hexagonal-cqrs-slice/SKILL.md` | 3 | description: "a separate query package" | remove the phrase |
+| same | 29–31 | layout tree: `query/` READ SIDE, `<Query>UseCase.java` | read use cases in `domain/` |
+| same | 188–189 | checklist: `domain/` and `query/` import nothing from Spring; `query/` does not import `domain/` | `domain/` imports nothing from Spring; a read use case does not depend on the write side (§15.10) |
+| `.github/skills/spec-to-plan/SKILL.md` | 50, 77 | "its own `*UseCase` class with a single public `ask(Query)`" | still true; add "discriminated by `ask`/`execute`, not by package" |
+| `.github/agents/architect.agent.md` | 31–32 | `domain/` and `query/` depend only on…; `query/` does not import `domain/` | `domain/` depends only on…; read and write in `domain/` obey §15.10 |
+| `.github/agents/code-reviewer.agent.md` | 19 | `[BLOCKER]` imports between `domain/` and `query/` | `[BLOCKER]` a read use case depending on the write side, or the reverse (§15.10) |
+| `.github/agents/developer.agent.md` | 49 | no `@Service` or `@Component` in `domain/` or `query/` | `domain/` |
+| `.github/agents/test-designer.agent.md` | 16–17 | allowed in `src/main/java/**/{domain,query}/`: `*Command`, `*Query`, `*View`, `*Snapshot`, `*Id` | `src/main/java/**/domain/` |
+| same | 38 | "every command, every error variant and every query" | unchanged; the word is a concept |
+| same | 55 | fakes for ports in `domain/` and `query/` | `domain/` |
+| `AGENTS.md` | 45 | layout tree: `<module>/ domain/ · query/ · adapters/` | `domain/ · adapters/` |
+| same | 53 | "`query/` is the read side returning projection records and cannot see `domain/`" | "read use cases live in `domain/` and are distinguished from write use cases by `ask` and `execute`" |
+| same | 66 | `@test-designer` stubs in `domain/`+`query/` | `domain/` |
+| `.github/copilot-instructions.md` and `AGENTS.md` | "eight agents" | unchanged | unchanged |
+
+**Not affected:** `.github/agents/business-analyst.agent.md` ("Query catalogue") and the specification
+`docs/specs/submission-registration-spec.md` ("Query 1 — Search Submissions") use the word as a business
+term. `security-owasp-java.instructions.md` line 17 and the Spring Data `@Query` annotation are
+unrelated. `docs/workflow/` was not in the search above and is to be checked at the next orchestrator
+update.
 
 ---
 
