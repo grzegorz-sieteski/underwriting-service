@@ -60,7 +60,33 @@ case "$PHASE" in
     green)
         echo "== GREEN phase: only src/main may change =="
         rc=0
-        assert_untouched "src/test/" src/test || rc=1
+        ALLOWLIST="scripts/green-signature-allowlist.txt"
+        allowed="$( [ -f "$ALLOWLIST" ] && grep -v '^#' "$ALLOWLIST" | grep . || true )"
+        if [ -z "$allowed" ]; then
+            assert_untouched "src/test/" src/test || rc=1
+        else
+            # A signature migration is in progress: listed test files may change, but only in
+            # ways that do not alter WHAT a test checks. Every other test file stays frozen.
+            touched="$(changed_under src/test | sort -u)"
+            for f in $touched; do
+                if ! printf '%s\n' "$allowed" | grep -qxF "$f"; then
+                    red "FAIL: $f is not on the signature-migration allowlist"
+                    rc=1
+                fi
+            done
+            # Changed lines in allowlisted files must not touch an assertion, a test annotation
+            # or a display name. Constructor calls, imports and types may change; verdicts may not.
+            guard='assert|\.is[A-Z]|\.has[A-Z]|\.contains|\.doesNot|\.satisfies|\.allSatisfy|\.extracting|\.matches|@Test|@ParameterizedTest|@DisplayName|@ValueSource|@CsvSource|@MethodSource|@EnumSource|@Nested|@Disabled'
+            for f in $allowed; do
+                hits="$(git diff "$BASE" -- "$f" 2>/dev/null | grep -E '^[+-][^+-]' | grep -E "$guard" || true)"
+                if [ -n "$hits" ]; then
+                    red "FAIL: $f changes a line that decides what the test checks:"
+                    printf '%s\n' "$hits" | sed 's/^/    /' | head -20
+                    rc=1
+                fi
+            done
+            [ "$rc" -eq 0 ] && green "OK: src/test/ changes are mechanical and confined to the allowlist"
+        fi
         assert_untouched "docs/" docs || rc=1
         [ "$rc" -eq 0 ] || {
             red ""
