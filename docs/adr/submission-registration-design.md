@@ -37,10 +37,12 @@ engineering decision with its reasoning. Nothing else in this document invents a
 
 ## 1. Scope
 
-Covers, and only covers, the two operations the spec puts in scope:
+Covers, and only covers, the three operations the spec puts in scope:
 
 - **register a submission** — one command; **nine** refusal reasons as the caller sees them
   (BR-01, BR-02, BR-04..BR-06, BR-09..BR-12, BR-29): two decided at the adapter, seven in the domain
+- **approve a submission** — one command; **five** refusal reasons as the caller sees them (BR-01, BR-33,
+  BR-35, BR-36, BR-41): two decided at the gate, three in the domain (§19)
 - **search submissions** — one query; **one** refusal reason as the caller sees it (BR-01), decided
   at the adapter. The read use case refuses nothing of its own (BR-16..BR-28, BR-30, BR-31)
 
@@ -648,13 +650,15 @@ public record SubmissionSummaryView(SubmissionId submissionId,
                                     String externalRef,
                                     BigDecimal insuredLimit,
                                     String registeredBy,
-                                    Instant registeredAt) {
+                                    Instant registeredAt,
+                                    SubmissionState state) {
     @Override
     public String toString() {   // BR-22 amount, OPEN-01 actorId
         return "SubmissionSummaryView[submissionId=" + submissionId
                 + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                 + ", insuredLimit=***, registeredBy=***"
-                + ", registeredAt=" + registeredAt + "]";
+                + ", registeredAt=" + registeredAt
+                + ", state=" + state + "]";
     }
 }
 
@@ -758,6 +762,8 @@ The rules themselves are in [§15.10](#1510-cqs-rules-verbatim).
 ---
 
 ## 6. SQL shape
+
+> **Amended in revision 5:** the `findPage` statement gains the approval state as a `LEFT JOIN` ([§19.9](#199-the-search-change)). `countMatching` is unchanged.
 
 Both statements are native SQL in `@Query("""...""")`, mapped straight into the projection record.
 The read repository extends `Repository`, not `CrudRepository`: a read repository that offers
@@ -887,6 +893,8 @@ conversion, it runs before the guard.
 ---
 
 ## 8. Schema
+
+> V3, which adds the approval table, is specified in [§19.8](#198-schema-v3). It replaces the V3 committed at `5bf01b3`.
 
 ### 8.1 `V2__create_submissions.sql`
 
@@ -1178,7 +1186,7 @@ is package-private in `domain/`.
 | `insuredLimit` | **Never** | BR-22 | `InsuredLimit.toString()` prints `***`, so `RegisterSubmissionCommand` is safe by composition; the raw holders — `SubmissionSnapshot`, `SubmissionSummaryView`, `SubmissionRegistered`, and the filter bounds in `SubmissionFilter.Narrowing` and `SubmissionSearchCriteria` — keep explicit masks; no error variant carries the amount; no `ProblemDetail` echoes it |
 | `externalRef` | Yes, in full — **with category-Cc code points escaped as `\uXXXX`** | BR-23, BR-29 | a valid `ExternalReference` or `ReferenceCriterion` cannot contain a control character, so it prints as it is; the raw holders (`SubmissionSnapshot`, `SubmissionRegistered`, `ReferenceAlreadyUsed`, the `ProblemDetail`) escape it. Escaping is not redaction: the value stays complete and readable, and an unescaped control character in a log line is log injection ([§3.2](#32-refusals-nine-as-the-caller-sees-them)) |
 | `tenantId` | Not classified | spec §6 | printed; it is the isolation boundary, not a secret |
-| `actorId` / `registeredBy` | **Not logged** | OPEN-01 | masked `***` in the `toString()` of `ActorContext` (its first, upstream holder), `AuthenticatedCaller`, `SubmissionSnapshot`, `SubmissionSummaryView` and `SubmissionRegistered`; no error variant carries it |
+| `actorId` / `registeredBy` / `approvedBy` | **Not logged** | OPEN-01, BR-42 | masked `***` in the `toString()` of `ActorContext` (its first, upstream holder), `AuthenticatedCaller`, `SubmissionSnapshot`, `SubmissionSummaryView`, `SubmissionRegistered`, `SubmissionApproval` and `SubmissionApproved` (as `approvedBy`); no error variant carries it |
 | `registeredAt` | Not classified | spec §6 | printed |
 
 **`actorId` carries an open business item and the strict default has been applied.** The business
@@ -1416,6 +1424,7 @@ twice.
 | Event | Raised when | Carries | Announced through |
 |---|---|---|---|
 | `SubmissionDomainEvent.SubmissionRegistered` | a registration succeeds (BR-15) | organisation, submission identity, reference, insured limit, registering caller, registration moment | `SubmissionEventPublisher` — a port. What is behind it is not decided here |
+| `SubmissionDomainEvent.SubmissionApproved` | an approval succeeds (BR-40) | the organisation, the submission's identity, the approver's identity (masked in logs), the moment of approval. No insured limit ([§19.7](#197-the-event-submissionapproved-br-40)) | `SubmissionEventPublisher`, the same port |
 
 ```java
 public sealed interface SubmissionDomainEvent {
@@ -1447,8 +1456,7 @@ public sealed interface SubmissionDomainEvent {
 }
 ```
 
-The sealed interface has one variant today because the spec says one business fact occurs in this
-feature. Searching announces nothing — a read is not a business fact — and the event is never raised
+The sealed interface has two variants, `SubmissionRegistered` (BR-15) and `SubmissionApproved` (BR-40, [§19.7](#197-the-event-submissionapproved-br-40)). The spec names exactly these two business facts. Searching announces nothing — a read is not a business fact — and the event is never raised
 for a refused registration, which this design makes structural through `Result.peek`, whose side
 effect runs on the success branch only (see [§3.3](#33-use-case)).
 
@@ -1721,10 +1729,10 @@ BR-29 refusal path is where such a reference is guaranteed to appear.
 
 Explicitly out of scope, so the next agent does not add it:
 
-- **No status / lifecycle column or state machine.** The spec defines no state beyond "registered".
-- **No decision, approval, referral or declinature** operation, and no event about one.
-- **No amend, withdraw, cancel or delete** operation. A submission is immutable once registered,
-  which is why `submissions` has no `UPDATE` path in this design.
+- **No status column and no state machine.** The state is two values, *registered* and *approved* (BR-36), derived from the existence of an approval row ([§19.5](#195-the-approval-state)), not stored on the registered row.
+- **No decision other than approval** — no referral and no declinature, and no event about one. Approval is specified in [§19](#19-approval).
+- **No amend, withdraw, cancel, delete or un-approve** operation. An approval is final (BR-36). A submission is immutable once registered,
+  which is why `submissions` has no `UPDATE` path in this design. An approval is a row in its own table, so it cannot create one ([§19.5](#195-the-approval-state)).
 - **No authority limit** anywhere. BR-03 treats `UNDERWRITER` and `SENIOR_UNDERWRITER`
   identically; the register permission is a two-element set in the wiring.
 - **No currency field** in any record, column, event or API payload. Every amount is euro by
@@ -2692,6 +2700,534 @@ what it says now and what it must say.
 term. `security-owasp-java.instructions.md` line 17 and the Spring Data `@Query` annotation are
 unrelated. `docs/workflow/` was not in the search above and is to be checked at the next orchestrator
 update.
+
+---
+
+## 19. Approval
+
+Approval is the second write operation of this module, and this section is its design. It was
+specified on 2026-11-03 by a product-owner decision that reverses the earlier statement that
+approval is out of scope. Its business rules are `BR-33` to `BR-43` and its refusal list is exactly
+five reasons. The implementation exists at commit `5bf01b3`, and the specification at `2ef27b9`.
+Where the implementation differs from this section, the difference is listed in
+[§19.11](#1911-where-the-implementation-diverges-required-changes) as a change the developer must
+make. Nothing in this section is written against the implementation's behaviour.
+
+It follows the revision 4 model without exception. Approval is a write use case in `domain/`, with
+one public method, `execute(ActorContext, ApproveSubmissionCommand)`. The access gate decides who may
+call it before any input is parsed. The submission identity is parsed at the edge with the same
+parse-don't-validate rule as every other input.
+
+### 19.1 The order at the edge
+
+```
+POST /api/submissions/{id}/approve      {id} is a String. The framework does not convert it.
+  1. caller    = actorContextResolver.resolve()                 Optional<AuthenticatedCaller>
+  2. admission = approvalGate.admit(caller)                     401 (BR-01) or 403 (BR-33) end here
+  3. command   = ApproveSubmissionCommand.parse(id)             a malformed id ends here as 404 (BR-35)
+  4. result    = admission.run(command)                         404, 403 or 409, or 200
+```
+
+Two properties of this order are the point, and both are checked by tests in [§19.12](#1912-tests):
+
+- **A malformed identity cannot produce a framework `400`.** The path variable is declared `String`,
+  so Spring performs no conversion, and the first point at which the identity is examined is step 3,
+  which runs only after step 2 has admitted the caller. A Viewer who names `not-a-uuid` receives `403`,
+  not `400`, and not `404`.
+- **Nothing about the identity is revealed before the role is judged.** Step 2 consults the caller and
+  the operation alone. The submission is not looked at until step 4 (BR-33, BR-34).
+
+The implementation violates both properties, and the change is named in [§19.11](#1911-where-the-implementation-diverges-required-changes).
+
+### 19.2 The command and its value objects
+
+```java
+/** Canonical UUID text only: 36 characters, hexadecimal, grouped 8-4-4-4-12. Shared with ActorContext. */
+public final class CanonicalUuid {                              // shared/kernel
+    public static Optional<UUID> parse(@Nullable String text);
+}
+
+public record SubmissionId(UUID value) {                        // domain — existing, plus:
+    public static Optional<SubmissionId> parse(@Nullable String text);   // CanonicalUuid.parse, then wrap
+}
+
+public record ApproveSubmissionCommand(SubmissionId submissionId) {
+    /** Malformed identity is SubmissionNotFound, the same refusal as an unknown one (BR-35). */
+    public static Result<ApproveSubmissionCommand, ApproveSubmissionError> parse(String rawSubmissionId);
+}
+```
+
+- **`CanonicalUuid` lives in `shared/kernel`,** because two modules' inputs need the same strict
+  rule: the caller's tenant claim in `ActorContext.parse`, and the submission identity here. If the two
+  rules disagreed, a caller and an identity could be parsed differently. The kernel gains one type,
+  for a format and not for a business rule, and the same argument as for `ControlCharacters`
+  applies ([§15.5](#155-the-single-definition-of-category-cc)).
+- **Why `CanonicalUuid` and not `UUID.fromString`.** `UUID.fromString("1-1-1-1-1")` returns
+  `00000001-0001-0001-0001-000000000001` rather than failing. A lenient identity can therefore name
+  a real submission. A malformed identity would then succeed, which violates BR-35 directly. The
+  strict check runs first, and `fromString` is called only on text already known to be canonical.
+- **Case.** Hexadecimal digits are accepted in either case. Both spellings denote one UUID, so
+  accepting both cannot name a different submission. This is a choice, not a rule the spec states,
+  and [§19.13](#1913-questions-for-the-product-owner) notes it.
+- **`parse` takes `String`, not `@Nullable String`.** A path variable is never absent. NullAway
+  therefore sees the non-null contract, and no `null` branch is needed.
+- **The command has one field.** The approving caller, the moment and the organisation come from the
+  admitted actor and the clock (BR-37). The command cannot carry them, so a caller cannot supply them.
+- **The command is a standalone `public record`,** and `commands_and_queries_carry_only_parsed_values`
+  is satisfied because its field is a `SubmissionId`, not a `String`.
+
+### 19.3 The refusal types
+
+```java
+/** Business refusals, produced by the domain. None carries a value, so none can carry the identity (BR-43). */
+public sealed interface ApproveSubmissionError {
+    record SubmissionNotFound() implements ApproveSubmissionError { }              // BR-35
+    record ApproverRegisteredSubmission() implements ApproveSubmissionError { }   // BR-41
+    record SubmissionAlreadyApproved() implements ApproveSubmissionError { }      // BR-36, BR-39
+}
+
+// adapters/access — shared with registration, unchanged
+public sealed interface AccessRefusal permits CallerNotIdentified, PermissionDenied { }
+
+// adapters/web — the caller-facing union, as RegisterRefusal is for registration
+sealed interface ApproveRefusal {
+    record Access(AccessRefusal refusal) implements ApproveRefusal { }
+    record Rejected(ApproveSubmissionError error) implements ApproveRefusal { }
+}
+```
+
+The five spec reasons map as follows. The layer column records which part of the design raises each
+one, because the spec's list is the caller's contract and does not name the layer.
+
+| # | Spec refusal | Layer | Produced by | Rule | HTTP | Problem type |
+|---|---|---|---|---|---|---|
+| 1 | Caller not identified | adapter | `ActorContextResolver` empty, so `OperationGate.admit` | BR-01 | 401 | `caller-not-identified` |
+| 2 | Role may not approve | adapter | `Permission.approval`, as `PermissionDenied(role)` | BR-33 | 403 | `permission-denied` |
+| 3 | Submission not found | domain | `ApproveSubmissionCommand.parse` for a malformed identity, and the use case for an unknown or other-organisation one | BR-35 | 404 | `submission-not-found` |
+| 4 | Approver registered this submission | domain | `Submission.approvableBy`, inside the use case | BR-41 | 403 | `approver-registered-submission` |
+| 5 | Submission already approved | domain | the approval insert's conflict, inside the use case | BR-36, BR-39 | 409 | `submission-already-approved` |
+
+**Three rules hold across the table, and each is tested.**
+
+- **Cases 3 and 4 are never distinguishable from the caller's side in a way that leaks.** A malformed
+  identity, an unknown one and another organisation's one all produce the same `SubmissionNotFound()`,
+  with the same status, the same problem type and the same text. No variant carries the identity, so the
+  malformed case cannot echo its raw input.
+- **Case 4 is `403`, not `404`.** The caller is known and admitted, and has been found to be the
+  registrant, so the refusal concerns the caller's own relation to a submission they can already see. A
+  `404` would be false: they can see it, since search shows it to them. The spec names no status, so
+  the choice is recorded as an engineering decision, and [§19.13](#1913-questions-for-the-product-owner)
+  asks the product owner to confirm it.
+- **Case 5 is `409`,** as the registration duplicate is. The text is constant and does not name the
+  submission, because the spec's refusal states nothing about the submission and BR-43 reveals no more
+  than the reason.
+
+**`ApproveRefusal` is the one place the five are folded,** in a single flat `switch` with no `default`,
+over the nested record patterns `Access(...)` and `Rejected(...)`. A sixth reason added to either
+hierarchy fails to compile at that switch, which is the property the registration fold already has. The
+implementation folds the domain errors and the access refusals in two separate switches, and that is
+listed as a change.
+
+### 19.4 The check order, and which part enforces each step
+
+| Step | Judged | Enforced by | Refusal, if it fails |
+|---|---|---|---|
+| 1 | caller identified | `OperationGate.admit`, through the resolver | `CallerNotIdentified` |
+| 2 | role permits approving | `OperationGate.admit`, through `Permission.approval` | `PermissionDenied` |
+| 3 | identity is in a valid form | `ApproveSubmissionCommand.parse` | `SubmissionNotFound` |
+| 4 | submission exists in the caller's own organisation | the use case: `findOwn(tenantId, id)` | `SubmissionNotFound` |
+| 5 | caller did not register it | the use case: `Submission.approvableBy(actor)` | `ApproverRegisteredSubmission` |
+| 6 | not already approved | the use case: the approval insert | `SubmissionAlreadyApproved` |
+
+Steps 1 and 2 are the gate's, and steps 3 to 6 are the domain's. No layer repeats another's check.
+The use case does not read the role, because it has none to read, and the gate does not read the
+registrant, because the gate does not see the submission.
+
+**Why the self-approval check comes before the already-approved check (BR-41, BR-34).** Step 5
+depends only on the caller and the registration, and step 6 depends on the approval store. A caller
+who may never approve this submission is therefore refused the same way whether or not somebody has
+already approved it. The answer to "may this caller approve this?" does not change with the store's
+state, and that is the sense in which the spec says the self-check "depends only on who the caller is
+and who registered the submission". The reverse order would make the registrant's refusal depend on
+whether another approval had happened, which is the state the refusal is supposed to keep separate
+from the identity.
+
+**The use case, as it should read.**
+
+```java
+public Result<SubmissionId, ApproveSubmissionError> execute(ActorContext actor,
+                                                            ApproveSubmissionCommand command) {
+    var approvedAt = clock.instant();
+    return Result.fromOptional(
+                    commandRepository.findOwn(actor.tenantId(), command.submissionId().value())
+                            .flatMap(Submission::reconstitute),         // Optional — §4.2, see note
+                    ApproveSubmissionError.SubmissionNotFound::new)
+            .flatMap(submission -> submission.approvableBy(actor))       // step 5: BR-41
+            .flatMap(submission -> approvalRepository
+                    .approve(new SubmissionApproval(submission.id(), actor.tenantId(),
+                            actor.actorId(), approvedAt))                // step 6: BR-36, BR-39
+                    .<ApproveSubmissionError>mapError(error -> error))
+            .peek(id -> eventPublisher.publish(new SubmissionDomainEvent.SubmissionApproved(
+                    idGenerator.nextEventId(), id, actor.tenantId(), actor.actorId(), approvedAt)));
+}
+```
+
+Four points about it:
+
+- **There is no `isApproved` read.** The implementation checks `isApproved` and then inserts. That
+  is a read followed by a write, which races, and the insert's conflict already settles the race. The
+  check before the insert is therefore a second path to keep correct and adds nothing. Step 6 is the
+  insert alone, and step 5 precedes it, so the spec's order is preserved. The implementation's
+  `isApproved` method is removed ([§19.11](#1911-where-the-implementation-diverges-required-changes)).
+- **`approvableBy` is on the aggregate.** The self-check compares a fact the aggregate holds, its
+  `registeredBy`, with the caller. That is a rule over data, so it stays in the domain (BR-41), and it
+  is a method on `Submission`, the one place a rule over a submission's own fields belongs.
+- **The event id comes from the id port,** the same port registration uses, so a test pins it. The
+  implementation calls `UUID.randomUUID()` inside the use case, which is a second source of randomness
+  in `domain/` ([§19.11](#1911-where-the-implementation-diverges-required-changes)).
+- **`reconstitute` returns `Optional`,** as §4.2 states. An empty result is mapped to `SubmissionNotFound`
+  here, and that is one place where a storage invariant failure becomes a refusal. The same schema
+  argument as [§9.4](#94-query-adapter) makes the branch unreachable for every row the database can hold,
+  so it is recorded as a decision, not a gap ([§19.13](#1913-questions-for-the-product-owner), Q14).
+
+### 19.5 The approval state
+
+**Decision: approval is a fact recorded beside the submission, not a column changed on it.**
+
+- The aggregate has **no state field**. `Submission` keeps the registered facts exactly as they were
+  written, and BR-38 holds by construction: nothing in this section updates the `submissions` row.
+- The state is a derived value, `SubmissionState { REGISTERED, APPROVED }`, which is **`APPROVED` if and
+  only if a row exists in `submission_approvals`** for the submission. The spec names exactly these two
+  values ("No other state exists"), so the enum has exactly two constants.
+- The table has an `INSERT` path and no `UPDATE` or `DELETE` path, so the approval, once recorded, cannot
+  change. That is BR-36, and it is enforced by the absence of a port method that could express anything
+  else ([§19.10](#1910-architecture-rules-for-approval), rule A).
+
+**Why not a column on `submissions`.** A column would make approval an `UPDATE` on the row whose
+registered facts BR-38 says must not change. The row would then have two kinds of write, which is the
+shape of mistake the immutable registered row exists to prevent. The separate row gives the state its
+own write path, and the cost is a join in search, which is cheap on the primary key
+([§19.9](#199-the-search-change)).
+
+**The transition.** `REGISTERED → APPROVED`, once, and nothing else. There is no return to
+`REGISTERED`, no second approval, and no state beyond the two. The transition is enforced in two
+places that agree: the table's primary key, which settles the race (§19.6), and the absence of any
+un-approve operation.
+
+**The approval record.** A domain record, not an aggregate, because the approval has no behaviour of its
+own:
+
+```java
+public record SubmissionApproval(SubmissionId submissionId, UUID tenantId,
+                                 String approvedBy, Instant approvedAt) {
+    /** BR-42 and OPEN-01: the approver is masked in a log; the record still carries it for the store. */
+    @Override public String toString();   // approvedBy=***
+}
+```
+
+It holds a `String` `approvedBy` and not an `ActorContext`, because the store needs the text and must
+not depend on the caller's type.
+
+### 19.6 The race (BR-39) and how the store settles it
+
+```sql
+INSERT INTO submission_approvals (submission_id, tenant_id, approved_by, approved_at, version)
+VALUES (:submissionId, :tenantId, :approvedBy, :approvedAt, 0)
+ON CONFLICT (submission_id) DO NOTHING
+```
+
+The adapter returns `Result.success(id)` when one row was inserted, and
+`Result.failure(SubmissionAlreadyApproved())` when none was.
+
+Two approvals of one submission race as follows. Both pass the self-check, since the check reads only
+the registration. Both reach the insert. The primary key admits exactly one, which gets a row count of
+`1` and is recorded. The other gets `0` and is refused as `SubmissionAlreadyApproved` (BR-39). Both are
+never recorded, because the primary key is on `submission_id` alone.
+
+- **The event is published for the winner only.** `peek` runs on the success branch, so the loser
+  announces nothing (BR-40).
+- **The conflict is a row count, not an exception.** This is the same idiom as registration's duplicate
+  (§9.1), and for the same reason: a caught `DuplicateKeyException` inside a transaction can abort it.
+  The approval is one statement, so no transaction is open to abort, but the idiom is kept so that the
+  two write paths read the same.
+- **The primary key also makes the approval once-only across tenants,** which is correct: a submission
+  id belongs to one tenant, and the composite foreign key in [§19.8](#198-schema-v3) makes that
+  consistent.
+
+### 19.7 The event `SubmissionApproved` (BR-40)
+
+```java
+record SubmissionApproved(UUID eventId, SubmissionId aggregateId, UUID tenantId,
+                          String approvedBy, Instant occurredAt) implements SubmissionDomainEvent {
+    @Override public String toString();   // approvedBy=***; no insured limit exists in this record
+}
+```
+
+- **Carries what BR-40 and §5 name:** the organisation, the submission's identity, the approving caller's
+  identity and the moment. **It does not carry the insured limit,** because the spec states that the
+  limit "is not carried" by this event, and the record has no field for it.
+- **Raised only on success,** through `peek` (§19.6).
+- **Identity from the id port:** `idGenerator.nextEventId()`, as for registration. The implementation's
+  `UUID.randomUUID()` is listed in [§19.11](#1911-where-the-implementation-diverges-required-changes).
+- **Partition key, if a transport is chosen later:** the aggregate id, as for `SubmissionRegistered`
+  ([§12.1](#121-deferred-adapter-decision-how-the-event-is-published)). The transport is still deferred.
+- **Masking (BR-42).** `toString` prints `approvedBy=***`. The accessors still carry the value, because a
+  recipient needs it (BR-42 is a rule about logs, as BR-22 is).
+
+### 19.8 Schema: V3
+
+`V2__create_submissions.sql` is unchanged. This is the approval migration, and it replaces the V3
+committed at `5bf01b3`, which has three faults under the storage-fit rules of [§15.8](#158-storage-fit-in-one-table).
+
+```sql
+-- V3: approval. Edited in place only if V3 has never been applied to any database. Otherwise V4.
+ALTER TABLE submissions
+    ADD CONSTRAINT uq_submissions_id_tenant UNIQUE (id, tenant_id);   -- a foreign-key target must be unique
+
+CREATE TABLE submission_approvals
+(
+    submission_id UUID PRIMARY KEY,                       -- one approval per submission (BR-36, BR-39)
+    tenant_id     UUID         NOT NULL,
+    approved_by   VARCHAR(255) NOT NULL,                  -- an ActorContext.actorId: ≤255 code points, no Cc
+    approved_at   TIMESTAMPTZ  NOT NULL,                  -- the clock, never the caller (BR-37)
+    version       BIGINT       NOT NULL,                  -- as in V1 and V2: the mapper must not drop it
+
+    CONSTRAINT fk_submission_approvals_submission         -- the approval's tenant IS the submission's tenant
+        FOREIGN KEY (submission_id, tenant_id)
+        REFERENCES submissions (id, tenant_id)
+);
+```
+
+**Reviewed against the storage-fit rules of §15.8, and the three faults this corrects:**
+
+- **The committed foreign key was single-column** (`FOREIGN KEY (submission_id)`). It proved the
+  submission exists but not that the approval's `tenant_id` matches the submission's. The application
+  checks the tenant first, so the state is correct today, but the database would accept a mismatched
+  row from any future write path. The composite key makes the rule a constraint rather than a
+  convention. Its target needs a unique constraint on `(id, tenant_id)`, which `submissions` does not
+  have, so the migration adds one. This is the reason for the `ALTER TABLE` at the top.
+- **The committed foreign key cascaded on delete** (`ON DELETE CASCADE`). A submission is never deleted
+  in this feature (the scope excludes it), so cascade is a deletion path that nobody should use. The
+  default `NO ACTION` is kept: a submission with an approval cannot be deleted, which is the behaviour the
+  spec's immutability implies.
+- **The committed unique index on `(tenant_id, submission_id)` is redundant.** `submission_id` is the
+  primary key, so every uniqueness fact it could state is already stated. It is removed.
+
+The remaining columns fit the value objects exactly. `approved_by` is the one `actorId`, bounded at 255
+code points by the same parse that bounds `registered_by`, and free of control characters for the same
+reason. `approved_at` is an `Instant` from the clock. `submission_id` is a canonical UUID, and the
+primary key is the one-approval rule.
+
+### 19.9 The search change
+
+**Decision: the summary read model carries the state, and the search query fills it.** BR-17 and the
+spec's section 4 state that each returned submission shows its state, visible only within the caller's
+organisation.
+
+```java
+public record SubmissionSummaryView(SubmissionId submissionId,
+                                    String externalRef,
+                                    BigDecimal insuredLimit,
+                                    String registeredBy,
+                                    Instant registeredAt,
+                                    SubmissionState state) { /* toString as before; state is not masked */ }
+
+public enum SubmissionState { REGISTERED, APPROVED }
+```
+
+`state` is not sensitive, so `toString` prints it. The insured limit and the caller stay masked.
+
+The `findPage` statement gains a `LEFT JOIN`. `countMatching` is **unchanged**, because the spec adds no
+state filter, so the count does not depend on state:
+
+```sql
+SELECT s.id AS submission_id,
+       s.external_ref,
+       s.insured_limit,
+       s.registered_by,
+       s.registered_at,
+       (a.submission_id IS NOT NULL) AS approved
+FROM submissions s
+LEFT JOIN submission_approvals a
+       ON a.submission_id = s.id
+      AND a.tenant_id     = s.tenant_id
+WHERE s.tenant_id = :tenantId
+  AND (CAST(:externalRef AS VARCHAR) IS NULL
+       OR s.external_ref = CAST(:externalRef AS VARCHAR))
+  -- the insured-limit and registration-moment predicates are as in §6, prefixed with s.
+ORDER BY s.registered_at DESC, s.id DESC
+LIMIT :limit OFFSET :offset
+```
+
+- **The projection record gains `boolean approved`,** and the adapter maps it to `SubmissionState`. A
+  primitive in an adapter projection is correct: the projection is a row, not a domain value.
+- **The join is on the primary key of `submission_approvals`,** so it is a single index probe per row. The
+  row count stays bounded by `LIMIT`, so the join adds no per-page cost that grows with the table.
+- **The tenant predicate appears in the join as well as in `WHERE`.** The composite foreign key makes the
+  two equal, so the join's copy is redundant. It is kept because it states the rule where the reader is
+  looking, and it costs nothing.
+- **Filtering by state is not added.** The spec specifies that state is shown and says nothing about
+  filtering by it. Adding a filter would invent a criterion, so it is a question ([§19.13](#1913-questions-for-the-product-owner)).
+
+### 19.10 Architecture rules for approval
+
+These are the rules that apply to approval, in addition to the CQS rules of [§15.10](#1510-cqs-rules-verbatim)
+and the access rules of [§16.4](#164-bypass-is-a-build-failure). Each matches at least one class, so
+`failOnEmptyShould` holds, and each must be broken on purpose once.
+
+**Rule A: no operation reverses or rewrites a registered or approved fact.**
+
+```java
+@ArchTest
+static final ArchRule no_operation_reverses_or_rewrites_a_recorded_fact =
+        noMethods()
+                .that().areDeclaredInClassesThat().resideInAPackage("..domain..")
+                .should().haveNameMatching(
+                        "(?i).*(unapprove|revoke|withdraw|reverse|cancel|amend|delete|update|remove).*")
+                .because("an approval is final (BR-36) and a registered fact never changes (BR-38); "
+                        + "an operation that reverses or rewrites either must not exist, because a port "
+                        + "method is the only way a write can happen");
+```
+
+This pins the immutability as structure. It matches by name, which is a weaker proof than the type, and
+the rule says so in its own name: it guards the common ways such a method gets written, and a reviewer
+must still read a method that avoids the words.
+
+**Rule B: the approval use case is a write, and depends on no read type.** The general rule
+`write_use_cases_do_not_depend_on_the_read_side` already matches `ApproveSubmissionUseCase`, because it
+exposes `execute`. This explicit rule names it, so a reader of the rules sees approval covered:
+
+```java
+@ArchTest
+static final ArchRule approval_use_case_depends_on_no_read_type =
+        noClasses()
+                .that().haveSimpleName("ApproveSubmissionUseCase")
+                .should().dependOnClassesThat()
+                .haveSimpleNameEndingWith("QueryRepository")
+                .or().haveSimpleNameEndingWith("View")
+                .or().haveSimpleNameEndingWith("Query")
+                .or().haveSimpleName("SubmissionFilter")
+                .or().haveSimpleName("SubmissionSearchCriteria")
+                .because("approval is a write (execute): it decides on the aggregate through its own port, "
+                        + "and a read type in its dependencies would mean it decides on loaded projections");
+```
+
+**Rule C: only the approval use case announces an approval.**
+
+```java
+@ArchTest
+static final ArchRule only_the_approval_use_case_announces_an_approval =
+        noClasses()
+                .that().doNotHaveSimpleName("ApproveSubmissionUseCase")
+                .should().callConstructor(SubmissionDomainEvent.SubmissionApproved.class)
+                .because("BR-40: an approval is announced exactly when an approval succeeds, and the single place "
+                        + "that knows it succeeded is the use case, after the insert");
+```
+
+**Rule D: the approval permission is built only in configuration,** which is the existing rule
+`gates_are_constructed_only_by_wiring` ([§16.4](#164-bypass-is-a-build-failure), A2). Nothing new is
+written, but approval is named here so that the rule is seen to cover it.
+
+**Rule E: the approval's raw input is parsed in `domain/`,** which is the existing rule
+`raw_input_enters_only_through_parse`. `ApproveSubmissionCommand.parse(String)` and
+`SubmissionId.parse(String)` are both named `parse`, so both comply, and `CanonicalUuid.parse` in the
+kernel is outside the rule's scope and is the only place the format is decided.
+
+### 19.11 Where the implementation diverges: required changes
+
+Every item is a change the developer makes. The implementation is at `5bf01b3` and HEAD. Each item cites
+the design section it must match. Severity follows the review scale in `architect.agent.md`.
+
+| # | Divergence | Where | Required change | Severity |
+|---|---|---|---|---|
+| D1 | The identity is converted before the gate. `@PathVariable UUID id` makes Spring parse it, and a malformed value is a framework `400`. | `SubmissionApprovalController.approve` | Declare `@PathVariable String id`. Admit first, then `ApproveSubmissionCommand.parse(id)`, inside the admitted branch. A test pins a Viewer naming `not-a-uuid` to `403` ([§19.12](#1912-tests)). | **BLOCKER** |
+| D2 | Spring's `UUID` converter is lenient. `1-1-1-1-1` parses to a real UUID, which may name an existing submission. | the same path conversion | Fixed by D1 together with `CanonicalUuid.parse` ([§19.2](#192-the-command-and-its-value-objects)). Without `CanonicalUuid`, D1 still lets lenient text reach `findOwn`. | **BLOCKER** |
+| D3 | The self-approval check is absent. | `ApproveSubmissionUseCase.execute` | Add `Submission.approvableBy(actor)` returning `ApproverRegisteredSubmission` when `registeredBy` equals the caller's identity. Call it after the lookup and before the insert ([§19.4](#194-the-check-order-and-which-part-enforces-each-step)). | **BLOCKER** (BR-41) |
+| D4 | `ApproveSubmissionError` has two variants, not three: `ApproverRegisteredSubmission` is missing. | `ApproveSubmissionError.java` | Add the variant, and the mapping to `403` with type `approver-registered-submission`. | CRITICAL |
+| D5 | `SubmissionNotFound` carries a `SubmissionId`. A malformed identity has none to carry, so the variant cannot represent the spec's case. | `ApproveSubmissionError.java`, the use case, the controller | Make `SubmissionNotFound` fieldless, as in §19.3. The three cases are then indistinguishable by construction. | CRITICAL |
+| D6 | The not-found problem echoes the identity: `"Submission " + submissionId.value() + " was not found."`. For a malformed identity that is the raw path text, which is reflected untrusted input. | `SubmissionApprovalController.refused` | Use constant text with no echo, for every case (§19.3). | CRITICAL |
+| D7 | The event identity is `UUID.randomUUID()` inside the use case, a second source of randomness in `domain/`. | `ApproveSubmissionUseCase.execute` | Take `SubmissionIdGenerator` in the constructor and call `nextEventId()`. | WARNING |
+| D8 | The approval state is absent from search. The summary view, its projection, and `findPage` have no state. | `SubmissionSummaryView`, `SubmissionSummaryJdbcProjection`, `SubmissionQueryJdbcRepository` | Add `SubmissionState`, the `approved` projection, the `LEFT JOIN` of [§19.9](#199-the-search-change). `countMatching` is unchanged. Spec §4 requires it. | CRITICAL |
+| D9 | V3's foreign key is single-column, cascades on delete, and the unique index is redundant. | `V3__create_submission_approvals.sql` | Replace with [§19.8](#198-schema-v3): composite foreign key, unique `(id, tenant_id)` on `submissions`, no cascade, no redundant index. Verify first that V3 is not applied anywhere. | CRITICAL |
+| D10 | The approval refusals are folded in two switches, with no union. | `SubmissionApprovalController.refused`, `refusedAccess` | Add `ApproveRefusal` and one flat exhaustive switch over it, as registration does (§19.3). | WARNING |
+| D11 | `isApproved` is a read before the insert: a second path to keep correct, and it races. | `SubmissionApprovalRepository`, its adapter, the use case | Remove `isApproved`. The insert's conflict is the already-approved answer ([§19.4](#194-the-check-order-and-which-part-enforces-each-step)). | WARNING |
+| D12 | `Submission.reconstitute` does not re-parse the stored values, and it returns `Submission`, not `Optional`. §4.2 requires both. | `Submission.reconstitute` | Re-parse with `ExternalReference.parse` and `InsuredLimit.parse`, return `Optional<Submission>`, and map empty in the approval use case as [§19.4](#194-the-check-order-and-which-part-enforces-each-step) states. | WARNING |
+| D13 | The role rule is `ActorRole.canDecide()`, shared by registration and approval, and the design deleted that method in revision 3. | `ActorRole.java`, `SubmissionConfiguration` | Either keep `canDecide()` and record it as the business role set, which the product owner confirmed for both operations, or replace it with an explicit two-role set in configuration code. The set must not be configurable at runtime, since BR-33 is a business rule. A test pins the set to exactly the two approving roles. | WARNING |
+| D14 | The `AccessPolicy` seam is in the implementation and absent from the design. | `AccessPolicy.java` | Accept it as the named form of the permission data, with D13's fixed set behind it. The design's permission table ([§13](#13-wiring)) and the seam must name the same two roles. | WARNING |
+| D15 | The tests deleted in `5bf01b3` from registration are not restored, by the product owner's decision. | `RegisterSubmissionUseCaseTest` | Not restored. The test designer judges the coverage, and [§19.12](#1912-tests) lists what approval needs. | (decision) |
+
+Two further points. The implementation's `SubmissionApproved` record and `toString` already satisfy
+BR-42 for the event, and the approval record has no `toString` yet, which the developer must add
+([§19.5](#195-the-approval-state)). And the approval port returns a `Result` whose error type is
+`ApproveSubmissionError`; the design narrows it to the one variant the insert can produce, as the
+registration port does, so the adapter cannot fabricate another refusal.
+
+### 19.12 Tests
+
+Written by `@test-designer` at the red stage, in the same style as the registration tests. The use-case
+tests use the in-memory fakes; the gate and the edge tests need no Spring; the database tests are
+integration tests with a real PostgreSQL.
+
+- **The check order, pinned.** A table over the cases in the spec's worked examples: no caller, a Viewer
+  naming another organisation's submission, an underwriter naming an unknown one, an underwriter naming
+  their own, an underwriter naming someone else's approved submission, and an underwriter naming someone
+  else's unapproved one. Each row asserts the one refusal, or the success.
+- **Self-approval before already-approved (BR-41).** A registrant re-approving a submission that is
+  already approved by another caller receives `ApproverRegisteredSubmission`, not `SubmissionAlreadyApproved`.
+  This pins the order rationale of §19.4.
+- **Self-approval is refused and records nothing.** After the refusal, the fake approval store holds no row,
+  and the fake publisher received no event.
+- **The malformed identity (D1, D2, D5, D6).** Over the MVC layer with a stub resolver: a Viewer naming
+  `not-a-uuid` receives `403`; an underwriter naming `not-a-uuid` receives `404` with the same body as an
+  unknown submission; `1-1-1-1-1`, which lenient parsing would accept, receives `404`; the body contains no
+  echo of the path text.
+- **Cross-organisation is the same as unknown (BR-35).** An underwriter naming another organisation's
+  submission receives the same `404` body as an unknown one. The two bodies are compared byte for byte.
+- **The race (BR-39).** Two approvals of one submission against an approval store whose insert honours a
+  primary key. Exactly one success, exactly one `SubmissionAlreadyApproved`, exactly one event.
+- **The event (BR-40, BR-42).** The event carries the approver, the moment and no insured limit; it is
+  published once on success and never on refusal; its `toString` does not contain the approver's identity;
+  the approval record's `toString` does not either.
+- **The event id is pinned** through the fixed id generator (D7).
+- **The approval roles (D13).** The permission admits exactly `UNDERWRITER` and `SENIOR_UNDERWRITER`, and
+  refuses `VIEWER`, by a matrix that covers every value of `ActorRole`.
+- **Search shows state (BR-17, D8).** A search returns `REGISTERED` for an unapproved row and `APPROVED` for
+  an approved one, both in the caller's own organisation. A search by another organisation shows neither.
+  The count is unchanged by state.
+- **Schema, integration (D9).** A row in `submission_approvals` whose `tenant_id` differs from its
+  submission's is rejected by the database. A second approval of one submission is refused by the
+  primary key. Deleting an approved submission is refused rather than cascaded.
+- **The race, integration.** Two concurrent approvals against real PostgreSQL: exactly one row.
+- **The write-side purity rules** of §19.10, each broken on purpose once.
+
+### 19.13 Questions for the product owner
+
+- **Q10. Is `403` the right status for "approver registered this submission"?** The spec names the
+  refusal and gives no status. The design uses `403`, because the caller is known and admitted, and the
+  refusal concerns their own relation to a submission they can see. The alternative is `409`, as for an
+  already-approved submission. This is an engineering choice, not a business rule, and the product owner
+  is asked only to confirm it does not carry a business meaning.
+- **Q11. Should search filter by state?** The spec shows state and specifies no state filter, so the design
+  adds none. If a filter is wanted, it is a new criterion and a new BR.
+- **Q12. Is there a logging requirement for approvals beyond BR-42?** BR-42 says an approver's identity is
+  absent from the log entry, and "any operation by an approver is logged". The repository writes no log
+  lines of its own, and the spec does not say what an approval log must contain or where it goes. The
+  design satisfies BR-42 wherever a value is rendered, and it does not design a logging facility.
+- **Q13. Must a refused approval be recorded for audit?** The spec says a refusal "records nothing". This
+  section follows that. If audit needs refusals recorded, that is a new business fact, and it affects BR-43.
+- **Q14. A stored row that fails to parse is reported as not found (§19.4).** The schema makes this
+  unreachable for every row the database can hold, as §9.4 argues. The product owner is told the branch
+  exists, so that a future change to the schema's constraints is seen to affect it.
+
+### 19.14 What this section changes elsewhere in the design
+
+- §1 scope and §14 "Not doing" are amended in place: approval is in scope, and the statements that it is
+  not are withdrawn.
+- §5.3 gains the state on the view; §6 is amended by the `LEFT JOIN` of §19.9.
+- §8 gains a pointer to V3, which is specified here.
+- §10 masking gains the approver, and §12 gains `SubmissionApproved`.
+- §18 is the revision-4 change list for registration and search. The approval changes are the developer's
+  list in §19.11.
 
 ---
 
