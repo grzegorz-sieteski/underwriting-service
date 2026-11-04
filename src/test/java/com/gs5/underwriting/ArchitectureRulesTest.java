@@ -1,6 +1,8 @@
 package com.gs5.underwriting;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
+import com.gs5.underwriting.submission.domain.SubmissionDomainEvent;
+import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaMethod;
@@ -15,12 +17,15 @@ import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
 
 import java.math.BigDecimal;
+import java.time.Instant;
+import java.util.UUID;
 
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleName;
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameEndingWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 
 /**
@@ -402,6 +407,55 @@ class ArchitectureRulesTest {
             noClasses()
                     .should().dependOnClassesThat().areAssignableTo(ThreadLocal.class)
                     .because("the service runs on virtual threads; use ActorContext / ScopedValue");
+
+    // ------------------------------------------------ approval (design §19.10, rules A to C)
+
+    /*
+     * API NOTE, checked against ArchUnit 1.5.1 with javac: rule B in the design chains `.or()` after
+     * `dependOnClassesThat().haveSimpleNameEndingWith(..)`. That does not compile, because `or()` is not
+     * on ClassesShouldConjunction. Rule B passes one combined predicate, as the CQS rules above do.
+     * Rules A and C compile exactly as written in the design.
+     *
+     * All three pass at HEAD, which is correct for guards: HEAD violates none of them. Each must be
+     * shown to fail by breaking the code on purpose once, as ADR section 19.10 requires.
+     *
+     * Rule C as written in the design, `callConstructor(SubmissionApproved.class)`, compiles and
+     * passes even when a violation exists. ArchUnit reads that overload as "a constructor taking no
+     * parameters", and SubmissionApproved has none, so the rule could never match. The canonical
+     * constructor's parameter types are therefore stated. Caught by the deliberate break, not by review.
+     */
+
+    @ArchTest
+    static final ArchRule no_operation_reverses_or_rewrites_a_recorded_fact =
+            noMethods()
+                    .that().areDeclaredInClassesThat().resideInAPackage("..domain..")
+                    .should().haveNameMatching(
+                            "(?i).*(unapprove|revoke|withdraw|reverse|cancel|amend|delete|update|remove).*")
+                    .because("an approval is final (BR-36) and a registered fact never changes (BR-38); "
+                            + "an operation that reverses or rewrites either must not exist, because a port "
+                            + "method is the only way a write can happen");
+
+    @ArchTest
+    static final ArchRule approval_use_case_depends_on_no_read_type =
+            noClasses()
+                    .that().haveSimpleName("ApproveSubmissionUseCase")
+                    .should().dependOnClassesThat(
+                            simpleNameEndingWith("QueryRepository")
+                                    .or(simpleNameEndingWith("View"))
+                                    .or(simpleNameEndingWith("Query"))
+                                    .or(simpleName("SubmissionFilter"))
+                                    .or(simpleName("SubmissionSearchCriteria")))
+                    .because("approval is a write (execute): it decides on the aggregate through its own port, "
+                            + "and a read type in its dependencies would mean it decides on loaded projections");
+
+    @ArchTest
+    static final ArchRule only_the_approval_use_case_announces_an_approval =
+            noClasses()
+                    .that().doNotHaveSimpleName("ApproveSubmissionUseCase")
+                    .should().callConstructor(SubmissionDomainEvent.SubmissionApproved.class,
+                            UUID.class, SubmissionId.class, UUID.class, String.class, Instant.class)
+                    .because("BR-40: an approval is announced exactly when an approval succeeds, and the single place "
+                            + "that knows it succeeded is the use case, after the insert");
 
     // ----------------------------------------------------------- messaging
 

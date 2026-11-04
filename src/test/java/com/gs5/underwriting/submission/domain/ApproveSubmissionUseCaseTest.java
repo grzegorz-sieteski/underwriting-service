@@ -24,8 +24,12 @@ class ApproveSubmissionUseCaseTest {
     private static final UUID TENANT_B = UUID.fromString("0b000000-0000-0000-0000-00000000000b");
     private static final Instant APPROVED_AT = Instant.parse("2026-11-02T12:00:00Z");
 
+    /** Registered the submission in setUp, so may not approve it (BR-41). */
     private static final ActorContext UNDERWRITER =
             new ActorContext(TENANT_A, "uw-01", ActorRole.UNDERWRITER);
+    /** Did not register the submission, so may approve it. */
+    private static final ActorContext OTHER_UNDERWRITER =
+            new ActorContext(TENANT_A, "uw-02", ActorRole.UNDERWRITER);
     private static final ActorContext SENIOR_UNDERWRITER =
             new ActorContext(TENANT_A, "suw-01", ActorRole.SENIOR_UNDERWRITER);
     private static final SubmissionId SUBMISSION_ID = new SubmissionId(UUID.fromString("11111111-1111-1111-1111-111111111111"));
@@ -64,13 +68,13 @@ class ApproveSubmissionUseCaseTest {
     }
 
     @Test
-    @DisplayName("an underwriter can approve an existing submission")
+    @DisplayName("an underwriter who did not register the submission can approve it")
     void shouldApproveSubmissionWhenCallerIsAllowed() {
         // Given
         var command = new ApproveSubmissionCommand(SUBMISSION_ID);
 
         // When
-        var result = useCase.execute(UNDERWRITER, command);
+        var result = useCase.execute(OTHER_UNDERWRITER, command);
 
         // Then
         assertThat(result).isEqualTo(Result.success(SUBMISSION_ID));
@@ -94,9 +98,52 @@ class ApproveSubmissionUseCaseTest {
                 new ApproveSubmissionError.SubmissionAlreadyApproved(SUBMISSION_ID)));
     }
 
+    @Test
+    @DisplayName("the registrant of a submission may not approve it, and nothing is recorded or announced (BR-41)")
+    void shouldRefuseSelfApprovalAndRecordNothing() {
+        // Given
+        var command = new ApproveSubmissionCommand(SUBMISSION_ID);
+
+        // When
+        var result = useCase.execute(UNDERWRITER, command);
+
+        // Then
+        assertThat(refusalNameOf(result)).isEqualTo("ApproverRegisteredSubmission");
+        assertThat(approvalRepository.approvalCount()).isZero();
+        assertThat(eventPublisher.publishedEvents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("self-approval is refused before already-approved, so an earlier approval does not change the answer (BR-41, BR-34)")
+    void shouldRefuseSelfApprovalBeforeAlreadyApproved() {
+        // Given
+        approvalRepository.approve(TENANT_A, SUBMISSION_ID, SENIOR_UNDERWRITER, APPROVED_AT);
+        var command = new ApproveSubmissionCommand(SUBMISSION_ID);
+
+        // When
+        var result = useCase.execute(UNDERWRITER, command);
+
+        // Then
+        assertThat(refusalNameOf(result)).isEqualTo("ApproverRegisteredSubmission");
+    }
+
+    /**
+     * The simple name of the refusal, or "no refusal". Names the variant without referring to it,
+     * so this test compiles before the variant exists and fails for the right reason.
+     */
+    private static String refusalNameOf(Result<SubmissionId, ApproveSubmissionError> result) {
+        return result.errorToOptional()
+                .map(error -> error.getClass().getSimpleName())
+                .orElse("no refusal");
+    }
+
     private static final class InMemorySubmissionApprovalRepository implements SubmissionApprovalRepository {
 
         private final Map<UUID, SubmissionApproval> approvals = new ConcurrentHashMap<>();
+
+        int approvalCount() {
+            return approvals.size();
+        }
 
         @Override
         public boolean isApproved(UUID tenantId, SubmissionId submissionId) {
