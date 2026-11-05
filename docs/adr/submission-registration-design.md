@@ -12,7 +12,7 @@ engineering decision with its reasoning. Nothing else in this document invents a
 > no `query/` package. Read use cases live in `domain/` next to write use cases.
 >
 > - **Why.** The ban on `query/` importing `domain/` forced duplication and primitive obsession, and
->   it has already happened in this repository. `ReferenceCriterion` duplicated `ExternalReference`.
+>   it has already happened in this repository. `NumberCriterion` duplicated `SubmissionNumber`.
 >   `ControlCharacters` had to be placed in the kernel only so two packages could both reach it.
 >   Views carried raw `UUID` and `String` instead of `SubmissionId` and domain types. CQS is a
 >   separation of *responsibility*, not of folders, and it is now enforced by the one public method
@@ -25,8 +25,8 @@ engineering decision with its reasoning. Nothing else in this document invents a
 > - **The caller-facing contract is unchanged.** Registration is still refused for exactly nine
 >   reasons. Search is still refused for exactly one, now proven by a test rather than by the type
 >   ([§5.2](#52-refusals-search-still-has-exactly-one)).
-> - **`ReferenceCriterion` is deleted.** Search filters reuse `ExternalReference`. An empty reference
->   is "not supplied" (BR-31), and a reference with a control character is "matches nothing" (BR-30).
+> - **`NumberCriterion` is deleted.** Search filters reuse `SubmissionNumber`. An empty number
+>   is "not supplied" (BR-31), and a number with a control character is "matches nothing" (BR-30).
 > - **`ControlCharacters` stays in `shared/kernel`,** for a reason that is now the only one left
 >   ([§15.5](#155-the-single-definition-of-category-cc)).
 > - **The change list** of every class, test, rule, instruction, skill, agent and AGENTS.md section
@@ -94,8 +94,8 @@ submission/
 ├── domain/
 │   ├── package-info.java               @NullMarked
 │   ├── SubmissionId.java               public record
-│   ├── ExternalReference.java          public final class — value object; parse returns ExternalReferenceError
-│   ├── ExternalReferenceError.java     public sealed interface — 3 variants, shared by both sides (§15.2)
+│   ├── SubmissionNumber.java          public final class — value object; parse returns SubmissionNumberError
+│   ├── SubmissionNumberError.java     public sealed interface — 3 variants, shared by both sides (§15.2)
 │   ├── InsuredLimit.java               public final class — value object, parse(...)
 │   ├── RegisterSubmissionCommand.java  public record of the two value objects, parse(...)
 │   ├── RegisterSubmissionError.java    public sealed interface — 7 variants
@@ -109,15 +109,15 @@ submission/
 │   ├── SearchSubmissionsQuery.java     public record — filter, page, size
 │   ├── SubmissionFilter.java           public sealed interface — Narrowing | MatchesNothing (§5.1)
 │   ├── SearchSubmissionsUseCase.java   public final class — ask(ActorContext, Query)
-│   ├── SubmissionSearchCriteria.java   public record — tenant + four filters + reference
+│   ├── SubmissionSearchCriteria.java   public record — tenant + four filters + number
 │   ├── SubmissionSummaryView.java      public record — one result row, domain types
 │   ├── SubmissionPageView.java         public record — page + total count
 │   └── SubmissionQueryRepository.java  public interface — outbound port (read)
-│                                       (no ReferenceCriterion; no SearchSubmissionsError — both deleted)
+│                                       (no NumberCriterion; no SearchSubmissionsError — both deleted)
 └── adapters/
     ├── access/       ActorRole (moved from the kernel), AuthenticatedCaller, AccessRefusal,
     │                 CallerNotIdentified, PermissionDenied, Permission, OperationGate, Admission
-    ├── web/          SubmissionCommandController, SubmissionQueryController, RegisterSubmissionRequest,
+    ├── web/          SubmissionCommandResource, SubmissionQueryResource, RegisterSubmissionRequest,
     │                 RegisterRefusal (union), ActorContextResolver
     ├── persistence/  command and query adapters, JDBC repositories, entity, mapper (package-private)
     ├── <publishing adapter, deferred — §12.1>
@@ -131,7 +131,7 @@ submission/
 
 | Command record | Use case method | Returns | Event on success |
 |---|---|---|---|
-| `RegisterSubmissionCommand` | `execute(ActorContext actor, RegisterSubmissionCommand command)` | `Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>` | `SubmissionDomainEvent.SubmissionRegistered` |
+| `RegisterSubmissionCommand` | `execute(ActorContext actor, RegisterSubmissionCommand command)` | `Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed>` | `SubmissionDomainEvent.SubmissionRegistered` |
 
 The use case refuses on exactly one ground, because by the time it runs everything else has been
 decided: the caller was identified and permitted at the adapter, and the input was parsed into
@@ -141,15 +141,15 @@ values that cannot be invalid. What the *service* answers to a caller is richer,
 ### 3.1 The command record
 
 ```java
-public record RegisterSubmissionCommand(ExternalReference externalRef, InsuredLimit insuredLimit) {
+public record RegisterSubmissionCommand(SubmissionNumber submissionNumber, InsuredLimit insuredLimit) {
 
     /**
-     * Reference first (missing, too long, control character), then the amount (missing, not
+     * Number first (missing, too long, control character), then the amount (missing, not
      * positive, wrong precision) — the order of judgement in the specification. The first
      * failure is the refusal; nothing later is examined.
      */
     public static Result<RegisterSubmissionCommand, RegisterSubmissionError> parse(
-            @Nullable String externalRef, @Nullable BigDecimal insuredLimit);
+            @Nullable String submissionNumber, @Nullable BigDecimal insuredLimit);
 }
 ```
 
@@ -166,13 +166,13 @@ The command carries neither the organisation, nor the registering caller, nor th
 moment (BR-15): those come from the admitted `ActorContext` and from the `Clock`.
 
 `parse` is where the specification's order of judgement for steps 3 and 4 lives, **once, in the
-domain**, so a second adapter cannot judge the reference and the amount in a different order.
+domain**, so a second adapter cannot judge the number and the amount in a different order.
 Whether the caller may call the operation at all is not decided here, or anywhere in the domain
 ([§16](#16-the-access-guard)); `parse` is simply never reached for a caller who was refused.
 
 | Input | Required | Constraint | Enforced by | Refused as |
 |---|---|---|---|---|
-| reference | yes | present and not empty (BR-04); at most 64 code points (BR-05); no category-Cc character (BR-29); never trimmed or case-folded (BR-07) | `ExternalReference.parse` | `ReferenceMissing`, `ReferenceTooLong`, `ReferenceContainsControlCharacter` |
+| number | yes | present and not empty (BR-04); at most 64 code points (BR-05); no category-Cc character (BR-29); never trimmed or case-folded (BR-07) | `SubmissionNumber.parse` | `NumberMissing`, `NumberTooLong`, `NumberContainsControlCharacter` |
 | insured limit | yes | present (BR-10); strictly positive (BR-11); exactly two decimal places (BR-12); no upper bound (BR-13); euro, no currency (BR-14) | `InsuredLimit.parse` | `InsuredLimitMissing`, `InsuredLimitNotPositive`, `InsuredLimitPrecisionInvalid` |
 
 ### 3.2 Refusals: nine as the caller sees them
@@ -189,16 +189,16 @@ public record PermissionDenied(ActorRole role) implements AccessRefusal { }     
 
 // domain — produced by the value objects' parse and by the persistence port
 public sealed interface RegisterSubmissionError {
-    record ReferenceMissing() implements RegisterSubmissionError { }                          // BR-04
-    record ReferenceTooLong(int maxLength, int actualLength)
+    record NumberMissing() implements RegisterSubmissionError { }                          // BR-04
+    record NumberTooLong(int maxLength, int actualLength)
             implements RegisterSubmissionError { }                                            // BR-05
-    record ReferenceContainsControlCharacter(int codePoint, int index)
+    record NumberContainsControlCharacter(int codePoint, int index)
             implements RegisterSubmissionError { }                                            // BR-29
     record InsuredLimitMissing() implements RegisterSubmissionError { }                       // BR-10
     record InsuredLimitNotPositive() implements RegisterSubmissionError { }                   // BR-11
     record InsuredLimitPrecisionInvalid(int requiredScale, int actualScale)
             implements RegisterSubmissionError { }                                            // BR-12
-    record ReferenceAlreadyUsed(String externalRef)
+    record NumberAlreadyUsed(String submissionNumber)
             implements RegisterSubmissionError { }                                            // BR-06, BR-09
 }
 ```
@@ -207,13 +207,13 @@ public sealed interface RegisterSubmissionError {
 |---|---|---|---|---|---|
 | 1 | Caller not identified | **adapter** | `OperationGate.admit` | BR-01 | 401 |
 | 2 | Role may not register | **adapter** | `OperationGate.admit`, as `PermissionDenied(role)` | BR-02 | 403 |
-| 3 | Reference missing | domain `Result` | `ExternalReference.parse` | BR-04 | 400 |
-| 4 | Reference too long | domain `Result` | `ExternalReference.parse` | BR-05 | 400 |
-| 5 | Reference contains a control character | domain `Result` | `ExternalReference.parse` | BR-29 | 400 |
+| 3 | Number missing | domain `Result` | `SubmissionNumber.parse` | BR-04 | 400 |
+| 4 | Number too long | domain `Result` | `SubmissionNumber.parse` | BR-05 | 400 |
+| 5 | Number contains a control character | domain `Result` | `SubmissionNumber.parse` | BR-29 | 400 |
 | 6 | Insured limit missing | domain `Result` | `InsuredLimit.parse` | BR-10 | 400 |
 | 7 | Insured limit not positive | domain `Result` | `InsuredLimit.parse` | BR-11 | 400 |
 | 8 | Insured limit precision invalid | domain `Result` | `InsuredLimit.parse` | BR-12 | 400 |
-| 9 | Reference already used | domain `Result` | the persistence port, inside `execute` | BR-06, BR-09 | 409 |
+| 9 | Number already used | domain `Result` | the persistence port, inside `execute` | BR-06, BR-09 | 409 |
 
 The numbering is the spec's order of judgement, and it is the order they are tried in. Rows 1-2
 are decided before any input is parsed; rows 3-8 are decided when the adapter calls the domain's
@@ -252,10 +252,10 @@ bag of errors across operations" is about business errors and should say so
 
 **No variant carries a sensitive value** (BR-22, OPEN-01). No variant carries the insured limit:
 `InsuredLimitNotPositive` carries nothing, and `InsuredLimitPrecisionInvalid` carries two scales,
-which are a property of the notation and not of the magnitude. `ReferenceContainsControlCharacter`
+which are a property of the notation and not of the magnitude. `NumberContainsControlCharacter`
 carries two **numbers**, the code point and its zero-based code-point index, and never the
 character itself: a raw NEWLINE in an error record forges a log line and a raw NUL truncates one.
-`ReferenceAlreadyUsed` carries the reference, which BR-23 allows, and is rendered with
+`NumberAlreadyUsed` carries the number, which BR-23 allows, and is rendered with
 category-Cc code points escaped ([§10](#10-logging-and-masking)). `PermissionDenied` carries the
 role, which identifies nobody. No variant carries `actorId`.
 
@@ -269,7 +269,7 @@ public final class RegisterSubmissionUseCase {
                                      SubmissionIdGenerator idGenerator,
                                      Clock clock);
 
-    public Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> execute(
+    public Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed> execute(
             ActorContext actor, RegisterSubmissionCommand command);
 }
 ```
@@ -279,7 +279,7 @@ insert it and, on success only, publish the event.
 
 ```java
 var submission = Submission.register(idGenerator.nextSubmissionId(), actor,
-        command.externalRef(), command.insuredLimit(), clock.instant());
+        command.submissionNumber(), command.insuredLimit(), clock.instant());
 return repository.insert(submission.toSnapshot())
         .peek(_ -> eventPublisher.publish(submission.registeredEvent(idGenerator.nextEventId())));
 ```
@@ -295,12 +295,12 @@ Four points about it:
   ([§16.2](#162-the-shape)). The use case reads `actor.tenantId()` and `actor.actorId()` and
   nothing else; there is no role to read.
 - **The error type is narrowed to the one variant `execute` can return.** The port already
-  returns `Result<SubmissionId, ReferenceAlreadyUsed>`, so the pipeline passes it straight through:
+  returns `Result<SubmissionId, NumberAlreadyUsed>`, so the pipeline passes it straight through:
   the `.mapError(error -> error)` widening the previous revision needed is gone, and a test can no
-  longer be written that expects `execute` to return a reference or amount refusal, because the
+  longer be written that expects `execute` to return a number or amount refusal, because the
   type says it cannot.
 - **`peek` is what makes "no event for a refused registration" structural.** It runs its side
-  effect on the success branch only, so a `ReferenceAlreadyUsed` cannot reach the publisher. The
+  effect on the success branch only, so a `NumberAlreadyUsed` cannot reach the publisher. The
   insert comes first for the same reason: the BR-09 race is settled by the database, so nothing is
   announced until the row exists.
 - Only methods already on `shared/kernel/Result.java` are used (`peek`). No combinator is
@@ -317,9 +317,9 @@ public interface SubmissionCommandRepository {
 
     /**
      * Inserts a never-before-persisted submission. Returns the refusal when the caller's own
-     * organisation already used this exact reference (BR-06, BR-09).
+     * organisation already used this exact number (BR-06, BR-09).
      */
-    Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> insert(
+    Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed> insert(
             SubmissionSnapshot snapshot);
 }
 
@@ -382,17 +382,17 @@ side effects, and the second can fail after the first has succeeded. If `publish
   The spec now says a caller must never receive an unexplained failure for an input it calls valid,
   and that if one does, the refusal catalogue is wrong. The NUL finding was exactly that: a property
   **of the input** made the operation impossible for every attempt, deterministically, so it was a
-  missing refusal reason. A publishing failure is not a property of the input — no reference and no
+  missing refusal reason. A publishing failure is not a property of the input — no number and no
   amount makes it more or less likely, every input is still valid, and the state change did happen.
   It is a transient infrastructure failure, which is the one thing a 500 legitimately means. The
   distinction is the test to apply the next time this question comes up: **if the same input always
   fails, it is a missing refusal reason; if the same input usually succeeds, it is an outage.** Flagged
   in [§11](#11-open-questions) so it is reviewed rather than assumed.
-- **The one mitigation that comes free is worth naming:** the reference is a *caller-supplied*
+- **The one mitigation that comes free is worth naming:** the number is a *caller-supplied*
   natural key, unique per organisation (BR-06). A caller who retries after an ambiguous failure gets
-  `ReferenceAlreadyUsed`, not a second submission. The operation is therefore idempotent on the
+  `NumberAlreadyUsed`, not a second submission. The operation is therefore idempotent on the
   caller's own key by construction — no double registration is possible — and the caller can
-  confirm the outcome by searching for the reference. BR-09 and BR-06 do this work; no design
+  confirm the outcome by searching for the number. BR-09 and BR-06 do this work; no design
   element was added for it.
 
 **Accepted:** at-most-once announcement, with exactly-once state and a safe retry. **Rejected:**
@@ -420,7 +420,7 @@ final class Submission {              // PACKAGE-PRIVATE — not public, no publ
 
     private final SubmissionId id;
     private final UUID tenantId;                  // BR-15: the admitted caller's organisation
-    private final ExternalReference externalRef;  // value object — valid by construction
+    private final SubmissionNumber submissionNumber;  // value object — valid by construction
     private final InsuredLimit insuredLimit;      // value object — valid by construction
     private final String registeredBy;            // ActorContext.actorId, already parsed
     private final Instant registeredAt;
@@ -428,7 +428,7 @@ final class Submission {              // PACKAGE-PRIVATE — not public, no publ
 
     /** New submission. Total: it cannot fail, because nothing it receives can be invalid. */
     static Submission register(SubmissionId id, ActorContext actor,
-                               ExternalReference externalRef, InsuredLimit insuredLimit,
+                               SubmissionNumber submissionNumber, InsuredLimit insuredLimit,
                                Instant registeredAt);
 
     /** Rebuilds state loaded from the database by parsing the stored values again. */
@@ -453,13 +453,13 @@ the aggregate fills, so it keeps raw `String` and `BigDecimal` fields and its ex
 | Invariant | Rule | Was | Now |
 |---|---|---|---|
 | role permits registering | BR-02, BR-03 | `Submission.register` | the guard, in `adapters/access` ([§16](#16-the-access-guard)) |
-| reference present | BR-04 | `Submission.register` | `ExternalReference.parse` |
-| reference length | BR-05 | `Submission.register` | `ExternalReference.parse` |
-| no control character | BR-29 | `Submission.register` | `ExternalReference.parse` |
+| number present | BR-04 | `Submission.register` | `SubmissionNumber.parse` |
+| number length | BR-05 | `Submission.register` | `SubmissionNumber.parse` |
+| no control character | BR-29 | `Submission.register` | `SubmissionNumber.parse` |
 | insured limit present | BR-10 | `Submission.register` | `InsuredLimit.parse` |
 | insured limit positive | BR-11 | `Submission.register` | `InsuredLimit.parse` |
 | exactly two decimals | BR-12 | `Submission.register` | `InsuredLimit.parse` |
-| reference unused in the organisation | BR-06, BR-09 | the store (unique index) | the store (unchanged) |
+| number unused in the organisation | BR-06, BR-09 | the store (unique index) | the store (unchanged) |
 
 This is not a hollowed-out aggregate hiding a design flaw, and it is worth saying why. The
 specification gives a submission **no state transitions, no status, and no rule that relates one
@@ -483,12 +483,12 @@ contract: the persistence round trip loads the inserted row back through the map
 
 It does not skip validation. A row read from the database is external data — a legacy row, a
 schema drift, a manual edit — and "parse, don't validate" applies at every boundary, so it runs the
-same `ExternalReference.parse` and `InsuredLimit.parse` and returns `Optional.empty()` when a stored
+same `SubmissionNumber.parse` and `InsuredLimit.parse` and returns `Optional.empty()` when a stored
 value no longer parses. There is no unchecked "trusted" factory on the value objects, because a
 second way in is exactly how the guarantee erodes.
 
 This is not hypothetical: **BR-29 is retroactive over stored data.** A submission registered with
-a TAB in its reference before BR-29 existed would no longer reconstitute. A failure to parse a
+a TAB in its number before BR-29 existed would no longer reconstitute. A failure to parse a
 stored row is a data-integrity condition, not a business refusal of any operation in this feature,
 so it does not belong in `RegisterSubmissionError`; the first command that loads a submission
 defines its own variant for it.
@@ -504,21 +504,21 @@ Other aggregates would be referenced by typed id only. None exists here.
 |---|---|---|---|
 | 1 | caller identified | `OperationGate.admit` | `CallerNotIdentified` |
 | 2 | role permits registering | `OperationGate.admit` | `PermissionDenied` |
-| 3 | reference | `RegisterSubmissionCommand.parse` → `ExternalReference.parse` | missing, then too long, then control character |
+| 3 | number | `RegisterSubmissionCommand.parse` → `SubmissionNumber.parse` | missing, then too long, then control character |
 | 4 | insured limit | `RegisterSubmissionCommand.parse` → `InsuredLimit.parse` | missing, then not positive, then precision |
-| 5 | reference against history | `execute` → the persistence port | `ReferenceAlreadyUsed` |
+| 5 | number against history | `execute` → the persistence port | `NumberAlreadyUsed` |
 
 Every position is pinned by a test. The reasoning the previous revision gave still holds, inside
 the factories:
 
 - **Role before input** (steps 1-2 before 3-4): [§16.3](#163-the-order-at-the-edge).
 - **Presence before shape:** `""` trivially contains no control character, so a control-character
-  check placed first would pass an empty reference and report the real defect later and less
+  check placed first would pass an empty number and report the real defect later and less
   clearly.
 - **Length before content:** matches the spec's own order, and bounds the control-character scan
-  to at most 64 code points — a 10 MB reference ending in a TAB is refused for length without being
-  scanned for the TAB. A reference that is both too long and contains a control character is
-  refused as `ReferenceTooLong`.
+  to at most 64 code points — a 10 MB number ending in a TAB is refused for length without being
+  scanned for the TAB. A number that is both too long and contains a control character is
+  refused as `NumberTooLong`.
 - **Positivity before precision:** `BigDecimal.ZERO` has `scale() == 0`, so it violates both BR-11
   and BR-12; this order makes it `InsuredLimitNotPositive`, the more fundamental fact, and the
   spec's own worked examples list `0.00` under BR-11.
@@ -537,15 +537,15 @@ is forbidden from depending on anything that only reads. The rules are in [§5.6
 |---|---|---|---|
 | `SearchSubmissionsUseCase` | `ask(ActorContext actor, SearchSubmissionsQuery query)` | `SubmissionPageView` | `SearchSubmissionsQuery` |
 
-The read side uses the domain's own types wherever they exist. `SubmissionId` and the reference
+The read side uses the domain's own types wherever they exist. `SubmissionId` and the number
 type are the same classes the write side uses, so a view cannot disagree with the aggregate about
-what an identifier or a reference is. What is removed is the duplicate: there is no second
-reference type for filters ([§5.1](#51-the-query-record-and-the-filter-parse)).
+what an identifier or a number is. What is removed is the duplicate: there is no second
+number type for filters ([§5.1](#51-the-query-record-and-the-filter-parse)).
 
 **The return type is the view itself, not a `Result`.** The read side refuses nothing: every
 search that reaches it succeeds, including the ones that match nothing (BR-20), have a
-contradictory range (BR-21), lie past the end (BR-27), carry a control character in the reference
-filter (BR-30) or have an empty reference filter (BR-31). A `Result<_, E>` needs an `E` with at
+contradictory range (BR-21), lie past the end (BR-27), carry a control character in the number
+filter (BR-30) or have an empty number filter (BR-31). A `Result<_, E>` needs an `E` with at
 least one variant, and a sealed interface cannot have zero; a placeholder variant would be exactly
 the speculative variant this design forbids. The rule that every use case returns a `Result` was
 written when every use case could refuse, and needs a carve-out ([§11.2](#112-repository-conventions-this-design-asks-to-change), R1).
@@ -567,18 +567,18 @@ public record SearchSubmissionsQuery(SubmissionFilter filter, int page, int size
 public sealed interface SubmissionFilter {
 
     /** Every supplied criterion can match something. Safe to hand to the store. */
-    record Narrowing(@Nullable ExternalReference reference,
+    record Narrowing(@Nullable SubmissionNumber number,
                      @Nullable BigDecimal insuredLimitFrom,
                      @Nullable BigDecimal insuredLimitTo,
                      @Nullable Instant registeredFrom,
                      @Nullable Instant registeredTo) implements SubmissionFilter { }
                      // toString masks both insured-limit bounds (BR-22, strict reading)
 
-    /** BR-30: the reference filter contains a control character and provably matches nothing. */
+    /** BR-30: the number filter contains a control character and provably matches nothing. */
     record MatchesNothing() implements SubmissionFilter { }
 
     /** Total: never fails, never refuses. */
-    static SubmissionFilter parse(@Nullable String reference,
+    static SubmissionFilter parse(@Nullable String number,
                                   @Nullable BigDecimal insuredLimitFrom,
                                   @Nullable BigDecimal insuredLimitTo,
                                   @Nullable Instant registeredFrom,
@@ -586,39 +586,39 @@ public sealed interface SubmissionFilter {
 }
 ```
 
-`ExternalReference` is the write side's own value object, reused. The search filter does not have
-a second reference type. The mapping from its parse result to the filter is this, and it is the
-whole of the search-side reference rule:
+`SubmissionNumber` is the write side's own value object, reused. The search filter does not have
+a second number type. The mapping from its parse result to the filter is this, and it is the
+whole of the search-side number rule:
 
-| Input reference | `ExternalReference.parse` result | Filter |
+| Input number | `SubmissionNumber.parse` result | Filter |
 |---|---|---|
-| absent (`null`) | — | `reference = null`: not supplied, narrows nothing (BR-19) |
-| present but empty, `""` | `Missing` | `reference = null`: **treated as not supplied (BR-31)** |
+| absent (`null`) | — | `number = null`: not supplied, narrows nothing (BR-19) |
+| present but empty, `""` | `Missing` | `number = null`: **treated as not supplied (BR-31)** |
 | contains a category-Cc character | `ControlCharacter` | **`MatchesNothing` (BR-30)** |
 | 65 or more code points | `TooLong` | **`MatchesNothing` (BR-32)** |
-| valid | `Result.success(reference)` | `reference = that ExternalReference` (BR-07, compared exactly) |
+| valid | `Result.success(number)` | `number = that SubmissionNumber` (BR-07, compared exactly) |
 
-The too-long row is BR-32, which extends BR-30: a reference filter longer than 64 characters matches nothing, because no reference that long can have been registered (BR-05). It is a success with an empty page and a total of zero, never a refusal, and the filter is never shortened to make it match. A filter of exactly 64 is compared normally. Length is counted the way BR-05 counts it; how that is, is an open question ([§11.1](#111-questions-for-the-product-owner), Q8).
+The too-long row is BR-32, which extends BR-30: a number filter longer than 64 characters matches nothing, because no number that long can have been registered (BR-05). It is a success with an empty page and a total of zero, never a refusal, and the filter is never shortened to make it match. A filter of exactly 64 is compared normally. Length is counted the way BR-05 counts it; how that is, is an open question ([§11.1](#111-questions-for-the-product-owner), Q8).
 
 **The mapping is one function, not a second implementation.** `SubmissionFilter.parse` calls
-`ExternalReference.parse` and folds the result. It contains no character test of its own. A reader
+`SubmissionNumber.parse` and folds the result. It contains no character test of its own. A reader
 who wants to know what a search filter accepts reads the same method a registration reads, and
 the two cannot drift.
 
 **Why a search filter failing is not a refusal.** The register parse maps the same failure to a
-refusal, because a registration with that reference is a request the business cannot honour. A
-search with that reference is a question whose true answer is "none", and the spec asks for an
+refusal, because a registration with that number is a request the business cannot honour. A
+search with that number is a question whose true answer is "none", and the spec asks for an
 empty success, not an error (BR-30). One parse with two folds is the honest expression of that:
 the failure is the same fact; what it means depends on the operation.
 
 **Why a type and not a check in front of the database.** SEC-10 was a filter containing U+0000
 reaching PostgreSQL, which cannot represent it, and answering `500` for a search the spec calls a
 successful empty one. Here the store's input, `SubmissionSearchCriteria`, is built only from a
-`Narrowing`, and a `Narrowing` holds only an `ExternalReference`, which cannot contain a control
+`Narrowing`, and a `Narrowing` holds only an `SubmissionNumber`, which cannot contain a control
 character. **The adapter never sends such a filter to the database because there is no value it
 could send.**
 
-**Only the reference needs a value object.** The other four criteria are `BigDecimal` and `Instant`,
+**Only the number needs a value object.** The other four criteria are `BigDecimal` and `Instant`,
 and every value of those types is a legal comparison value (the spec says so for the amounts). A
 contradictory range (BR-21) is deliberately not a `MatchesNothing`: unlike BR-30 it does not break
 the store, the predicate `>= 5000 AND <= 1000` simply matches no row, and a second code path for
@@ -640,22 +640,20 @@ The spec's list for search is exhaustive and deliberate: **one** reason, caller 
 - It is **tested**. The contract test drives every `ActorRole` through the gate (BR-16), asserts that
   search never produces `PermissionDenied`, and checks
   that matching nothing, a contradictory range, a page past the end, a control character in the
-  reference filter, an empty reference filter and a reference filter longer than 64 (BR-32) are all successes with an empty page and a total
+  number filter, an empty number filter and a number filter longer than 64 (BR-32) are all successes with an empty page and a total
   of zero.
 
 ### 5.3 Views
 
 ```java
-public record SubmissionSummaryView(SubmissionId submissionId,
-                                    String externalRef,
+public record SubmissionSummaryView(String submissionNumber,
                                     BigDecimal insuredLimit,
                                     String registeredBy,
                                     Instant registeredAt,
                                     SubmissionState state) {
     @Override
     public String toString() {   // BR-22 amount, OPEN-01 actorId
-        return "SubmissionSummaryView[submissionId=" + submissionId
-                + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
+        return "SubmissionSummaryView[submissionNumber=" + LogSafeText.escapeControlCharacters(submissionNumber)
                 + ", insuredLimit=***, registeredBy=***"
                 + ", registeredAt=" + registeredAt
                 + ", state=" + state + "]";
@@ -672,13 +670,13 @@ public record SubmissionPageView(List<SubmissionSummaryView> submissions,
 }
 ```
 
-**A view carries what the store holds, as the store holds it** — decided by the product owner. The reference is a `String` and the insured limit a `BigDecimal`, not an `ExternalReference` and an `InsuredLimit`. The reason: a view is *output read from our own store*, not input from a client, and parse-don't-validate applies at the input boundary. Parsing a stored value again on the way out would need a branch for a failure the schema already rules out ([§9.4](#94-query-adapter)), and that branch could only be a hard failure or a new error path. Neither is wanted, and neither is needed.
+**A view carries what the store holds, as the store holds it** — decided by the product owner. The number is a `String` and the insured limit a `BigDecimal`, not an `SubmissionNumber` and an `InsuredLimit`. The reason: a view is *output read from our own store*, not input from a client, and parse-don't-validate applies at the input boundary. Parsing a stored value again on the way out would need a branch for a failure the schema already rules out ([§9.4](#94-query-adapter)), and that branch could only be a hard failure or a new error path. Neither is wanted, and neither is needed.
 
-**`SubmissionId` stays typed,** because wrapping a `UUID` in it cannot fail: there is no branch to write. That is the line between the two: a domain type goes on a view when constructing it is total, and the stored primitive stays when constructing the type would be a parse.
+**The internal `SubmissionId` is on no view.** A view is what a caller sees, and the internal identity is never shown (spec, *Submission Number*). The write side uses it as the row key; nothing read from the store is typed back into it.
 
-This does not bring back the duplication revision 4 removed. The search *filter* is input, and it still goes through `ExternalReference.parse` ([§5.1](#51-the-query-record-and-the-filter-parse)); there is still no `ReferenceCriterion`.
+This does not bring back the duplication revision 4 removed. The search *filter* is input, and it still goes through `SubmissionNumber.parse` ([§5.1](#51-the-query-record-and-the-filter-parse)); there is still no `NumberCriterion`.
 
-The view masks the amount and the caller in its own `toString` (BR-22, OPEN-01) and escapes the reference (BR-23), because it is a raw holder: nothing in its types does that for it. `registeredBy` is a `String` for the same reason as before, and for the reason above.
+The view masks the amount and the caller in its own `toString` (BR-22, OPEN-01) and escapes the number (BR-23), because it is a raw holder: nothing in its types does that for it. `registeredBy` is a `String` for the same reason as before, and for the reason above.
 
 `totalMatchCount` is `long` and counts the whole matching set, ignoring the page (BR-26). `page` and
 `size` echo what was applied ([§7](#7-engineering-decision-maximum-page-size)).
@@ -687,7 +685,7 @@ The view masks the amount and the caller in its own `toString` (BR-22, OPEN-01) 
 
 ```java
 public record SubmissionSearchCriteria(UUID tenantId,
-                                       @Nullable ExternalReference reference,
+                                       @Nullable SubmissionNumber number,
                                        @Nullable BigDecimal insuredLimitFrom,
                                        @Nullable BigDecimal insuredLimitTo,
                                        @Nullable Instant registeredFrom,
@@ -703,8 +701,8 @@ public interface SubmissionQueryRepository {
 
 `tenantId` lives inside the criteria and only the use case can build one (BR-17). The read port is an
 outbound port in the same way the write port is: it has its own package-free interface in
-`domain/`, and it speaks domain types. `reference` is an `ExternalReference`, so the persistence
-adapter unwraps `reference.value()` into the bound parameter, and the SQL in [§6](#6-sql-shape) is
+`domain/`, and it speaks domain types. `number` is an `SubmissionNumber`, so the persistence
+adapter unwraps `number.value()` into the bound parameter, and the SQL in [§6](#6-sql-shape) is
 unchanged.
 
 `offset` is `long`: `page * size` near `Integer.MAX_VALUE` overflows an `int`.
@@ -774,14 +772,14 @@ interface SubmissionQueryJdbcRepository extends Repository<SubmissionJdbcEntity,
 
     @Query("""
             SELECT id AS submission_id,
-                   external_ref,
+                   submission_number,
                    insured_limit,
                    registered_by,
                    registered_at
             FROM submissions
             WHERE tenant_id = :tenantId
-              AND (CAST(:externalRef AS VARCHAR) IS NULL
-                   OR external_ref = CAST(:externalRef AS VARCHAR))
+              AND (CAST(:submissionNumber AS VARCHAR) IS NULL
+                   OR submission_number = CAST(:submissionNumber AS VARCHAR))
               AND (CAST(:insuredLimitFrom AS NUMERIC) IS NULL
                    OR insured_limit >= CAST(:insuredLimitFrom AS NUMERIC))
               AND (CAST(:insuredLimitTo AS NUMERIC) IS NULL
@@ -794,7 +792,7 @@ interface SubmissionQueryJdbcRepository extends Repository<SubmissionJdbcEntity,
             LIMIT :limit OFFSET :offset
             """)
     List<SubmissionSummaryView> findPage(@Param("tenantId") UUID tenantId,
-                                         @Param("externalRef") @Nullable String externalRef,
+                                         @Param("submissionNumber") @Nullable String submissionNumber,
                                          @Param("insuredLimitFrom") @Nullable BigDecimal insuredLimitFrom,
                                          @Param("insuredLimitTo") @Nullable BigDecimal insuredLimitTo,
                                          @Param("registeredFrom") @Nullable Instant registeredFrom,
@@ -806,8 +804,8 @@ interface SubmissionQueryJdbcRepository extends Repository<SubmissionJdbcEntity,
             SELECT COUNT(*)
             FROM submissions
             WHERE tenant_id = :tenantId
-              AND (CAST(:externalRef AS VARCHAR) IS NULL
-                   OR external_ref = CAST(:externalRef AS VARCHAR))
+              AND (CAST(:submissionNumber AS VARCHAR) IS NULL
+                   OR submission_number = CAST(:submissionNumber AS VARCHAR))
               AND (CAST(:insuredLimitFrom AS NUMERIC) IS NULL
                    OR insured_limit >= CAST(:insuredLimitFrom AS NUMERIC))
               AND (CAST(:insuredLimitTo AS NUMERIC) IS NULL
@@ -849,7 +847,7 @@ This is the one number the business considered and consciously delegated (spec, 
 **Why 100:**
 
 - **Response and memory cost.** One `SubmissionSummaryView` is at most ~200 bytes of payload
-  (a UUID, up to 64 characters of reference, an unbounded but realistically short numeric, an actor
+  (a UUID, up to 64 characters of number, an unbounded but realistically short numeric, an actor
   id, a timestamp). 100 rows is tens of kilobytes — one comfortable HTTP response, and a bounded
   allocation per concurrent request, which matters on virtual threads where the request count can
   be very high.
@@ -910,14 +908,14 @@ CREATE TABLE submissions
 (
     id            UUID PRIMARY KEY,
     tenant_id     UUID                   NOT NULL,
-    -- COLLATE "C": BR-07 compares references exactly as supplied, including letter case and
+    -- COLLATE "C": BR-07 compares numbers exactly as supplied, including letter case and
     -- surrounding blank space. A database created with a case-insensitive ICU collation would
     -- otherwise make both this column's equality test and the unique index below case-folding,
     -- silently breaking BR-06 and BR-07. VARCHAR(64) counts characters, which is exactly the
-    -- code-point measure the domain applies for BR-05, so an accepted reference always fits.
-    -- NOTE: neither the length nor this collation ever constrained the reference's CHARACTER
+    -- code-point measure the domain applies for BR-05, so an accepted number always fits.
+    -- NOTE: neither the length nor this collation ever constrained the number's CHARACTER
     -- SET. The type itself refuses U+0000 outright, below SQL. See §8.3.
-    external_ref  VARCHAR(64) COLLATE "C" NOT NULL,
+    submission_number  VARCHAR(64) COLLATE "C" NOT NULL,
     -- Unconstrained NUMERIC on purpose. BR-13 states the insured limit has no upper bound and
     -- that none may be introduced without a business decision: NUMERIC(19, 2) would quietly
     -- impose one. Scale is enforced by the CHECK below rather than by the column type, because
@@ -929,17 +927,17 @@ CREATE TABLE submissions
     -- supplies the value, and a DEFAULT would mask a mapper that forgot to carry it.
     version       BIGINT                 NOT NULL,
 
-    -- BR-06 + BR-08: unique PER TENANT, so the same reference in another organisation is fine.
+    -- BR-06 + BR-08: unique PER TENANT, so the same number in another organisation is fine.
     -- This is also what settles the BR-09 race: the loser's insert conflicts.
-    CONSTRAINT uq_submissions_tenant_external_ref UNIQUE (tenant_id, external_ref),
+    CONSTRAINT uq_submissions_tenant_submission_number UNIQUE (tenant_id, submission_number),
 
     -- Defence in depth for the domain invariants. Each one mirrors a business rule that is
     -- already refused in the aggregate; a row that violates one of them is a bug, not a refusal.
-    CONSTRAINT ck_submissions_external_ref_not_empty CHECK (length(external_ref) > 0),          -- BR-04
+    CONSTRAINT ck_submissions_submission_number_not_empty CHECK (length(submission_number) > 0),          -- BR-04
     -- BR-29. Mirrors the domain check, and cannot fully mirror it: see §8.3. The escape syntax
     -- must be verified against PostgreSQL when the migration is written.
-    CONSTRAINT ck_submissions_external_ref_no_control_chars
-        CHECK (external_ref !~ '[\x01-\x1F\x7F-\x9F]'),                                         -- BR-29
+    CONSTRAINT ck_submissions_submission_number_no_control_chars
+        CHECK (submission_number !~ '[\x01-\x1F\x7F-\x9F]'),                                         -- BR-29
     CONSTRAINT ck_submissions_insured_limit_positive CHECK (insured_limit > 0),                 -- BR-11
     CONSTRAINT ck_submissions_insured_limit_scale CHECK (scale(insured_limit) = 2)              -- BR-12
 );
@@ -954,9 +952,9 @@ CREATE INDEX idx_submissions_tenant_registered_at
 CREATE INDEX idx_submissions_tenant_insured_limit
     ON submissions (tenant_id, insured_limit);
 
--- No index for the reference filter: uq_submissions_tenant_external_ref already builds a
--- btree on (tenant_id, external_ref), which serves both the uniqueness check and the
--- exact-reference search. A second index on the same columns would only cost write throughput.
+-- No index for the number filter: uq_submissions_tenant_submission_number already builds a
+-- btree on (tenant_id, submission_number), which serves both the uniqueness check and the
+-- exact-number search. A second index on the same columns would only cost write throughput.
 ```
 
 `scale(numeric)` requires PostgreSQL 13 or newer; the project's Testcontainers image is
@@ -969,7 +967,7 @@ CREATE INDEX idx_submissions_tenant_insured_limit
 | tenant (always present, BR-17) | `idx_submissions_tenant_registered_at` — leading column | Every search carries it, so it leads the workhorse index |
 | `registeredFrom` / `registeredTo` range | `idx_submissions_tenant_registered_at` — second column | A range on the second column of a composite btree after an equality on the first is an index range scan |
 | ordering `registered_at DESC, id DESC` (BR-24, BR-28) | `idx_submissions_tenant_registered_at` | The index is declared in exactly the ORDER BY direction, so the planner returns rows pre-ordered: **no sort node**, and the scan stops after `LIMIT + OFFSET` rows |
-| `externalRef` exact match | `uq_submissions_tenant_external_ref` (the unique constraint's own btree) | Equality on both columns of the index; BR-06 guarantees at most one row, so this is a single index lookup |
+| `submissionNumber` exact match | `uq_submissions_tenant_submission_number` (the unique constraint's own btree) | Equality on both columns of the index; BR-06 guarantees at most one row, so this is a single index lookup |
 | `insuredLimitFrom` / `insuredLimitTo` range | `idx_submissions_tenant_insured_limit` | Equality on tenant then a range on the amount |
 | `COUNT(*)` for BR-26 | whichever of the above is most selective | The count must touch every matching row; that is inherent in reporting the whole matching set's size and cannot be indexed away |
 
@@ -993,13 +991,13 @@ so the common case — a tenant paging through recent submissions — never sort
 explicitly "which page is wanted", i.e. a page number, so `OFFSET` is what the business asked for.
 Recorded as a known characteristic rather than designed around.
 
-### 8.3 What the schema never constrained: the reference's character set
+### 8.3 What the schema never constrained: the number's character set
 
 This section exists because the first revision of this design reasoned carefully about
-`external_ref` — its length, its collation, its emptiness — and none of that reasoning touched the
+`submission_number` — its length, its collation, its emptiness — and none of that reasoning touched the
 thing that actually broke.
 
-**`VARCHAR(64)` and `CHECK (length(external_ref) > 0)` were never what would stop a NUL byte.**
+**`VARCHAR(64)` and `CHECK (length(submission_number) > 0)` were never what would stop a NUL byte.**
 They constrain how *many* characters the column holds and that it holds at least one; they say
 nothing about *which* characters. The thing that refused U+0000 was **the PostgreSQL text type
 itself, enforced by the driver** — a `text`/`varchar` value cannot contain U+0000 at all, because
@@ -1010,7 +1008,7 @@ failure: a 500, for an input the business had called valid, with no refusal reas
 
 Two consequences for this design:
 
-- **The new `ck_submissions_external_ref_no_control_chars` CHECK is defence in depth and cannot be
+- **The new `ck_submissions_submission_number_no_control_chars` CHECK is defence in depth and cannot be
   complete.** It covers U+0001–U+001F and U+007F–U+009F. It **cannot cover U+0000**, the very
   character that caused the finding, because such a value is rejected before any CHECK is evaluated
   — there is no way to express it as a row the constraint could reject. The schema can therefore
@@ -1059,7 +1057,7 @@ where that cannot be guaranteed, the claim needs an integration test, not a unit
 record SubmissionJdbcEntity(
         @Id UUID id,
         @Column("tenant_id") UUID tenantId,
-        @Column("external_ref") String externalRef,
+        @Column("submission_number") String submissionNumber,
         @Column("insured_limit") BigDecimal insuredLimit,
         @Column("registered_by") String registeredBy,
         @Column("registered_at") Instant registeredAt,
@@ -1072,17 +1070,17 @@ interface SubmissionCommandJdbcRepository extends Repository<SubmissionJdbcEntit
     @Modifying
     @Query("""
             INSERT INTO submissions
-                (id, tenant_id, external_ref, insured_limit, registered_by, registered_at, version)
+                (id, tenant_id, submission_number, insured_limit, registered_by, registered_at, version)
             VALUES
-                (:id, :tenantId, :externalRef, :insuredLimit, :registeredBy, :registeredAt, 0)
-            ON CONFLICT (tenant_id, external_ref) DO NOTHING
+                (:id, :tenantId, :submissionNumber, :insuredLimit, :registeredBy, :registeredAt, 0)
+            ON CONFLICT (tenant_id, submission_number) DO NOTHING
             """)
-    int insertIfReferenceFree(/* one @Param per column */);
+    int insertIfNumberFree(/* one @Param per column */);
 }
 ```
 
 `ON CONFLICT ... DO NOTHING` plus a row-count check — `1` means inserted, `0` means the
-organisation already used the reference — is the same idiom `inbox_events` already uses in V1, and
+organisation already used the number — is the same idiom `inbox_events` already uses in V1, and
 it is the right mechanism for BR-09 for three reasons:
 
 1. **It settles the race in the database.** A `SELECT`-then-`INSERT` pre-check is exactly the race
@@ -1137,9 +1135,9 @@ this codebase.
 class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
 
     @Override
-    public Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> insert(
+    public Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed> insert(
             SubmissionSnapshot snapshot) {
-        // insertIfReferenceFree(...) -> 0 means duplicate: Result.failure(ReferenceAlreadyUsed)
+        // insertIfNumberFree(...) -> 0 means duplicate: Result.failure(NumberAlreadyUsed)
         //                              1 means inserted:  Result.success(new SubmissionId(id))
     }
 }
@@ -1162,17 +1160,17 @@ has to span both port calls, and two things that are easy to get wrong become li
   the deferred decision in [§12](#12-events-and-the-publishing-port), not something to improvise.
 
 Integration tests required of this adapter: a brand-new aggregate inserts and the row carries a
-non-null `version`; a duplicate `(tenant_id, external_ref)` leaves the earlier row untouched and
-inserts nothing; the same reference under a different `tenant_id` inserts normally (BR-08).
+non-null `version`; a duplicate `(tenant_id, submission_number)` leaves the earlier row untouched and
+inserts nothing; the same number under a different `tenant_id` inserts normally (BR-08).
 
 ### 9.4 Query adapter
 
 `SubmissionQuerySqlAdapter implements SubmissionQueryRepository`, in `adapters/persistence`. It is a
 driven adapter for a port declared in `domain/`, exactly as the command adapter is. It unwraps
-`criteria.reference()` into `reference.value()` for the bound `externalRef` parameter, so the SQL in
+`criteria.number()` into `number.value()` for the bound `submissionNumber` parameter, so the SQL in
 [§6](#6-sql-shape) is unchanged, and it returns the views it builds from rows.
 
-**Building a view from a row does not parse.** The adapter copies the stored reference and amount into the view as `String` and `BigDecimal`, and wraps the stored id in a `SubmissionId`, which cannot fail ([§5.3](#53-views)). There is no failure branch, so there is no `throw`, no new error type and no refusal path on a search, which must not refuse. The values are trusted because the store will hold nothing else: `VARCHAR(64)` bounds the length, `CHECK (length > 0)` excludes the empty string, the control-character `CHECK` excludes every category-Cc character except U+0000, which PostgreSQL cannot store, and the two insured-limit `CHECK`s hold the amount to BR-11 and BR-12. Every row the database can hold is one the write side could have registered.
+**Building a view from a row does not parse.** The adapter copies the stored number and amount into the view as `String` and `BigDecimal`, and wraps the stored id in a `SubmissionId`, which cannot fail ([§5.3](#53-views)). There is no failure branch, so there is no `throw`, no new error type and no refusal path on a search, which must not refuse. The values are trusted because the store will hold nothing else: `VARCHAR(64)` bounds the length, `CHECK (length > 0)` excludes the empty string, the control-character `CHECK` excludes every category-Cc character except U+0000, which PostgreSQL cannot store, and the two insured-limit `CHECK`s hold the amount to BR-11 and BR-12. Every row the database can hold is one the write side could have registered.
 
 The adapter never loads `SubmissionJdbcEntity` into a use case and never sees the aggregate, which
 is package-private in `domain/`.
@@ -1184,7 +1182,7 @@ is package-private in `domain/`.
 | Field | May it be logged? | Rule | How this design enforces it |
 |---|---|---|---|
 | `insuredLimit` | **Never** | BR-22 | `InsuredLimit.toString()` prints `***`, so `RegisterSubmissionCommand` is safe by composition; the raw holders — `SubmissionSnapshot`, `SubmissionSummaryView`, `SubmissionRegistered`, and the filter bounds in `SubmissionFilter.Narrowing` and `SubmissionSearchCriteria` — keep explicit masks; no error variant carries the amount; no `ProblemDetail` echoes it |
-| `externalRef` | Yes, in full — **with category-Cc code points escaped as `\uXXXX`** | BR-23, BR-29 | a valid `ExternalReference` or `ReferenceCriterion` cannot contain a control character, so it prints as it is; the raw holders (`SubmissionSnapshot`, `SubmissionRegistered`, `ReferenceAlreadyUsed`, the `ProblemDetail`) escape it. Escaping is not redaction: the value stays complete and readable, and an unescaped control character in a log line is log injection ([§3.2](#32-refusals-nine-as-the-caller-sees-them)) |
+| `submissionNumber` | Yes, in full — **with category-Cc code points escaped as `\uXXXX`** | BR-23, BR-29 | a valid `SubmissionNumber` or `NumberCriterion` cannot contain a control character, so it prints as it is; the raw holders (`SubmissionSnapshot`, `SubmissionRegistered`, `NumberAlreadyUsed`, the `ProblemDetail`) escape it. Escaping is not redaction: the value stays complete and readable, and an unescaped control character in a log line is log injection ([§3.2](#32-refusals-nine-as-the-caller-sees-them)) |
 | `tenantId` | Not classified | spec §6 | printed; it is the isolation boundary, not a secret |
 | `actorId` / `registeredBy` / `approvedBy` | **Not logged** | OPEN-01, BR-42 | masked `***` in the `toString()` of `ActorContext` (its first, upstream holder), `AuthenticatedCaller`, `SubmissionSnapshot`, `SubmissionSummaryView`, `SubmissionRegistered`, `SubmissionApproval` and `SubmissionApproved` (as `approvedBy`); no error variant carries it |
 | `registeredAt` | Not classified | spec §6 | printed |
@@ -1265,11 +1263,11 @@ before the guard's behaviour can be called final.
   precisely the BR-29 defect. Options: accept and document the effective ceiling; or take a
   business-approved maximum number of digits. BR-13 forbids introducing a maximum without a
   decision, so this design introduces none.
-- **Q6 — What should an unparseable filter value, or an empty reference filter, do?** The spec
+- **Q6 — What should an unparseable filter value, or an empty number filter, do?** The spec
   says no filter value is ever refused (BR-20, BR-21, BR-30), yet `insuredLimitFrom=abc` or
   `registeredFrom=yesterday` is rejected with `400` by Spring's type conversion, outside the
-  one-reason list and before the guard. Separately, `reference=` (present but empty) is silent in
-  the spec: this design lets it match nothing, because no registered reference is empty, which is
+  one-reason list and before the guard. Separately, `number=` (present but empty) is silent in
+  the spec: this design lets it match nothing, because no registered number is empty, which is
   the literal reading of BR-07 ("compared exactly as supplied"), but "not supplied" is an arguable
   alternative. Options for the first: keep the `400` as a transport error and reword the spec to
   say "no well-formed filter value"; or bind the parameters as text, parse after the guard, and
@@ -1280,7 +1278,7 @@ before the guard's behaviour can be called final.
   operations, both remain exactly true, and the spec deliberately names no layer. Confirm that
   reading, since the use case itself now refuses far less than the list ([§3.2](#32-refusals-nine-as-the-caller-sees-them)).
 
-8. **How are BR-05's "64 characters" counted?** Raised by the analyst and not decided by the spec. This design counts **code points**, because that is what PostgreSQL `VARCHAR(64)` counts, so an accepted reference cannot overflow the column. UTF-16 code units would refuse a reference of 64 emoji that code points accept. BR-32 inherits the same count. This is the design's reading, **not** a decision; it is a question for the product owner.
+8. **How are BR-05's "64 characters" counted?** Raised by the analyst and not decided by the spec. This design counts **code points**, because that is what PostgreSQL `VARCHAR(64)` counts, so an accepted number cannot overflow the column. UTF-16 code units would refuse a number of 64 emoji that code points accept. BR-32 inherits the same count. This is the design's reading, **not** a decision; it is a question for the product owner.
 
 ### 11.2 Repository conventions this design asks to change
 
@@ -1346,16 +1344,16 @@ something this revision contradicts, and the next reviewer will cite it unless i
 8. **A single `Clock` bean.** Declared in `SubmissionConfiguration` because no shared configuration
    package exists. The second module that needs one must move it to a shared configuration rather
    than declare a second.
-9. **Logging a refused reference requires escaping, and that needs confirming against BR-23.** BR-23
-   says the reference may appear in a log "in full and readable". For a reference refused under
-   BR-29 — the only references that can now contain a control character — writing it raw is **log
+9. **Logging a refused number requires escaping, and that needs confirming against BR-23.** BR-23
+   says the number may appear in a log "in full and readable". For a number refused under
+   BR-29 — the only numbers that can now contain a control character — writing it raw is **log
    injection**: a NEWLINE forges an extra log entry and an escape sequence can manipulate whoever
    reads the log. This design escapes every category-Cc code point as `\uXXXX`, which is both
    readable and inert, and argues that satisfies BR-23 rather than bending it. An interpretation,
    not a stated rule, and the only item here with a security consequence if it is got wrong. For
    `@sec-reviewer`.
 10. **"No restriction" rules need an adapter check before they are confirmed.** The standing lesson
-    from [§8.3](#83-what-the-schema-never-constrained-the-references-character-set), carried
+    from [§8.3](#83-what-the-schema-never-constrained-the-numbers-character-set), carried
     forward rather than left in a post-mortem: a rule that grants unrestricted input is a strong
     claim, it is only as true as the narrowest constraint beneath it, and a unit test against a
     permissive fake cannot verify it. It is now also a *design rule for value objects*
@@ -1367,11 +1365,11 @@ something this revision contradicts, and the next reviewer will cite it unless i
     refusal reason — the same input usually succeeds, and the state change did happen — is made
     there and should be reviewed, not assumed.
 12. **The guard-before-parse order is shaped by the API and pinned by tests, not enforced by the
-    compiler.** `ExternalReference.parse` is public, so a controller could call it before `admit`.
+    compiler.** `SubmissionNumber.parse` is public, so a controller could call it before `admit`.
     What the compiler and the build *do* enforce is that the use case is unreachable without an
     `Admission` ([§16.3](#163-the-order-at-the-edge)). Said plainly so nobody believes it is
     stronger than it is.
-13. **Resolved in revision 4.** `ExternalReference.parse` returns its own `ExternalReferenceError`, shared by both sides. Each operation maps its three variants into its own error ([§15.2](#152-externalreference)). The cost is three records declared in two places.
+13. **Resolved in revision 4.** `SubmissionNumber.parse` returns its own `SubmissionNumberError`, shared by both sides. Each operation maps its three variants into its own error ([§15.2](#152-submissionnumber)). The cost is three records declared in two places.
 14. **Resolved in revision 4.** `OperationGate` has two type parameters, as the product owner decided. The proof that search has one refusal moved from the type to a test ([§5.2](#52-refusals-search-still-has-exactly-one)).
 
 ### Settled since the first revision of this document
@@ -1384,16 +1382,16 @@ something this revision contradicts, and the next reviewer will cite it unless i
 - **Publishing is a port, not a transport** — architectural correction accepted; it withdrew the
   combined port ([§3.5](#35-the-port-split-and-the-trade-off-it-accepts)) and removed every topic,
   message key, wire contract and relay from this design ([§12](#12-events-and-the-publishing-port)).
-- **Control characters in a reference are refused (BR-29)** — decided by the product owner on
+- **Control characters in a number are refused (BR-29)** — decided by the product owner on
   2026-11-02 after exploratory testing, who was offered the narrow NUL-only fix and chose the whole
   of category Cc. The reversal it carries (TAB, NEWLINE and NUL move from valid to refused) is
-  deliberate. SPACE is untouched: it is not a control character, and a reference of spaces is still
+  deliberate. SPACE is untouched: it is not a control character, and a number of spaces is still
   valid, still not trimmed.
-- **A control character in the reference filter matches nothing and is a success (BR-30)** —
+- **A control character in the number filter matches nothing and is a success (BR-30)** —
   decided on 2026-11-02 after review found it answered `500` (SEC-10). Represented as a type
   ([§5.1](#51-the-query-record-and-the-filter-parse)).
 - **Search's one refusal is proven by a test, not by the type** — the `OperationGate<C, R>` downgrade was accepted by the product owner ([§5.2](#52-refusals-search-still-has-exactly-one)).
-- **A reference filter longer than 64 matches nothing (BR-32)** — decided by the product owner; it extends BR-30, and exactly 64 is compared normally ([§5.1](#51-the-query-record-and-the-filter-parse)).
+- **A number filter longer than 64 matches nothing (BR-32)** — decided by the product owner; it extends BR-30, and exactly 64 is compared normally ([§5.1](#51-the-query-record-and-the-filter-parse)).
 - **Views carry stored values as `String` and `BigDecimal`** — decided by the product owner: parse-don't-validate applies at the input boundary, and a view is output from our own store ([§5.3](#53-views), [§9.4](#94-query-adapter)).
 - **Parse, don't validate** — decided by the product owner on 2026-11-02 ([§15](#15-value-objects)).
 - **Authorisation is an adapter concern** — decided by the product owner on 2026-11-02
@@ -1403,16 +1401,16 @@ something this revision contradicts, and the next reviewer will cite it unless i
 
 The spec is internally consistent; I found nothing in it that is wrong. The one conflict was with a
 **repository skill**, not the spec: `.github/skills/hexagonal-cqrs-slice/SKILL.md` illustrated the
-aggregate with `externalRef.isBlank()` and a variant named `BlankExternalReference`, and
+aggregate with `submissionNumber.isBlank()` and a variant named `BlankSubmissionNumber`, and
 `NonPositiveInsuredLimit(BigDecimal insuredLimit)` carrying the amount — the first would have
-refused the whitespace-only reference that BR-04 plus BR-07 make *valid*, and the second violates
+refused the whitespace-only number that BR-04 plus BR-07 make *valid*, and the second violates
 BR-22. **That skill has since been corrected** (`isEmpty()`, variant names matching the spec, and
 two new checklist items: no sensitive value in an error record, and validation must match the
 specification literally). The rule still stands in this design for anyone reading an older copy:
 **`isEmpty()`, and no amount inside any error variant.**
 
 BR-29 does **not** reopen that question, and this is the one place the two are easy to confuse.
-`isBlank()` is still wrong: it refuses a reference of spaces, which the spec still calls valid.
+`isBlank()` is still wrong: it refuses a number of spaces, which the spec still calls valid.
 BR-29 refuses category Cc, which excludes SPACE. A reader who takes BR-29 as licence to switch to
 `isBlank()` reintroduces the original defect and breaks a rule the product owner has now confirmed
 twice.
@@ -1423,32 +1421,31 @@ twice.
 
 | Event | Raised when | Carries | Announced through |
 |---|---|---|---|
-| `SubmissionDomainEvent.SubmissionRegistered` | a registration succeeds (BR-15) | organisation, submission identity, reference, insured limit, registering caller, registration moment | `SubmissionEventPublisher` — a port. What is behind it is not decided here |
-| `SubmissionDomainEvent.SubmissionApproved` | an approval succeeds (BR-40) | the organisation, the submission's identity, the approver's identity (masked in logs), the moment of approval. No insured limit ([§19.7](#197-the-event-submissionapproved-br-40)) | `SubmissionEventPublisher`, the same port |
+| `SubmissionDomainEvent.SubmissionRegistered` | a registration succeeds (BR-15) | organisation, submission number, number, insured limit, registering caller, registration moment | `SubmissionEventPublisher` — a port. What is behind it is not decided here |
+| `SubmissionDomainEvent.SubmissionApproved` | an approval succeeds (BR-40) | the organisation, the submission number, the approver's identity (masked in logs), the moment of approval. No insured limit ([§19.7](#197-the-event-submissionapproved-br-40)) | `SubmissionEventPublisher`, the same port |
 
 ```java
 public sealed interface SubmissionDomainEvent {
 
     UUID eventId();
 
-    SubmissionId aggregateId();
+    SubmissionNumber submissionNumber();
 
     UUID tenantId();
 
     Instant occurredAt();
 
     record SubmissionRegistered(UUID eventId,
-                                SubmissionId aggregateId,
+                                SubmissionNumber submissionNumber,
                                 UUID tenantId,
-                                String externalRef,
                                 BigDecimal insuredLimit,
                                 String registeredBy,
                                 Instant occurredAt) implements SubmissionDomainEvent {
 
         @Override
         public String toString() {   // BR-22 amount, OPEN-01 actorId
-            return "SubmissionRegistered[eventId=" + eventId + ", aggregateId=" + aggregateId
-                    + ", tenantId=" + tenantId + ", externalRef=" + externalRef
+            return "SubmissionRegistered[eventId=" + eventId + ", submissionNumber=" + submissionNumber
+                    + ", tenantId=" + tenantId
                     + ", insuredLimit=***, registeredBy=***"
                     + ", occurredAt=" + occurredAt + "]";
         }
@@ -1491,12 +1488,12 @@ than from any transport:
   all — which is part of why this is deferred.
 - **If the chosen mechanism orders or routes by key, the key is the aggregate id.** That is a
   property of the event (one submission's facts belong in one sequence), not a design choice being
-  smuggled in: the `aggregateId` accessor on the sealed interface is all the adapter needs, and this
+  smuggled in: the `submissionNumber` accessor on the sealed interface is all the adapter needs, and this
   document names no mechanism that would use it.
 - **Whatever it writes to, check first that the store can hold every value the event carries** —
-  the lesson of [§8.3](#83-what-the-schema-never-constrained-the-references-character-set), applied
-  before rather than after. The event carries `externalRef`, and BR-29 now guarantees it is free of
-  control characters, so a line-delimited or text-based format is safe from a reference that breaks
+  the lesson of [§8.3](#83-what-the-schema-never-constrained-the-numbers-character-set), applied
+  before rather than after. The event carries `submissionNumber`, and BR-29 now guarantees it is free of
+  control characters, so a line-delimited or text-based format is safe from a number that breaks
   a record boundary. That guarantee comes from the domain, not from the adapter, and an adapter must
   not quietly assume anything stronger than it.
 
@@ -1526,7 +1523,7 @@ class SubmissionConfiguration {
 
     @Bean
     OperationGate<RegisterSubmissionCommand,
-                  Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>>
+                  Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed>>
             registerSubmissionGate(SubmissionCommandRepository repository,
                                    SubmissionEventPublisher eventPublisher,
                                    SubmissionIdGenerator idGenerator,
@@ -1573,6 +1570,8 @@ fails if any other adapter tries ([§16.4](#164-bypass-is-a-build-failure)).
 treated identically (BR-02, BR-03). Search: any identified caller, with no role consulted (BR-16).
 Both live in this class and nowhere else, so who may do what can be read in one place and
 reviewed in one place.
+**The permission data is named `AccessPolicy`** (design D14). The implementation's `AccessPolicy` is the seam through which this table is read: `mayRegister` and `mayApprove` answer from the fixed role set above, and `tenantIdFrom` belongs to the identity source. The approving set is `ActorRole.canDecide()`, which `ActorRoleTest` pins to exactly `UNDERWRITER` and `SENIOR_UNDERWRITER`. The table, the seam and the test name one set, so they cannot drift apart.
+
 
 **Injection by generic type.** The two gates differ only in their type arguments, and the
 controllers declare them in full. Spring resolves beans by generic type, but this design has not
@@ -1587,11 +1586,11 @@ nothing else — which is the test of whether the deferral was real.
 ### 13.1 Web edge
 
 ```java
-record RegisterSubmissionRequest(@Nullable String externalRef, @Nullable BigDecimal insuredLimit) {
+record RegisterSubmissionRequest(@Nullable String submissionNumber, @Nullable BigDecimal insuredLimit) {
 
     /** The per-request-type parser: a one-line hand-off to the domain's own parse. */
     Result<RegisterSubmissionCommand, RegisterSubmissionError> toCommand() {
-        return RegisterSubmissionCommand.parse(externalRef, insuredLimit);
+        return RegisterSubmissionCommand.parse(submissionNumber, insuredLimit);
     }
 }
 ```
@@ -1653,13 +1652,13 @@ on `shared/kernel/Result.java`; no combinator is invented.
 | success | `201 Created`, `Location: /api/submissions/{id}`, body carries the id | — |
 | `Access(CallerNotIdentified)` | `401` | `caller-not-identified` |
 | `Access(PermissionDenied(role))` | `403` | `role-may-not-register` |
-| `Rejected(ReferenceMissing)` | `400` | `reference-missing` |
-| `Rejected(ReferenceTooLong)` | `400` | `reference-too-long` |
-| `Rejected(ReferenceContainsControlCharacter)` | `400` | `reference-contains-control-character` |
+| `Rejected(NumberMissing)` | `400` | `number-missing` |
+| `Rejected(NumberTooLong)` | `400` | `number-too-long` |
+| `Rejected(NumberContainsControlCharacter)` | `400` | `number-contains-control-character` |
 | `Rejected(InsuredLimitMissing)` | `400` | `insured-limit-missing` |
 | `Rejected(InsuredLimitNotPositive)` | `400` | `insured-limit-not-positive` |
 | `Rejected(InsuredLimitPrecisionInvalid)` | `400` | `insured-limit-precision-invalid` |
-| `Rejected(ReferenceAlreadyUsed)` | `409` | `reference-already-used` |
+| `Rejected(NumberAlreadyUsed)` | `409` | `number-already-used` |
 
 Status codes, problem types and detail texts are **unchanged** from the previous revision; the
 contract test ([§16.7](#167-tests)) pins them.
@@ -1667,11 +1666,11 @@ contract test ([§16.7](#167-tests)) pins them.
 ### 13.3 The search request, step by step
 
 ```
-GET /api/submissions?reference=&insuredLimitFrom=&insuredLimitTo=&registeredFrom=&registeredTo=&page=&size=
+GET /api/submissions?submissionNumber=&insuredLimitFrom=&insuredLimitTo=&registeredFrom=&registeredTo=&page=&size=
   1. caller    = actorContextResolver.resolve()        Optional<AuthenticatedCaller>
   2. admission = searchGate.admit(caller)              401 or 403 end here. 403 is unreachable for
                                                         search by construction; §5.2 explains.
-  3. filter    = SubmissionFilter.parse(reference, from, to, registeredFrom, registeredTo)
+  3. filter    = SubmissionFilter.parse(number, from, to, registeredFrom, registeredTo)
                                                         total: it cannot refuse
   4. page      = admission.run(new SearchSubmissionsQuery(filter, page, size))
   5. 200 with SubmissionPageView
@@ -1717,11 +1716,11 @@ is also no longer needed: the actor is a parameter now, so there is no scope to 
 
 Every `ProblemDetail` carries a stable code and a user-safe message: no stack trace, no SQL
 fragment, no internal id, **no insured limit** (BR-22), and nothing that reveals another
-organisation's data. `ReferenceAlreadyUsed` is safe to return as `409` precisely because
+organisation's data. `NumberAlreadyUsed` is safe to return as `409` precisely because
 uniqueness never crosses organisations (BR-08): the conflicting submission is always one of the
-caller's own. The reference is escaped on the way into any `ProblemDetail` or log line — every
+caller's own. The number is escaped on the way into any `ProblemDetail` or log line — every
 code point of category Cc rendered as `\uXXXX` ([§10](#10-logging-and-masking)) — because the
-BR-29 refusal path is where such a reference is guaranteed to appear.
+BR-29 refusal path is where such a number is guaranteed to appear.
 
 ---
 
@@ -1738,7 +1737,7 @@ Explicitly out of scope, so the next agent does not add it:
 - **No currency field** in any record, column, event or API payload. Every amount is euro by
   definition (BR-14).
 - **No maximum insured limit** (BR-13) — hence unconstrained `NUMERIC`, not `NUMERIC(19, 2)`.
-- **No character-set restriction on the reference beyond BR-29.** Control characters (category Cc)
+- **No character-set restriction on the number beyond BR-29.** Control characters (category Cc)
   are refused and that is the **only** such restriction: no trimming, no case folding, no Unicode
   normalisation, no allow-list of scripts, no rejection of spaces, punctuation, symbols or emoji
   (BR-07, BR-29). Hence `COLLATE "C"`. A wider character rule needs a business decision, exactly as
@@ -1796,8 +1795,8 @@ is non-null, and that only holds if nothing `@Nullable` has to reach the domain.
 
 1. **A value that guards an invariant is a `final class` with a private constructor, never a
    record.** A record's canonical constructor must be at least as accessible as the record, so
-   `public record ExternalReference(String value)` would let anyone write
-   `new ExternalReference("\u0000")`. Checked with `javac` 25: a private canonical constructor on a
+   `public record SubmissionNumber(String value)` would let anyone write
+   `new SubmissionNumber("\u0000")`. Checked with `javac` 25: a private canonical constructor on a
    public record is rejected with "invalid canonical constructor… attempting to assign stronger
    access privileges; was public". Records remain right for data with no invariant beyond its
    components' types: `SubmissionId`, the commands, the views, the errors.
@@ -1812,60 +1811,60 @@ is non-null, and that only holds if nothing `@Nullable` has to reach the domain.
 4. **Immutable, with value equality** on the wrapped value (Checkstyle `EqualsHashCode` requires
    `equals` and `hashCode` together).
 5. **It owns its own log-safety.** `InsuredLimit.toString()` prints `***`. A valid
-   `ExternalReference` cannot contain a control character, so its text is
+   `SubmissionNumber` cannot contain a control character, so its text is
    already inert. A record holding one therefore prints safely *by composition*, and the class of
    defect where a record forgot its mask (SEC-02, SEC-03, SEC-04) cannot recur through a value
    object. Raw holders — the snapshot, the event, the summary view, the filter bounds — keep their
    explicit masks.
 6. **A value object admits only what the store can hold.** This is BR-29's lesson turned into a
-   rule ([§8.3](#83-what-the-schema-never-constrained-the-references-character-set)): "no
+   rule ([§8.3](#83-what-the-schema-never-constrained-the-numbers-character-set)): "no
    restriction" is only as true as the storage beneath it. Each value object states its storage fit
    ([§15.8](#158-storage-fit-in-one-table)).
 7. **There is no second way in.** No `of`, `trusted`, `unsafe`, `fromStored`. Even the persistence
    adapter reconstitutes by parsing ([§4.2](#42-reconstitute-parses-too)). A back door is how a
    guarantee erodes, one convenient call at a time.
 
-### 15.2 `ExternalReference`
+### 15.2 `SubmissionNumber`
 
 ```java
-public final class ExternalReference {
+public final class SubmissionNumber {
 
     /** BR-05 — counted in code points. */
     public static final int MAX_LENGTH = 64;
 
-    public static Result<ExternalReference, ExternalReferenceError> parse(@Nullable String text);
+    public static Result<SubmissionNumber, SubmissionNumberError> parse(@Nullable String text);
 
     public String value();
     // equals / hashCode on value(); toString prints the value (no control character can be in it)
 }
 
-public sealed interface ExternalReferenceError {
-    record Missing() implements ExternalReferenceError { }                          // BR-04
-    record TooLong(int maxLength, int actualLength) implements ExternalReferenceError { }   // BR-05
-    record ControlCharacter(int codePoint, int index) implements ExternalReferenceError { } // BR-29
+public sealed interface SubmissionNumberError {
+    record Missing() implements SubmissionNumberError { }                          // BR-04
+    record TooLong(int maxLength, int actualLength) implements SubmissionNumberError { }   // BR-05
+    record ControlCharacter(int codePoint, int index) implements SubmissionNumberError { } // BR-29
 }
 ```
 
 **The value object has its own error type.** Previously `parse` returned `RegisterSubmissionError`,
 which made the value object depend on one operation's failure type. The search filter then had to
-read a registration error and handle variants that a reference can never produce. Both sides now
-share `ExternalReferenceError`, which has exactly the three things a reference can be refused for,
+read a registration error and handle variants that a number can never produce. Both sides now
+share `SubmissionNumberError`, which has exactly the three things a number can be refused for,
 and each operation maps those three into its own type.
 
 The register mapping is one total, exhaustive function, in `RegisterSubmissionCommand.parse`:
 
 ```java
 return switch (error) {
-    case ExternalReferenceError.Missing _                 -> new RegisterSubmissionError.ReferenceMissing();
-    case ExternalReferenceError.TooLong(var max, var len) -> new RegisterSubmissionError.ReferenceTooLong(max, len);
-    case ExternalReferenceError.ControlCharacter(var cp, var at) ->
-            new RegisterSubmissionError.ReferenceContainsControlCharacter(cp, at);
+    case SubmissionNumberError.Missing _                 -> new RegisterSubmissionError.NumberMissing();
+    case SubmissionNumberError.TooLong(var max, var len) -> new RegisterSubmissionError.NumberTooLong(max, len);
+    case SubmissionNumberError.ControlCharacter(var cp, var at) ->
+            new RegisterSubmissionError.NumberContainsControlCharacter(cp, at);
 };
 ```
 
 The search mapping is in [§5.1](#51-the-query-record-and-the-filter-parse), and it is the same
 exhaustive shape with a different meaning for each arm. The three `RegisterSubmissionError`
-reference variants keep their names and their wire contract, so nothing a caller sees changes. The
+number variants keep their names and their wire contract, so nothing a caller sees changes. The
 cost is three records declared in two places, which is the price of a value object that does not
 depend on an operation.
 
@@ -1881,9 +1880,9 @@ The three checks run in the spec's order, inside `parse`, and the first failure 
 | `"AB\tCD"`, `"\u0000"`, `"\u0085"` | `ControlCharacter(codePoint, index)` (BR-29) |
 | `"a b"`, `"  a  "` | valid, preserved exactly (BR-07) |
 
-- **`isEmpty()`, not `isBlank()`.** BR-04 refuses a reference that "contains no characters at all",
-  and BR-07 says two references differing in surrounding blank space are *different* references. A
-  reference of spaces is valid. `isBlank()` would refuse it, and BR-29 does not change that: "control
+- **`isEmpty()`, not `isBlank()`.** BR-04 refuses a number that "contains no characters at all",
+  and BR-07 says two numbers differing in surrounding blank space are *different* numbers. A
+  number of spaces is valid. `isBlank()` would refuse it, and BR-29 does not change that: "control
   character" is narrower than "whitespace". TAB and NEWLINE are both; **SPACE (U+0020) is only
   whitespace**.
 - **The test is the category, not a list.** `ControlCharacters.firstIn` ([§15.5](#155-the-single-definition-of-category-cc))
@@ -1931,7 +1930,7 @@ BR-11 and BR-12, and is told `InsuredLimitNotPositive` because the sign is check
 
 | Constant | Value | Lives on | Was | Read by |
 |---|---|---|---|---|
-| `MAX_LENGTH` | 64 | `ExternalReference` | `RegisterSubmissionCommand.MAX_EXTERNAL_REF_LENGTH` | the factory, `ReferenceTooLong`, tests, an IT asserting the column is that wide |
+| `MAX_LENGTH` | 64 | `SubmissionNumber` | `RegisterSubmissionCommand.MAX_SUBMISSION_NUMBER_LENGTH` | the factory, `NumberTooLong`, tests, an IT asserting the column is that wide |
 | `REQUIRED_SCALE` | 2 | `InsuredLimit` | `RegisterSubmissionCommand.REQUIRED_INSURED_LIMIT_SCALE` | the factory, `InsuredLimitPrecisionInvalid`, tests |
 | `MAX_ACTOR_ID_LENGTH` | 255 | `ActorContext` | — | `ActorContext.parse`, an IT asserting `registered_by` is that wide |
 | `MIN_PAGE_SIZE`, `MAX_PAGE_SIZE` | 1, 100 | `SearchSubmissionsQuery` | unchanged | the compact constructor ([§7](#7-engineering-decision-maximum-page-size)) |
@@ -1975,7 +1974,7 @@ public final class ControlCharacters {
 }
 ```
 
-Callers: `ExternalReference`, `ActorContext.parse` (for `actorId`) and `LogSafeText`. `ReferenceCriterion`
+Callers: `SubmissionNumber`, `ActorContext.parse` (for `actorId`) and `LogSafeText`. `NumberCriterion`
 is no longer a caller, because it no longer exists.
 
 ### 15.6 The caller from claims
@@ -2031,25 +2030,25 @@ public final class AuthenticatedCaller {
   `AuthenticatedCaller.parse(tenant.toString(), "uw-01", "UNDERWRITER")` — so every test exercises
   the production path instead of a test-only constructor.
 
-### 15.7 The search filter reuses `ExternalReference`
+### 15.7 The search filter reuses `SubmissionNumber`
 
-`ReferenceCriterion` **is deleted.** It existed only because `query/` could not import `domain/`, so
-it duplicated `ExternalReference`'s rule with a different name and a different meaning. Once the
+`NumberCriterion` **is deleted.** It existed only because `query/` could not import `domain/`, so
+it duplicated `SubmissionNumber`'s rule with a different name and a different meaning. Once the
 read side is in `domain/`, the duplicate has no reason to exist.
 
 The search filter is the same value object with a different reading of its failures. Its complete
 mapping is in [§5.1](#51-the-query-record-and-the-filter-parse), and summarised here:
 
-| Reference filter | `ExternalReference.parse` | Filter |
+| Number filter | `SubmissionNumber.parse` | Filter |
 |---|---|---|
 | absent | — | not supplied, narrows nothing (BR-19) |
 | present but empty | `Missing` | **not supplied (BR-31)** |
 | contains a category-Cc character | `ControlCharacter` | **`MatchesNothing` (BR-30)** |
 | more than 64 code points | `TooLong` | **`MatchesNothing` (BR-32)** |
-| valid | success | the reference, compared exactly (BR-07) |
+| valid | success | the number, compared exactly (BR-07) |
 
 The difference in meaning is the point, and it is why the failure is not a refusal on this side.
-A registration with a bad reference is a request the business cannot honour. A search with one asks
+A registration with a bad number is a request the business cannot honour. A search with one asks
 a question whose true answer is "none". The spec asks for an empty success (BR-30, BR-31), so the
 same failure folds into a different outcome.
 
@@ -2059,11 +2058,11 @@ same failure folds into a different outcome.
 
 | Value object | Admits | The store | Fit |
 |---|---|---|---|
-| `ExternalReference` | 1 to 64 code points, no category Cc | `VARCHAR(64) COLLATE "C"`, `CHECK (length > 0)`, `CHECK` no control character | exact. U+0000 is stopped here, not by the driver |
+| `SubmissionNumber` | 1 to 64 code points, no category Cc | `VARCHAR(64) COLLATE "C"`, `CHECK (length > 0)`, `CHECK` no control character | exact. U+0000 is stopped here, not by the driver |
 | `InsuredLimit` | strictly positive, scale 2, any magnitude | `NUMERIC`, `CHECK (> 0)`, `CHECK (scale = 2)` | exact up to PostgreSQL's digit limit (Q5) |
 | `ActorContext.actorId` | non-blank, up to 255 code points, no category Cc | `registered_by VARCHAR(255)` | exact; needs the width IT |
 | `ActorContext.tenantId` | any canonical UUID | `UUID` | exact |
-| the search reference filter | any text | a bound parameter, compared with the `VARCHAR(64)` column | holds: a longer value is `MatchesNothing` (BR-32), a control character is `MatchesNothing` (BR-30), and the request-size limit bounds it in practice |
+| the search number filter | any text | a bound parameter, compared with the `VARCHAR(64)` column | holds: a longer value is `MatchesNothing` (BR-32), a control character is `MatchesNothing` (BR-30), and the request-size limit bounds it in practice |
 
 ---
 
@@ -2073,7 +2072,7 @@ Three ArchUnit rules pin the principle, each to be broken on purpose once. They 
 because the read side is in it. `failOnEmptyShould` is `true`, so each must match something.
 
 - **`raw_input_enters_only_through_parse`** — a *method* declared in a class in `..domain..` that has a parameter of type `String` or `BigDecimal` must be named `parse`. It is written over `methods()`, and ArchUnit's `methods()` excludes constructors, so a record's canonical constructor is never caught. That is how views (`SubmissionSummaryView`), the snapshot, the event, the error records and the search criteria hold `String` and `BigDecimal` without tripping it: they receive those values through a constructor and expose them through accessors, which take no parameter.
-- **`commands_and_queries_carry_only_parsed_values`** — no *field* of a class whose simple name ends in `Command` or `Query` has raw type `String` or `BigDecimal`, and no field of `SubmissionFilter` or of a record nested in it has raw type `String`. That is the whole of its scope: commands, queries and the filter, which are the inputs. A view's name ends in `View`, the criteria's in `Criteria`, the snapshot's in `Snapshot`, so none of them is selected. The filter's `BigDecimal` and `Instant` bounds are allowed on purpose, because every value of those types is a legal comparison value; its reference is an `ExternalReference`, so a `String` there would mean the parse was bypassed.
+- **`commands_and_queries_carry_only_parsed_values`** — no *field* of a class whose simple name ends in `Command` or `Query` has raw type `String` or `BigDecimal`, and no field of `SubmissionFilter` or of a record nested in it has raw type `String`. That is the whole of its scope: commands, queries and the filter, which are the inputs. A view's name ends in `View`, the criteria's in `Criteria`, the snapshot's in `Snapshot`, so none of them is selected. The filter's `BigDecimal` and `Instant` bounds are allowed on purpose, because every value of those types is a legal comparison value; its number is an `SubmissionNumber`, so a `String` there would mean the parse was bypassed.
 
   The selector combines the two name tests as one predicate, `simpleNameEndingWith("Command").or(simpleNameEndingWith("Query"))`, passed to `areDeclaredInClassesThat(...)`, rather than as `.or()` on the fluent chain, which would widen the whole rule. *Domain objects hold no raw input fields* is now exactly what it says: input objects. Output records are out of its scope by design, and the reason is recorded in [§5.3](#53-views).
 - **`guarded_types_have_no_public_constructor`** — a public class that is not a record, interface or
@@ -2081,12 +2080,12 @@ because the read side is in it. `failOnEmptyShould` is `true`, so each must matc
   `OperationGate`, has no public constructor. A record cannot satisfy it, so an invariant guarded by a
   record is caught.
 
-Tests, all pure and fast, with no use case and no fake in sight: `ExternalReferenceTest` (the table in
-[§15.2](#152-externalreference), plus a supplementary character before the offender to prove the index
+Tests, all pure and fast, with no use case and no fake in sight: `SubmissionNumberTest` (the table in
+[§15.2](#152-submissionnumber), plus a supplementary character before the offender to prove the index
 is in code points), `InsuredLimitTest`, `RegisterSubmissionCommandParseTest`, `ControlCharactersTest`,
-`SubmissionFilterTest` (a category-Cc reference is `MatchesNothing`; spaces only is `Narrowing`; `null`
+`SubmissionFilterTest` (a category-Cc number is `MatchesNothing`; spaces only is `Narrowing`; `null`
 is no criterion; `""` is no criterion; a contradictory range is still `Narrowing`), and two integration
-tests asserting `ExternalReference.MAX_LENGTH` and `ActorContext.MAX_ACTOR_ID_LENGTH` equal the actual
+tests asserting `SubmissionNumber.MAX_LENGTH` and `ActorContext.MAX_ACTOR_ID_LENGTH` equal the actual
 column widths.
 
 ---
@@ -2200,7 +2199,7 @@ static final ArchRule use_cases_expose_exactly_one_public_method_named_ask_or_ex
 @ArchTest
 static final ArchRule query_controllers_depend_on_no_write_use_case =
         noClasses()
-                .that().haveSimpleNameEndingWith("QueryController")
+                .that().haveSimpleNameEndingWith("QueryResource")
                 .should().dependOnClassesThat(exposingPublicMethodNamed("execute"))
                 .because("a query endpoint may call only an ask use case; calling execute from it would "
                         + "let a read request change state");
@@ -2208,7 +2207,7 @@ static final ArchRule query_controllers_depend_on_no_write_use_case =
 @ArchTest
 static final ArchRule command_controllers_depend_on_no_read_use_case =
         noClasses()
-                .that().haveSimpleNameEndingWith("CommandController")
+                .that().haveSimpleNameEndingWith("CommandResource")
                 .should().dependOnClassesThat(exposingPublicMethodNamed("ask"))
                 .because("a command endpoint may call only an execute use case; calling ask from it would "
                         + "let a write request depend on a read");
@@ -2230,7 +2229,7 @@ Four points about these rules, each of which the build can check.
   trap cannot arise.
 - **`failOnEmptyShould` is `true`.** Each rule matches at least one class today:
   `SearchSubmissionsUseCase` for the read rule, `RegisterSubmissionUseCase` for the write rule,
-  `SubmissionQueryController` and `SubmissionCommandController` for the controller rules, and
+  `SubmissionQueryResource` and `SubmissionCommandResource` for the controller rules, and
   `Submission` for the aggregate rule. `no_query_package_exists` matches every class in the tree.
   Each must be broken on purpose once, as `AGENTS.md` requires of any structural gate.
 
@@ -2262,7 +2261,7 @@ the aggregate.
 |---|---|---|
 | Only an Underwriter or Senior Underwriter may register (BR-02, BR-03) | yes | the guard |
 | Every role may search (BR-16) | yes | the guard |
-| A reference is unique within an organisation (BR-06, BR-09) | no — needs the store | the domain and its port |
+| A number is unique within an organisation (BR-06, BR-09) | no — needs the store | the domain and its port |
 | *(out of scope)* an Underwriter may approve up to their authority limit | no — needs the amount | the domain |
 | *(out of scope)* a submission may be approved only while pending | no — needs the state | the domain |
 
@@ -2331,7 +2330,7 @@ compile it before relying on it.
   implementations, so there is no `if (role == ...)` in a controller, a use case or anywhere else.
   `rolesOnly` takes `first` plus `others`, so an empty set, a permission that silently denies everyone,
   cannot be written.
-- **`Admission` is the proof, and the only door.** The controller never holds a reference to the use
+- **`Admission` is the proof, and the only door.** The controller never holds a number to the use
   case. It holds a gate; the gate gives it an `Admission` or a refusal; the `Admission` runs the
   operation. `run` supplies the *admitted* actor, so the adapter cannot substitute a different one.
 - **No permission is evaluated inside a use case.** A use case is handed an `ActorContext` and uses its
@@ -2357,7 +2356,7 @@ What actually holds that order, said without flattering it:
 | Parsing the request happens after the permission | the shape of the API — the only handle to `run` comes out of `admit`, and parsing sits inside its `flatMap` — plus tests | **tests, not the compiler** |
 | The framework's own body and parameter conversion happens after the permission | not enforced | **residual — Q1** |
 
-The fifth row is the honest limit of a type-based design. `ExternalReference.parse` and
+The fifth row is the honest limit of a type-based design. `SubmissionNumber.parse` and
 `InsuredLimit.parse` are public, because the adapter must be able to call them, so a controller
 that deliberately parsed before calling `admit` would compile. The API makes the correct order the
 only convenient one, and the tests below make the wrong order fail; but "the compiler forbids it" is
@@ -2376,7 +2375,7 @@ purpose once.
   `..adapters.config..` depends on a class in `..domain..` whose simple name ends in
   `UseCase`. *Because a second inbound path that injects a raw use case skips the permission check;
   the only handle it can be given is an `Admission`.* This is the rule that pins the bypass. To
-  break it on purpose: inject `RegisterSubmissionUseCase` into `SubmissionCommandController` and
+  break it on purpose: inject `RegisterSubmissionUseCase` into `SubmissionCommandResource` and
   watch the build fail.
 - **A2 — `gates_are_constructed_only_by_wiring`** — no class outside `..adapters.config..` calls an
   `OperationGate` constructor. *Because permissions are declared in one place; a gate built anywhere
@@ -2417,7 +2416,7 @@ concept from "may register", so keeping it would invite its reuse as the registe
 **Confirmed: a permission refusal reveals nothing about any tenant's data.**
 
 - The `403` is decided from the caller's role and the operation alone, before any parse, lookup or
-  query. It cannot vary with the body, the reference, this organisation's data or any other
+  query. It cannot vary with the body, the number, this organisation's data or any other
   organisation's. It therefore cannot confirm that a record exists, in this tenant or another.
 - It is a different case from the one the "`NotFound`, never `Forbidden`" rule protects, which is a
   lookup *by id* of a record that belongs to someone else. This feature has no lookup by id. When
@@ -2426,7 +2425,7 @@ concept from "may register", so keeping it would invite its reuse as the registe
 - Its body contains only the caller's own role.
 - The order is part of the protection. Because the permission is judged before parsing and before
   the store, a Viewer — genuine or with stolen credentials — cannot use registration to probe the
-  validation rules or, through a `409`, which references an organisation already holds. A refusal
+  validation rules or, through a `409`, which numbers an organisation already holds. A refusal
   that arrived after parsing or after the uniqueness check would be exactly that oracle.
 - `401` versus `403` says "we do not know who you are" versus "you may not do this". That is
   standard, and it reveals nothing about data.
@@ -2449,15 +2448,15 @@ All of these run without Spring and in milliseconds.
    yields a caller whose `toString` does not print the `actorId`.
 4. **Edge order tests, on the controllers as plain objects.** Build the controller with a gate over
    a fake use case and a stub resolver. The one that pins "judged before parsed": a Viewer sends a
-   valid reference and a **poisoned `BigDecimal`** — a subclass whose every method fails the test —
+   valid number and a **poisoned `BigDecimal`** — a subclass whose every method fails the test —
    and must receive `403` with the poison untouched. `BigDecimal` is not final and `String` is, so
    the poison goes in the amount. Its control: an Underwriter sending the same poisoned request
    *does* touch it, so the first case cannot pass vacuously. Around it: a Viewer with a control
-   character in the reference is told `403`, not `400`; the same Underwriter is told `400
-   reference-contains-control-character`; an empty caller with an invalid body is told `401`; a valid
+   character in the number is told `403`, not `400`; the same Underwriter is told `400
+   number-contains-control-character`; an empty caller with an invalid body is told `401`; a valid
    Underwriter request is `201` and the fake received exactly the admitted actor. For search: an
    empty caller with an unmatchable filter is `401` and the repository fake is untouched; a Viewer
-   with a control character in the reference filter is `200` with an empty page and the repository
+   with a control character in the number filter is `200` with an empty page and the repository
    fake is untouched.
 5. **The refusal-catalogue contract test.** For each of the nine spec reasons, an input that
    produces it, driven through the edge, asserting status and problem type; plus, by reflection,
@@ -2508,11 +2507,11 @@ register; every refusal arrives in the order of the data.
 2. **It makes a refusal a probing oracle.** The spec's own reasoning for the order: a caller who may
    not register has no business having what they sent read, interpreted or judged. If field
    refusals came first, anyone holding a Viewer's credentials, genuine or stolen, could use
-   registration to learn the validation rules, and a `409` would tell them which references the
+   registration to learn the validation rules, and a `409` would tell them which numbers the
    organisation already holds.
-3. **It contradicts the spec's order of judgement** — caller, role, reference, amount, history — and
+3. **It contradicts the spec's order of judgement** — caller, role, number, amount, history — and
    a test that already pins it: a Viewer sending a control character is told about the role, not
-   about the reference.
+   about the number.
 4. **Nothing in the code would resist it.** The next controller can parse first again, and only a
    test would notice.
 
@@ -2575,30 +2574,30 @@ source is chosen (Q1). The per-use-case *permission* stays in the gate.
 | `shared.kernel.ActorRole` | **moved to `submission.adapters.access`**; `canDecide()` deleted |
 | `shared.kernel.ControlCharacters` | **stays** (§15.5) |
 | `shared.kernel.LogSafeText` | delegates the category test to `ControlCharacters` |
-| `submission.domain.ExternalReference` | **new** value object; `parse` returns `ExternalReferenceError`; `MAX_LENGTH` |
-| `submission.domain.ExternalReferenceError` | **new** sealed interface, three variants, shared by both sides |
+| `submission.domain.SubmissionNumber` | **new** value object; `parse` returns `SubmissionNumberError`; `MAX_LENGTH` |
+| `submission.domain.SubmissionNumberError` | **new** sealed interface, three variants, shared by both sides |
 | `submission.domain.InsuredLimit` | **new** value object |
-| `submission.domain.RegisterSubmissionCommand` | raw components replaced by the two value objects; `parse` maps `ExternalReferenceError` to the three reference variants |
+| `submission.domain.RegisterSubmissionCommand` | raw components replaced by the two value objects; `parse` maps `SubmissionNumberError` to the three number variants |
 | `submission.domain.RegisterSubmissionError` | loses `CallerNotIdentified` and `RoleMayNotRegister` (to `adapters.access`): nine variants become seven |
-| `submission.domain.RegisterSubmissionUseCase` | `execute(ActorContext, RegisterSubmissionCommand)`; returns `Result<SubmissionId, ReferenceAlreadyUsed>` |
+| `submission.domain.RegisterSubmissionUseCase` | `execute(ActorContext, RegisterSubmissionCommand)`; returns `Result<SubmissionId, NumberAlreadyUsed>` |
 | `submission.domain.Submission` | `register` is total; validation helpers deleted; value-object fields; `reconstitute` returns `Optional` and re-parses; no `ActorRole` |
 | `submission.domain.SearchSubmissionsQuery` | **moved from `query/`**; five raw filters replaced by one `SubmissionFilter`; page normalised |
-| `submission.domain.SubmissionFilter` | **moved from `query/`**; `parse` folds `ExternalReferenceError` (§5.1) |
+| `submission.domain.SubmissionFilter` | **moved from `query/`**; `parse` folds `SubmissionNumberError` (§5.1) |
 | `submission.domain.SearchSubmissionsUseCase` | **moved from `query/`**; `ask(ActorContext, SearchSubmissionsQuery)` returns `SubmissionPageView`; a `switch` over the filter |
-| `submission.domain.SubmissionSearchCriteria` | **moved from `query/`**; `reference` is an `ExternalReference` |
-| `submission.domain.SubmissionSummaryView` | **moved from `query/`**; `SubmissionId` in place of `UUID`; the reference and amount stay `String` and `BigDecimal` (§5.3) |
+| `submission.domain.SubmissionSearchCriteria` | **moved from `query/`**; `number` is an `SubmissionNumber` |
+| `submission.domain.SubmissionSummaryView` | **moved from `query/`**; `SubmissionId` in place of `UUID`; the number and amount stay `String` and `BigDecimal` (§5.3) |
 | `submission.domain.SubmissionPageView` | **moved from `query/`** |
 | `submission.domain.SubmissionQueryRepository` | **moved from `query/`** |
-| `submission.query.ReferenceCriterion` | **deleted** |
+| `submission.query.NumberCriterion` | **deleted** |
 | `submission.query.SearchSubmissionsError` | **deleted** |
 | `submission.query.package-info.java` | **deleted** |
 | `submission.adapters.access.*` | **new:** `ActorRole` (moved), `AuthenticatedCaller`, `AccessRefusal`, `CallerNotIdentified`, `PermissionDenied`, `Permission` (non-generic), `OperationGate<C, R>`, `Admission<C, R>` |
 | `submission.adapters.web.ActorContextResolver` | yields `Optional<AuthenticatedCaller>` |
 | `submission.adapters.web.RegisterSubmissionRequest` | gains `toCommand()` |
 | `submission.adapters.web.RegisterRefusal` | **new** union |
-| `submission.adapters.web.SubmissionCommandController` | the five-step flow; a nine-case flat `switch`; no `ActorContext.callWith` |
-| `submission.adapters.web.SubmissionQueryController` | the flow in §13.3; a two-arm `switch`; imports from `domain/` |
-| `submission.adapters.persistence.SubmissionQuerySqlAdapter` | imports from `domain/`; unwraps `reference.value()`; copies stored values into views without parsing (§9.4) |
+| `submission.adapters.web.SubmissionCommandResource` | the five-step flow; a nine-case flat `switch`; no `ActorContext.callWith` |
+| `submission.adapters.web.SubmissionQueryResource` | the flow in §13.3; a two-arm `switch`; imports from `domain/` |
+| `submission.adapters.persistence.SubmissionQuerySqlAdapter` | imports from `domain/`; unwraps `number.value()`; copies stored values into views without parsing (§9.4) |
 | `submission.adapters.persistence.SubmissionPersistenceMapper` | handles `Optional` from `reconstitute` |
 | `submission.adapters.config.SubmissionConfiguration` | builds the two gates; declares the permission table; raw use cases are no longer beans |
 | migrations, SQL | none |
@@ -2617,17 +2616,17 @@ best figure, not a build result.
   or value-object fixtures.
 - **`new SearchSubmissionsQuery(...)`: 18 sites in 4 files** build their filter through
   `SubmissionFilter.parse`.
-- **`ReferenceCriterion` and `SearchSubmissionsError` appear in the query tests**; those assertions move
+- **`NumberCriterion` and `SearchSubmissionsError` appear in the query tests**; those assertions move
   to `SubmissionFilterTest` and to the gate tests.
 - **`CallerNotIdentified` is asserted in 4 files**; those assertions move to the gate tests.
 - **The role tests** (`RegisterSubmissionUseCaseTest`'s role group and its viewer-before-control-character
   case) can no longer be written against the use case, which is the point. They move to
   `PermissionMatrixTest`, `OperationGateTest` and the edge order tests.
-- **The validation-order tests** move to `ExternalReferenceTest`, `InsuredLimitTest` and
+- **The validation-order tests** move to `SubmissionNumberTest`, `InsuredLimitTest` and
   `RegisterSubmissionCommandParseTest`: pure, with no use case and no fake.
 - **`ActorContextTest`:** the `canDecide` and role assertions leave, the parse tests arrive, the
   scoped-value tests stay (R5).
-- **`ReferenceLogInjectionTest`:** builds raw commands and queries today; keep it for the raw holders
+- **`NumberLogInjectionTest`:** builds raw commands and queries today; keep it for the raw holders
   (snapshot, event, error, views).
 - **`ArchitectureRulesTest`:** see §18.4.
 - **Integration tests** that build commands through the register use case go through `parse`.
@@ -2643,7 +2642,7 @@ best figure, not a build result.
 | BR-01 caller identified | each use case, `fromOptional(ActorContext.current())` | `OperationGate.admit` |
 | BR-02, BR-03 role may register | `Submission.register` | `Permission.rolesOnly`, declared in config |
 | BR-16 every role may search | the search use case never read a role | `Permission.anyIdentifiedCaller`; no role consulted |
-| BR-04, BR-05, BR-29 | `Submission.register` | `ExternalReference.parse`, mapped into the register error |
+| BR-04, BR-05, BR-29 | `Submission.register` | `SubmissionNumber.parse`, mapped into the register error |
 | BR-10, BR-11, BR-12 | `Submission.register` | `InsuredLimit.parse` |
 | BR-30 | the filter reached the store and answered `500` | `SubmissionFilter.parse` maps `ControlCharacter` to `MatchesNothing` |
 | BR-31 | not specified in code | `SubmissionFilter.parse` maps `Missing` to not supplied |
@@ -2715,66 +2714,62 @@ make. Nothing in this section is written against the implementation's behaviour.
 
 It follows the revision 4 model without exception. Approval is a write use case in `domain/`, with
 one public method, `execute(ActorContext, ApproveSubmissionCommand)`. The access gate decides who may
-call it before any input is parsed. The submission identity is parsed at the edge with the same
-parse-don't-validate rule as every other input.
+call it before any input is parsed. The submission number is parsed at the edge with the same parse-don't-validate rule as every
+other input, and the internal identity is never part of the request.
 
 ### 19.1 The order at the edge
 
 ```
-POST /api/submissions/{id}/approve      {id} is a String. The framework does not convert it.
-  1. caller    = actorContextResolver.resolve()                 Optional<AuthenticatedCaller>
-  2. admission = approvalGate.admit(caller)                     401 (BR-01) or 403 (BR-33) end here
-  3. command   = ApproveSubmissionCommand.parse(id)             a malformed id ends here as 404 (BR-35)
-  4. result    = admission.run(command)                         404, 403 or 409, or 200
+POST /api/submissions/{number}/approve     {number} is a String. The framework does not convert it.
+  1. caller    = actorContextResolver.resolve()               Optional<AuthenticatedCaller>
+  2. admission = approvalGate.admit(caller)                   401 (BR-01) or 403 (BR-33) end here
+  3. command   = ApproveSubmissionCommand.parse(number)       a text that cannot be a submission number
+                                                              ends here as 404 (BR-35)
+  4. result    = admission.run(command)                       404, 403 or 409, or 200
 ```
 
-Two properties of this order are the point, and both are checked by tests in [§19.12](#1912-tests):
+Three properties of this order are the point, and each is checked by a test in [§19.12](#1912-tests):
 
-- **A malformed identity cannot produce a framework `400`.** The path variable is declared `String`,
-  so Spring performs no conversion, and the first point at which the identity is examined is step 3,
-  which runs only after step 2 has admitted the caller. A Viewer who names `not-a-uuid` receives `403`,
-  not `400`, and not `404`.
-- **Nothing about the identity is revealed before the role is judged.** Step 2 consults the caller and
+- **A malformed number cannot produce a framework `400`.** The path variable is declared `String`, so
+  Spring performs no conversion. A Viewer who names an empty or control-character number receives `403`,
+  because step 3 runs only after step 2 has admitted the caller.
+- **Nothing about the submission is revealed before the role is judged.** Step 2 consults the caller and
   the operation alone. The submission is not looked at until step 4 (BR-33, BR-34).
-
-The implementation violates both properties, and the change is named in [§19.11](#1911-where-the-implementation-diverges-required-changes).
+- **The internal identity never leaves the service.** The path carries the submission number, and the
+  response, the problem details and the events carry it too. The UUID is the key of the row the use case
+  finds, and no type of this operation exposes it (spec, glossary: *Submission Number*).
 
 ### 19.2 The command and its value objects
 
 ```java
-/** Canonical UUID text only: 36 characters, hexadecimal, grouped 8-4-4-4-12. Shared with ActorContext. */
+/** Canonical UUID text, for the caller's tenant claim only. Shared with ActorContext. */
 public final class CanonicalUuid {                              // shared/kernel
     public static Optional<UUID> parse(@Nullable String text);
 }
 
-public record SubmissionId(UUID value) {                        // domain — existing, plus:
-    public static Optional<SubmissionId> parse(@Nullable String text);   // CanonicalUuid.parse, then wrap
-}
+/** The submission number is a value object of the submission module (§15.2), parsed as at registration. */
+public final class SubmissionNumber { /* §15.2 */ }
 
-public record ApproveSubmissionCommand(SubmissionId submissionId) {
-    /** Malformed identity is SubmissionNotFound, the same refusal as an unknown one (BR-35). */
-    public static Result<ApproveSubmissionCommand, ApproveSubmissionError> parse(String rawSubmissionId);
+public record ApproveSubmissionCommand(SubmissionNumber submissionNumber) {
+    /**
+     * Any text that is not a submission number names no submission, so every parse failure becomes
+     * the one refusal an unknown number gets (BR-35). The three causes stay indistinguishable.
+     */
+    public static Result<ApproveSubmissionCommand, ApproveSubmissionError> parse(String rawNumber);
 }
 ```
 
-- **`CanonicalUuid` lives in `shared/kernel`,** because two modules' inputs need the same strict
-  rule: the caller's tenant claim in `ActorContext.parse`, and the submission identity here. If the two
-  rules disagreed, a caller and an identity could be parsed differently. The kernel gains one type,
-  for a format and not for a business rule, and the same argument as for `ControlCharacters`
-  applies ([§15.5](#155-the-single-definition-of-category-cc)).
-- **Why `CanonicalUuid` and not `UUID.fromString`.** `UUID.fromString("1-1-1-1-1")` returns
-  `00000001-0001-0001-0001-000000000001` rather than failing. A lenient identity can therefore name
-  a real submission. A malformed identity would then succeed, which violates BR-35 directly. The
-  strict check runs first, and `fromString` is called only on text already known to be canonical.
-- **Case.** Hexadecimal digits are accepted in either case. Both spellings denote one UUID, so
-  accepting both cannot name a different submission. This is a choice, not a rule the spec states,
-  and [§19.13](#1913-questions-for-the-product-owner) notes it.
-- **`parse` takes `String`, not `@Nullable String`.** A path variable is never absent. NullAway
-  therefore sees the non-null contract, and no `null` branch is needed.
+- **`CanonicalUuid` is no longer used for the submission.** It stays for the tenant claim in
+  `ActorContext.parse`, where the format is a business requirement of the identity source.
+- **The submission number is parsed by the rule registration uses** (BR-04, BR-05, BR-29), through
+  `SubmissionNumber.parse`. A number that could never have been registered, for example one containing a
+  TAB, is refused as not found. No UUID parse, and no UUID library, is needed for this operation. The
+  question of lenient UUID text (`UUID.fromString("1-1-1-1-1")`) does not arise, because no UUID is read.
 - **The command has one field.** The approving caller, the moment and the organisation come from the
   admitted actor and the clock (BR-37). The command cannot carry them, so a caller cannot supply them.
-- **The command is a standalone `public record`,** and `commands_and_queries_carry_only_parsed_values`
-  is satisfied because its field is a `SubmissionId`, not a `String`.
+- **The use case finds the submission by its number within the caller's organisation**
+  (`SubmissionCommandRepository.findOwnByNumber`). The row's internal id is then used for the approval
+  record and never returned.
 
 ### 19.3 The refusal types
 
@@ -2803,7 +2798,7 @@ one, because the spec's list is the caller's contract and does not name the laye
 |---|---|---|---|---|---|---|
 | 1 | Caller not identified | adapter | `ActorContextResolver` empty, so `OperationGate.admit` | BR-01 | 401 | `caller-not-identified` |
 | 2 | Role may not approve | adapter | `Permission.approval`, as `PermissionDenied(role)` | BR-33 | 403 | `permission-denied` |
-| 3 | Submission not found | domain | `ApproveSubmissionCommand.parse` for a malformed identity, and the use case for an unknown or other-organisation one | BR-35 | 404 | `submission-not-found` |
+| 3 | Submission not found | domain | `ApproveSubmissionCommand.parse` for a text that is not a number, and the use case for an unknown or other-organisation one | BR-35 | 404 | `submission-not-found` |
 | 4 | Approver registered this submission | domain | `Submission.approvableBy`, inside the use case | BR-41 | 403 | `approver-registered-submission` |
 | 5 | Submission already approved | domain | the approval insert's conflict, inside the use case | BR-36, BR-39 | 409 | `submission-already-approved` |
 
@@ -2834,7 +2829,7 @@ listed as a change.
 |---|---|---|---|
 | 1 | caller identified | `OperationGate.admit`, through the resolver | `CallerNotIdentified` |
 | 2 | role permits approving | `OperationGate.admit`, through `Permission.approval` | `PermissionDenied` |
-| 3 | identity is in a valid form | `ApproveSubmissionCommand.parse` | `SubmissionNotFound` |
+| 3 | the number is in a valid form | `ApproveSubmissionCommand.parse` | `SubmissionNotFound` |
 | 4 | submission exists in the caller's own organisation | the use case: `findOwn(tenantId, id)` | `SubmissionNotFound` |
 | 5 | caller did not register it | the use case: `Submission.approvableBy(actor)` | `ApproverRegisteredSubmission` |
 | 6 | not already approved | the use case: the approval insert | `SubmissionAlreadyApproved` |
@@ -2957,13 +2952,13 @@ never recorded, because the primary key is on `submission_id` alone.
 ### 19.7 The event `SubmissionApproved` (BR-40)
 
 ```java
-record SubmissionApproved(UUID eventId, SubmissionId aggregateId, UUID tenantId,
+record SubmissionApproved(UUID eventId, SubmissionNumber submissionNumber, UUID tenantId,
                           String approvedBy, Instant occurredAt) implements SubmissionDomainEvent {
     @Override public String toString();   // approvedBy=***; no insured limit exists in this record
 }
 ```
 
-- **Carries what BR-40 and §5 name:** the organisation, the submission's identity, the approving caller's
+- **Carries what BR-40 and §5 name:** the organisation, the submission number, the approving caller's
   identity and the moment. **It does not carry the insured limit,** because the spec states that the
   limit "is not carried" by this event, and the record has no field for it.
 - **Raised only on success,** through `peek` (§19.6).
@@ -3025,8 +3020,7 @@ spec's section 4 state that each returned submission shows its state, visible on
 organisation.
 
 ```java
-public record SubmissionSummaryView(SubmissionId submissionId,
-                                    String externalRef,
+public record SubmissionSummaryView(String submissionNumber,
                                     BigDecimal insuredLimit,
                                     String registeredBy,
                                     Instant registeredAt,
@@ -3042,7 +3036,7 @@ state filter, so the count does not depend on state:
 
 ```sql
 SELECT s.id AS submission_id,
-       s.external_ref,
+       s.submission_number,
        s.insured_limit,
        s.registered_by,
        s.registered_at,
@@ -3052,8 +3046,8 @@ LEFT JOIN submission_approvals a
        ON a.submission_id = s.id
       AND a.tenant_id     = s.tenant_id
 WHERE s.tenant_id = :tenantId
-  AND (CAST(:externalRef AS VARCHAR) IS NULL
-       OR s.external_ref = CAST(:externalRef AS VARCHAR))
+  AND (CAST(:submissionNumber AS VARCHAR) IS NULL
+       OR s.submission_number = CAST(:submissionNumber AS VARCHAR))
   -- the insured-limit and registration-moment predicates are as in §6, prefixed with s.
 ORDER BY s.registered_at DESC, s.id DESC
 LIMIT :limit OFFSET :offset
@@ -3135,23 +3129,25 @@ kernel is outside the rule's scope and is the only place the format is decided.
 
 ### 19.11 Where the implementation diverges: required changes
 
+> **Revision 5 (submission number).** The path now carries the submission number, not the internal UUID, so D1, D2, D5 and D6 are resolved by the design in §19.1 and §19.2: no UUID is parsed for the submission, `SubmissionNotFound` is fieldless, and the not-found body is constant. The table below is the developer's list against revision 5. The implementation at `5bf01b3` still predates this decision.
+
 Every item is a change the developer makes. The implementation is at `5bf01b3` and HEAD. Each item cites
 the design section it must match. Severity follows the review scale in `architect.agent.md`.
 
 | # | Divergence | Where | Required change | Severity |
 |---|---|---|---|---|
-| D1 | The identity is converted before the gate. `@PathVariable UUID id` makes Spring parse it, and a malformed value is a framework `400`. | `SubmissionApprovalController.approve` | Declare `@PathVariable String id`. Admit first, then `ApproveSubmissionCommand.parse(id)`, inside the admitted branch. A test pins a Viewer naming `not-a-uuid` to `403` ([§19.12](#1912-tests)). | **BLOCKER** |
+| D1 | The identity is converted before the gate. `@PathVariable UUID id` makes Spring parse it, and a malformed value is a framework `400`. | `SubmissionApprovalResource.approve` | Declare `@PathVariable String id`. Admit first, then `ApproveSubmissionCommand.parse(id)`, inside the admitted branch. A test pins a Viewer naming `not-a-uuid` to `403` ([§19.12](#1912-tests)). | **BLOCKER** |
 | D2 | Spring's `UUID` converter is lenient. `1-1-1-1-1` parses to a real UUID, which may name an existing submission. | the same path conversion | Fixed by D1 together with `CanonicalUuid.parse` ([§19.2](#192-the-command-and-its-value-objects)). Without `CanonicalUuid`, D1 still lets lenient text reach `findOwn`. | **BLOCKER** |
 | D3 | The self-approval check is absent. | `ApproveSubmissionUseCase.execute` | Add `Submission.approvableBy(actor)` returning `ApproverRegisteredSubmission` when `registeredBy` equals the caller's identity. Call it after the lookup and before the insert ([§19.4](#194-the-check-order-and-which-part-enforces-each-step)). | **BLOCKER** (BR-41) |
 | D4 | `ApproveSubmissionError` has two variants, not three: `ApproverRegisteredSubmission` is missing. | `ApproveSubmissionError.java` | Add the variant, and the mapping to `403` with type `approver-registered-submission`. | CRITICAL |
-| D5 | `SubmissionNotFound` carries a `SubmissionId`. A malformed identity has none to carry, so the variant cannot represent the spec's case. | `ApproveSubmissionError.java`, the use case, the controller | Make `SubmissionNotFound` fieldless, as in §19.3. The three cases are then indistinguishable by construction. | CRITICAL |
-| D6 | The not-found problem echoes the identity: `"Submission " + submissionId.value() + " was not found."`. For a malformed identity that is the raw path text, which is reflected untrusted input. | `SubmissionApprovalController.refused` | Use constant text with no echo, for every case (§19.3). | CRITICAL |
+| D5 | `SubmissionNotFound` carries a `SubmissionId`. A malformed number has none to carry, so the variant cannot represent the spec's case. | `ApproveSubmissionError.java`, the use case, the controller | Make `SubmissionNotFound` fieldless, as in §19.3. The three cases are then indistinguishable by construction. | CRITICAL |
+| D6 | The not-found problem echoes the identity: `"Submission " + submissionId.value() + " was not found."`. For a text that is not a number that is the raw path text, which is reflected untrusted input. | `SubmissionApprovalResource.refused` | Use constant text with no echo, for every case (§19.3). | CRITICAL |
 | D7 | The event identity is `UUID.randomUUID()` inside the use case, a second source of randomness in `domain/`. | `ApproveSubmissionUseCase.execute` | Take `SubmissionIdGenerator` in the constructor and call `nextEventId()`. | WARNING |
 | D8 | The approval state is absent from search. The summary view, its projection, and `findPage` have no state. | `SubmissionSummaryView`, `SubmissionSummaryJdbcProjection`, `SubmissionQueryJdbcRepository` | Add `SubmissionState`, the `approved` projection, the `LEFT JOIN` of [§19.9](#199-the-search-change). `countMatching` is unchanged. Spec §4 requires it. | CRITICAL |
 | D9 | V3's foreign key is single-column, cascades on delete, and the unique index is redundant. | `V3__create_submission_approvals.sql` | Replace with [§19.8](#198-schema-v3): composite foreign key, unique `(id, tenant_id)` on `submissions`, no cascade, no redundant index. Verify first that V3 is not applied anywhere. | CRITICAL |
-| D10 | The approval refusals are folded in two switches, with no union. | `SubmissionApprovalController.refused`, `refusedAccess` | Add `ApproveRefusal` and one flat exhaustive switch over it, as registration does (§19.3). | WARNING |
+| D10 | The approval refusals are folded in two switches, with no union. | `SubmissionApprovalResource.refused`, `refusedAccess` | Add `ApproveRefusal` and one flat exhaustive switch over it, as registration does (§19.3). | WARNING |
 | D11 | `isApproved` is a read before the insert: a second path to keep correct, and it races. | `SubmissionApprovalRepository`, its adapter, the use case | Remove `isApproved`. The insert's conflict is the already-approved answer ([§19.4](#194-the-check-order-and-which-part-enforces-each-step)). | WARNING |
-| D12 | `Submission.reconstitute` does not re-parse the stored values, and it returns `Submission`, not `Optional`. §4.2 requires both. | `Submission.reconstitute` | Re-parse with `ExternalReference.parse` and `InsuredLimit.parse`, return `Optional<Submission>`, and map empty in the approval use case as [§19.4](#194-the-check-order-and-which-part-enforces-each-step) states. | WARNING |
+| D12 | `Submission.reconstitute` does not re-parse the stored values, and it returns `Submission`, not `Optional`. §4.2 requires both. | `Submission.reconstitute` | Re-parse with `SubmissionNumber.parse` and `InsuredLimit.parse`, return `Optional<Submission>`, and map empty in the approval use case as [§19.4](#194-the-check-order-and-which-part-enforces-each-step) states. | WARNING |
 | D13 | The role rule is `ActorRole.canDecide()`, shared by registration and approval, and the design deleted that method in revision 3. | `ActorRole.java`, `SubmissionConfiguration` | Either keep `canDecide()` and record it as the business role set, which the product owner confirmed for both operations, or replace it with an explicit two-role set in configuration code. The set must not be configurable at runtime, since BR-33 is a business rule. A test pins the set to exactly the two approving roles. | WARNING |
 | D14 | The `AccessPolicy` seam is in the implementation and absent from the design. | `AccessPolicy.java` | Accept it as the named form of the permission data, with D13's fixed set behind it. The design's permission table ([§13](#13-wiring)) and the seam must name the same two roles. | WARNING |
 | D15 | The tests deleted in `5bf01b3` from registration are not restored, by the product owner's decision. | `RegisterSubmissionUseCaseTest` | Not restored. The test designer judges the coverage, and [§19.12](#1912-tests) lists what approval needs. | (decision) |
@@ -3177,7 +3173,7 @@ integration tests with a real PostgreSQL.
   This pins the order rationale of §19.4.
 - **Self-approval is refused and records nothing.** After the refusal, the fake approval store holds no row,
   and the fake publisher received no event.
-- **The malformed identity (D1, D2, D5, D6).** Over the MVC layer with a stub resolver: a Viewer naming
+- **The malformed number (D1, D2, D5, D6).** Over the MVC layer with a stub resolver: a Viewer naming
   `not-a-uuid` receives `403`; an underwriter naming `not-a-uuid` receives `404` with the same body as an
   unknown submission; `1-1-1-1-1`, which lenient parsing would accept, receives `404`; the body contains no
   echo of the path text.

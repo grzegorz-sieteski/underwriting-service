@@ -28,6 +28,15 @@ Architecture: package-by-feature, Hexagonal boundaries, CQRS, Railway Oriented P
    (`read_file`, `edit_file`, targeted searches) for simple operations. Delegate to subagents
    only when autonomous work, heavy background execution (`./mvnw`), or broad exploration
    would otherwise pollute the primary conversation context.
+7. **Use a library before writing your own.** For any generic technical task (parsing,
+   validation, encoding, collections, time), first check the JDK and the dependencies already in
+   `pom.xml` for an API that does it. Prefer that API over a hand-written implementation, because
+   the library has been tested by many more callers than this repository. Do not add a dependency
+   to get it (rule 1 still applies). A hand-written version is allowed only when no JDK or `pom.xml`
+   API does the job; then the code says so in a comment, naming the library it was checked against.
+   Example: `UUID.fromString` is lenient (it accepts `1-1-1-1-1`), and nothing in the JDK or the
+   current `pom.xml` validates canonical UUID text, so `shared/kernel/CanonicalUuid` checks the
+   format first and then calls `UUID.fromString`.
 
 ---
 
@@ -39,6 +48,7 @@ Architecture: package-by-feature, Hexagonal boundaries, CQRS, Railway Oriented P
 | `Objects.requireNonNull` (a `throw` in disguise) | `@NullMarked` + NullAway at compile time; genuine absence is `@Nullable` -> `Result` | Checkstyle `noRequireNonNull` + NullAway |
 | Custom `*Exception` classes | `sealed interface *Error` | ArchUnit `no_custom_throwables` |
 | `*Service`, `*Facade`, `*Manager`, `*Helper`, `*Util` | one `*UseCase` per operation (`execute` / `ask`) | ArchUnit + Checkstyle |
+| `*Controller` in `adapters/web` (the `@RestController` annotation stays) | `*Resource`, for example `SubmissionCommandResource`: the class exposes a resource, it does not control anything | ArchUnit (`haveSimpleNameEndingWith`) + review |
 | JPA / Hibernate (`@Entity`, `@OneToMany`, `EntityManager`) | Spring Data JDBC + native SQL | ArchUnit + Checkstyle |
 | QueryDSL, jOOQ | native SQL in `@Query("""...""")` or `JdbcClient` | ArchUnit + Checkstyle |
 | Jackson 2 (`com.fasterxml.jackson.*`) | Jackson 3 (`tools.jackson.*`) | Checkstyle `forbiddenLibraries` |

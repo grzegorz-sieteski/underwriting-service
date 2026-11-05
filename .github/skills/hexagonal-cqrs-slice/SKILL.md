@@ -34,7 +34,7 @@ com.gs5.underwriting.<module>/
 │   ├── <M>QueryRepository.java               public — returns *View directly
 │   └── <M>View.java                          public projection records
 └── adapters/
-    ├── web/        <M>CommandController, <M>QueryController
+    ├── web/        <M>CommandResource, <M>QueryResource
     ├── persistence/ <M>JdbcEntity, <M>CommandJdbcRepository, <M>CommandSqlAdapter,
     │                <M>QuerySqlAdapter, <M>PersistenceMapper   (all package-private)
     └── config/     <M>Configuration — registers the use cases as beans

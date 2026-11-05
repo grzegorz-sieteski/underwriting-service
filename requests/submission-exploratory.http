@@ -185,7 +185,7 @@ Content-Type: application/json
 
 ### 2.9 Read the row back and confirm the ignored fields really were ignored → expect
 ###     registeredBy = the token's own actor, registeredAt ≈ now, and it is in organisation A
-GET {{host}}/api/submissions?reference=UNKNOWN-FIELD-1
+GET {{host}}/api/submissions?submissionNumber=UNKNOWN-FIELD-1
 Authorization: Bearer {{tokenUwTenantA}}
 
 
@@ -220,21 +220,21 @@ Content-Type: application/json
 
 ### --- reference: present, empty, blank (BR-04, BR-07) ---
 
-### 3.4 externalRef absent → expect 400, type ...:reference-missing
+### 3.4 externalRef absent → expect 400, type ...:number-missing
 POST {{host}}/api/submissions
 Authorization: Bearer {{tokenUwTenantA}}
 Content-Type: application/json
 
 { "insuredLimit": 1200.00 }
 
-### 3.5 externalRef null → expect 400, type ...:reference-missing
+### 3.5 externalRef null → expect 400, type ...:number-missing
 POST {{host}}/api/submissions
 Authorization: Bearer {{tokenUwTenantA}}
 Content-Type: application/json
 
 { "externalRef": null, "insuredLimit": 1200.00 }
 
-### 3.6 externalRef "" → expect 400, type ...:reference-missing
+### 3.6 externalRef "" → expect 400, type ...:number-missing
 POST {{host}}/api/submissions
 Authorization: Bearer {{tokenUwTenantA}}
 Content-Type: application/json
@@ -280,7 +280,7 @@ Content-Type: application/json
 
 { "externalRef": "0123456789012345678901234567890123456789012345678901234567890123", "insuredLimit": 1200.00 }
 
-### 3.12 65 ASCII characters → expect 400, type ...:reference-too-long,
+### 3.12 65 ASCII characters → expect 400, type ...:number-too-long,
 ###      detail reporting maxLength 64 and actualLength 65
 POST {{host}}/api/submissions
 Authorization: Bearer {{tokenUwTenantA}}
@@ -358,7 +358,7 @@ Content-Type: application/json
 
 ### 3.21 Read it back by that exact reference → expect 200 with exactly one row whose
 ###      externalRef is byte-identical to what was sent
-GET {{host}}/api/submissions?reference='%3B%20DROP%20TABLE%20submissions%3B%20--
+GET {{host}}/api/submissions?submissionNumber='%3B%20DROP%20TABLE%20submissions%3B%20--
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 3.22 Then confirm the table still exists by searching at all → expect 200
@@ -518,7 +518,7 @@ Content-Type: application/json
 
 { "externalRef": "DUP-1", "insuredLimit": 1200.00 }
 
-### 3.42 Register DUP-1 again, same organisation → expect 409, type ...:reference-already-used.
+### 3.42 Register DUP-1 again, same organisation → expect 409, type ...:number-already-used.
 ###      The detail echoes the reference, which is safe: uniqueness never crosses
 ###      organisations, so the conflicting submission is always the caller's own (BR-08).
 POST {{host}}/api/submissions
@@ -529,7 +529,7 @@ Content-Type: application/json
 
 ### 3.43 Confirm the earlier submission is UNCHANGED → expect 200, one row, insuredLimit
 ###      still 1200.00 and not 999.00
-GET {{host}}/api/submissions?reference=DUP-1
+GET {{host}}/api/submissions?submissionNumber=DUP-1
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 3.44 Register DUP-1 as organisation B → expect 201. Uniqueness never crosses
@@ -554,12 +554,12 @@ Content-Type: application/json
 
 ### 4.1 Organisation B asks for a reference only A holds → expect 200, [] , totalMatchCount 0.
 ###     NOT 403, NOT 404, NOT a count of 1. Save this whole response.
-GET {{host}}/api/submissions?reference=BOUND-OK-1
+GET {{host}}/api/submissions?submissionNumber=BOUND-OK-1
 Authorization: Bearer {{tokenUwTenantB}}
 
 ### 4.2 Organisation B asks for a reference NOBODY holds → expect the response from 4.1,
 ###     byte for byte. Any difference between 4.1 and 4.2 is an existence oracle.
-GET {{host}}/api/submissions?reference=NO-SUCH-REFERENCE-ANYWHERE
+GET {{host}}/api/submissions?submissionNumber=NO-SUCH-REFERENCE-ANYWHERE
 Authorization: Bearer {{tokenUwTenantB}}
 
 ### 4.3 B searches with no filter → expect only B's own rows, and a totalMatchCount equal to
@@ -569,16 +569,16 @@ GET {{host}}/api/submissions
 Authorization: Bearer {{tokenUwTenantB}}
 
 ### 4.4 B aims every filter at A's row at once → expect 200, [], totalMatchCount 0
-GET {{host}}/api/submissions?reference=BOUND-OK-1&insuredLimitFrom=1200.00&insuredLimitTo=1200.00&registeredFrom=2026-01-01T00:00:00Z&registeredTo=2030-01-01T00:00:00Z
+GET {{host}}/api/submissions?submissionNumber=BOUND-OK-1&insuredLimitFrom=1200.00&insuredLimitTo=1200.00&registeredFrom=2026-01-01T00:00:00Z&registeredTo=2030-01-01T00:00:00Z
 Authorization: Bearer {{tokenUwTenantB}}
 
 ### 4.5 A shared reference resolves per organisation → expect ONE row each, with DIFFERENT
 ###     insuredLimit values (1200.00 for A, 7777.00 for B). Run 4.5 then 4.6 and compare.
-GET {{host}}/api/submissions?reference=DUP-1
+GET {{host}}/api/submissions?submissionNumber=DUP-1
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 4.6 → expect one row, insuredLimit 7777.00, and a different submissionId than 4.5
-GET {{host}}/api/submissions?reference=DUP-1
+GET {{host}}/api/submissions?submissionNumber=DUP-1
 Authorization: Bearer {{tokenUwTenantB}}
 
 ### 4.7 B pages past the end of its own matching set → expect [] on every page and never a
@@ -601,7 +601,7 @@ Authorization: Bearer {{tokenViewerTenantA}}
 ###      difference is a side channel that leaks existence even though both bodies match.
 ###      (Nothing in the code suggests one — both are the same two statements — but it is
 ###      the probe that would find it.)
-GET {{host}}/api/submissions?reference=BOUND-OK-1
+GET {{host}}/api/submissions?submissionNumber=BOUND-OK-1
 Authorization: Bearer {{tokenUwTenantB}}
 
 
@@ -697,7 +697,7 @@ Authorization: Bearer {{tokenUwTenantA}}
 ### 6.2 Empty reference parameter → expect 200. `reference=` binds the empty string, which
 ###     matches nothing (no stored reference is empty, BR-04). Confirm it is not treated as
 ###     "omitted" — that would be a different answer and a silent filter drop.
-GET {{host}}/api/submissions?reference=
+GET {{host}}/api/submissions?submissionNumber=
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 6.3 Both amount bounds inclusive → expect the 1200.00 submission to be INCLUDED
@@ -755,15 +755,15 @@ Authorization: Bearer {{tokenUwTenantA}}
 ### 6.15 Repeated parameters → expect a defined answer (Spring takes the first) and never a
 ###      500. Watch whether the SECOND value is the one applied: if a filter can be
 ###      overridden by appending a duplicate, that is worth knowing.
-GET {{host}}/api/submissions?reference=DUP-1&reference=BOUND-OK-1
+GET {{host}}/api/submissions?submissionNumber=DUP-1&submissionNumber=BOUND-OK-1
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 6.16 Filters narrow TOGETHER, not separately → expect only rows satisfying ALL of them
-GET {{host}}/api/submissions?reference=DUP-1&insuredLimitFrom=1200.00&insuredLimitTo=1200.00
+GET {{host}}/api/submissions?submissionNumber=DUP-1&insuredLimitFrom=1200.00&insuredLimitTo=1200.00
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 6.17 Two criteria that cannot both hold → expect 200, [], count 0
-GET {{host}}/api/submissions?reference=DUP-1&insuredLimitFrom=999999.00
+GET {{host}}/api/submissions?submissionNumber=DUP-1&insuredLimitFrom=999999.00
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 6.18 Order of results → expect registered_at DESCENDING, newest first (BR-24), the same
@@ -892,7 +892,7 @@ Content-Type: application/json
 ###     (There is no logging statement in src/main at all today, so BR-22 holds vacuously.
 ###      The masking toString() methods are what will keep it holding once there is one —
 ###      and see FINDING QA-01: SubmissionSearchCriteria is missing its.)
-GET {{host}}/api/submissions?reference=DISCLOSE-1
+GET {{host}}/api/submissions?submissionNumber=DISCLOSE-1
 Authorization: Bearer {{tokenUwTenantA}}
 
 
@@ -906,7 +906,7 @@ Authorization: Bearer {{tokenUwTenantA}}
 ### =====================================================================================
 
 ### 9.1 Fire 64 concurrent registrations of the SAME reference in the SAME organisation.
-###     Expect EXACTLY ONE 201 and 63 × 409 reference-already-used. Never two 201s, never a
+###     Expect EXACTLY ONE 201 and 63 × 409 number-already-used. Never two 201s, never a
 ###     500, never a deadlock. The unique index settles it via ON CONFLICT DO NOTHING, so
 ###     the loser gets zero rows back rather than a 23505 escaping as an exception (BR-09).
 POST {{host}}/api/submissions
@@ -916,7 +916,7 @@ Content-Type: application/json
 { "externalRef": "RACE-1", "insuredLimit": 1200.00 }
 
 ### 9.2 Then confirm exactly one row exists → expect 200, one row, totalMatchCount 1
-GET {{host}}/api/submissions?reference=RACE-1
+GET {{host}}/api/submissions?submissionNumber=RACE-1
 Authorization: Bearer {{tokenUwTenantA}}
 
 ### 9.3 Fire the SAME reference concurrently from BOTH organisations (32 each). Expect ONE
@@ -930,7 +930,7 @@ Content-Type: application/json
 
 ### 9.4 Confirm each organisation sees exactly its own one row → run as A, then as B, and
 ###     check the two submissionIds DIFFER
-GET {{host}}/api/submissions?reference=RACE-1
+GET {{host}}/api/submissions?submissionNumber=RACE-1
 Authorization: Bearer {{tokenUwTenantB}}
 
 ### 9.5 Fire 64 concurrent searches while 9.1 is in flight. Expect every one to be a 200,
