@@ -5,38 +5,31 @@ import module java.base;
 import com.gs5.underwriting.shared.kernel.LogSafeText;
 
 /**
- * One row of a search result: the four fields the specification lists — reference, insured limit,
- * registering caller, registration moment — plus the submission's identity.
+ * One row of a search result: the four fields the specification lists — submission number, insured
+ * limit, registering caller, registration moment.
  *
- * <p>The id is confirmed by the product owner: search is the only way to discover a submission's
- * identity, and future operations need it to name a submission.
+ * <p>The internal identity is not on the row. A caller identifies a submission by its submission
+ * number alone, and the identity never leaves the service (BR-47).
  *
  * <p>This record holds the insured limit (BR-22) and the registering caller (OPEN-01), so it masks
  * both when written to a log — and only there: the caller still receives both, because a
  * serialiser works through the record accessors.
  */
-public record SubmissionSummaryView(SubmissionId submissionId,
-                                    String externalRef,
+public record SubmissionSummaryView(String submissionNumber,
                                     BigDecimal insuredLimit,
                                     String registeredBy,
-                                    Instant registeredAt) {
+                                    Instant registeredAt,
+                                    SubmissionState state) {
 
     private static final String MASKED = "***";
 
-    public SubmissionSummaryView(UUID submissionId,
-                                String externalRef,
-                                BigDecimal insuredLimit,
-                                String registeredBy,
-                                Instant registeredAt) {
-        this(new SubmissionId(submissionId), externalRef, insuredLimit, registeredBy, registeredAt);
-    }
-
     @Override
     public String toString() {
-        return "SubmissionSummaryView[submissionId=" + submissionId.value()
-                + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
+        return "SubmissionSummaryView[submissionNumber="
+                + LogSafeText.escapeControlCharacters(submissionNumber)
                 + ", insuredLimit=" + MASKED
                 + ", registeredBy=" + MASKED
-                + ", registeredAt=" + registeredAt + "]";
+                + ", registeredAt=" + registeredAt
+                + ", state=" + state + "]";
     }
 }

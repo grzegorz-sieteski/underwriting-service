@@ -25,13 +25,13 @@ final class SubmissionPersistenceMapper {
     }
 
     static SubmissionJdbcEntity toEntity(SubmissionSnapshot snapshot) {
-        return new SubmissionJdbcEntity(snapshot.id(), snapshot.tenantId(), snapshot.externalRef(),
+        return new SubmissionJdbcEntity(snapshot.id(), snapshot.tenantId(), snapshot.submissionNumber(),
                 snapshot.insuredLimit(), snapshot.registeredBy(), snapshot.registeredAt(),
                 snapshot.version());
     }
 
     static SubmissionSnapshot toSnapshot(SubmissionJdbcEntity entity) {
-        return new SubmissionSnapshot(entity.id(), entity.tenantId(), entity.externalRef(),
+        return new SubmissionSnapshot(entity.id(), entity.tenantId(), entity.submissionNumber(),
                 entity.insuredLimit(), entity.registeredBy(), entity.registeredAt(),
                 entity.version());
     }

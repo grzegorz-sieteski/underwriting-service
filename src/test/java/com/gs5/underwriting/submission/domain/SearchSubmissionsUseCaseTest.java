@@ -56,15 +56,15 @@ class SearchSubmissionsUseCaseTest {
         repository = new InMemorySubmissionQueryRepository();
         useCase = new SearchSubmissionsUseCase(repository);
 
-        s1 = repository.givenSubmission(TENANT_A, uuid(1), "S-1", "100.00", at(0));
-        s2 = repository.givenSubmission(TENANT_A, uuid(2), "S-2", "200.00", at(1));
-        s3 = repository.givenSubmission(TENANT_A, uuid(3), "S-3", "300.00", at(2));
-        s4 = repository.givenSubmission(TENANT_A, uuid(4), "S-4", "400.00", at(3));
-        s5 = repository.givenSubmission(TENANT_A, uuid(5), "S-5", "500.00", at(4));
+        s1 = repository.givenSubmission(TENANT_A, "S-1", "100.00", at(0));
+        s2 = repository.givenSubmission(TENANT_A, "S-2", "200.00", at(1));
+        s3 = repository.givenSubmission(TENANT_A, "S-3", "300.00", at(2));
+        s4 = repository.givenSubmission(TENANT_A, "S-4", "400.00", at(3));
+        s5 = repository.givenSubmission(TENANT_A, "S-5", "500.00", at(4));
 
         // Another organisation's submission, newest of all, matching every filter below. It must
         // be invisible: absent from the page AND from the total match count.
-        repository.givenSubmission(TENANT_B, uuid(9), "S-1", "100.00", at(5));
+        repository.givenSubmission(TENANT_B, "S-1", "100.00", at(5));
     }
 
     private static UUID uuid(int n) {
@@ -79,8 +79,8 @@ class SearchSubmissionsUseCaseTest {
         return SearchSubmissionsQuery.parse(null, null, null, null, null, page, size);
     }
 
-    private static SearchSubmissionsQuery byReference(String externalRef) {
-        return SearchSubmissionsQuery.parse(externalRef, null, null, null, null, 0, 100);
+    private static SearchSubmissionsQuery byReference(String submissionNumber) {
+        return SearchSubmissionsQuery.parse(submissionNumber, null, null, null, null, 0, 100);
     }
 
     private static SearchSubmissionsQuery byAmount(String from, String to) {
@@ -172,7 +172,7 @@ class SearchSubmissionsUseCaseTest {
                 + "never a refusal: there is no forbidden outcome anywhere")
         void shouldReturnEmptyPageWhenSearchingByReferenceOwnedByOtherTenant() {
             // Given
-            repository.givenSubmission(TENANT_B, uuid(8), "ONLY-IN-B", "999.00", at(6));
+            repository.givenSubmission(TENANT_B, "ONLY-IN-B", "999.00", at(6));
             var query = byReference("ONLY-IN-B");
 
             // When
@@ -386,7 +386,7 @@ class SearchSubmissionsUseCaseTest {
 
             // Then
             assertThat(result.submissions())
-                    .extracting(SubmissionSummaryView::externalRef)
+                    .extracting(SubmissionSummaryView::submissionNumber)
                     .containsExactly("S-5", "S-4", "S-3", "S-2", "S-1");
         }
     }
@@ -532,8 +532,8 @@ class SearchSubmissionsUseCaseTest {
                 + "or repeating one, because the order is total")
         void shouldPageWithoutDuplicatesOrSkipsWhenRegistrationMomentsTie() {
             // Given
-            repository.givenSubmission(TENANT_A, uuid(6), "S-3A", "310.00", at(2));
-            repository.givenSubmission(TENANT_A, uuid(7), "S-3B", "320.00", at(2));
+            repository.givenSubmission(TENANT_A, "S-3A", "310.00", at(2));
+            repository.givenSubmission(TENANT_A, "S-3B", "320.00", at(2));
 
             // When
             var wholeSet = searchAs(VIEWER_OF_A, unfiltered(0, 100));

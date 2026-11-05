@@ -21,7 +21,7 @@ import org.jspecify.annotations.Nullable;
  */
 public record SubmissionSnapshot(UUID id,
                                  UUID tenantId,
-                                 String externalRef,
+                                 String submissionNumber,
                                  BigDecimal insuredLimit,
                                  String registeredBy,
                                  Instant registeredAt,
@@ -31,14 +31,14 @@ public record SubmissionSnapshot(UUID id,
 
     /**
      * BR-22 masks the insured limit; the strict default applied to OPEN-01 masks the registering
-     * caller. The reference is printed in full (BR-23), and so are the organisation and the
+     * caller. The number is printed in full (BR-23), and so are the organisation and the
      * registration moment — the organisation is an isolation boundary, not a secret.
      */
     @Override
     public String toString() {
         return "SubmissionSnapshot[id=" + id
                 + ", tenantId=" + tenantId
-                + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
+                + ", submissionNumber=" + LogSafeText.escapeControlCharacters(submissionNumber)
                 + ", insuredLimit=" + MASKED
                 + ", registeredBy=" + MASKED
                 + ", registeredAt=" + registeredAt

@@ -2,6 +2,7 @@ package com.gs5.underwriting.submission.adapters.persistence;
 
 import com.gs5.underwriting.submission.domain.SubmissionSearchCriteria;
 import com.gs5.underwriting.submission.domain.SubmissionId;
+import com.gs5.underwriting.submission.domain.SubmissionState;
 import com.gs5.underwriting.submission.domain.SubmissionSummaryView;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -102,23 +103,23 @@ class SubmissionQuerySqlAdapterIT {
 
     private void insertRow(UUID tenantId,
                            UUID id,
-                           String externalRef,
+                           String submissionNumber,
                            String insuredLimit,
                            Instant registeredAt) {
         // Inserted with plain SQL rather than through the write adapter, so a bug in the write
         // path cannot make a read test pass or fail for the wrong reason.
         jdbcTemplate.update("""
                 INSERT INTO submissions
-                    (id, tenant_id, external_ref, insured_limit, registered_by, registered_at,
+                    (id, tenant_id, submission_number, insured_limit, registered_by, registered_at,
                      version)
                 VALUES (?, ?, ?, ?, ?, ?, 0)
-                """, id, tenantId, externalRef, new BigDecimal(insuredLimit), "uw-01",
+                """, id, tenantId, submissionNumber, new BigDecimal(insuredLimit), "uw-01",
                 java.sql.Timestamp.from(registeredAt));
     }
 
     private List<String> referencesOnPage(SubmissionSearchCriteria criteria, int limit, long offset) {
         return adapter.findPage(criteria, limit, offset).stream()
-                .map(SubmissionSummaryView::externalRef)
+                .map(SubmissionSummaryView::submissionNumber)
                 .toList();
     }
 
@@ -195,11 +196,11 @@ class SubmissionQuerySqlAdapterIT {
 
             // Then
             assertThat(page).allSatisfy(view ->
-                    assertThat(view.submissionId()).isNotNull());
-            assertThat(page).extracting(SubmissionSummaryView::submissionId)
-                    .containsExactly(new SubmissionId(uuid(5)), new SubmissionId(uuid(4)),
-                            new SubmissionId(uuid(3)), new SubmissionId(uuid(2)),
-                            new SubmissionId(uuid(1)));
+                    assertThat(view.submissionNumber()).isNotNull());
+            assertThat(page).extracting(SubmissionSummaryView::submissionNumber)
+                    .containsExactly("S-5", "S-4",
+                            "S-3", "S-2",
+                            "S-1");
         }
 
         @Test
@@ -214,8 +215,8 @@ class SubmissionQuerySqlAdapterIT {
 
             // Then
             assertThat(adapter.findPage(criteria, 100, 0)).containsExactly(
-                    new SubmissionSummaryView(uuid(3), "S-3", new BigDecimal("300.00"),
-                            "uw-01", at(2)));
+                    new SubmissionSummaryView("S-3", new BigDecimal("300.00"),
+                            "uw-01", at(2), SubmissionState.REGISTERED));
         }
     }
 
@@ -295,8 +296,8 @@ class SubmissionQuerySqlAdapterIT {
 
             // Then
             assertThat(page)
-                    .extracting(SubmissionSummaryView::submissionId)
-                    .containsExactly(new SubmissionId(uuid(1)));
+                    .extracting(SubmissionSummaryView::submissionNumber)
+                    .containsExactly("S-1");
         }
     }
 
@@ -495,9 +496,8 @@ class SubmissionQuerySqlAdapterIT {
 
             // Then
             assertThat(page)
-                    .extracting(SubmissionSummaryView::submissionId)
-                    .containsExactly(new SubmissionId(uuid(7)), new SubmissionId(uuid(6)),
-                            new SubmissionId(uuid(3)));
+                    .extracting(SubmissionSummaryView::submissionNumber)
+                    .containsExactly("S-3B", "S-3A", "S-3");
         }
     }
 }

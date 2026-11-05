@@ -1,48 +1,51 @@
 package com.gs5.underwriting.submission.domain;
 
-import module java.base;
-
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.Result;
 
 import java.time.Clock;
-import java.util.UUID;
 
-/** Approves an existing submission for the caller's own organisation. */
+/** Approves an existing submission for the caller's own organisation, named by its number. */
 public final class ApproveSubmissionUseCase {
 
     private final SubmissionCommandRepository commandRepository;
     private final SubmissionApprovalRepository approvalRepository;
     private final SubmissionEventPublisher eventPublisher;
+    private final SubmissionIdGenerator idGenerator;
     private final Clock clock;
 
     public ApproveSubmissionUseCase(SubmissionCommandRepository commandRepository,
                                     SubmissionApprovalRepository approvalRepository,
                                     SubmissionEventPublisher eventPublisher,
+                                    SubmissionIdGenerator idGenerator,
                                     Clock clock) {
         this.commandRepository = commandRepository;
         this.approvalRepository = approvalRepository;
         this.eventPublisher = eventPublisher;
+        this.idGenerator = idGenerator;
         this.clock = clock;
     }
 
-    public Result<SubmissionId, ApproveSubmissionError> execute(
+    /** Success returns the submission number, the only identifier that leaves the service. */
+    public Result<SubmissionNumber, ApproveSubmissionError> execute(
             ActorContext actor, ApproveSubmissionCommand command) {
-        var submission = commandRepository.findOwn(actor.tenantId(), command.submissionId().value());
-        if (submission.isEmpty()) {
-            return Result.failure(
-                    new ApproveSubmissionError.SubmissionNotFound(command.submissionId()));
+        var found = commandRepository.findOwnByNumber(actor.tenantId(), command.submissionNumber())
+                .flatMap(Submission::reconstitute);
+        if (found.isEmpty()) {
+            return Result.failure(new ApproveSubmissionError.SubmissionNotFound());
         }
-        if (approvalRepository.isApproved(actor.tenantId(), command.submissionId())) {
-            return Result.failure(
-                    new ApproveSubmissionError.SubmissionAlreadyApproved(command.submissionId()));
+        var submission = found.get();
+        if (submission.isRegisteredBy(actor)) {
+            return Result.failure(new ApproveSubmissionError.ApproverRegisteredSubmission());
         }
+        var internalId = submission.id();
         var approvedAt = clock.instant();
-        return approvalRepository.approve(actor.tenantId(), command.submissionId(), actor, approvedAt)
-                .peek(id -> eventPublisher.publish(
+        return approvalRepository.approve(actor.tenantId(), internalId, actor, approvedAt)
+                .map(id -> command.submissionNumber())
+                .peek(number -> eventPublisher.publish(
                         new SubmissionDomainEvent.SubmissionApproved(
-                                UUID.randomUUID(),
-                                id,
+                                idGenerator.nextEventId(),
+                                number,
                                 actor.tenantId(),
                                 actor.actorId(),
                                 approvedAt)));

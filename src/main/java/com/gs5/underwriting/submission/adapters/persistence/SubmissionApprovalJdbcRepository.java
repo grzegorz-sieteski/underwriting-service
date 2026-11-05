@@ -8,7 +8,6 @@ import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
-import java.util.Optional;
 import java.util.UUID;
 
 interface SubmissionApprovalJdbcRepository extends Repository<SubmissionApprovalJdbcEntity, UUID> {
@@ -25,13 +24,4 @@ interface SubmissionApprovalJdbcRepository extends Repository<SubmissionApproval
                             @Param("tenantId") UUID tenantId,
                             @Param("approvedBy") String approvedBy,
                             @Param("approvedAt") Instant approvedAt);
-
-    @Query("""
-            SELECT submission_id, tenant_id, approved_by, approved_at, version
-            FROM submission_approvals
-            WHERE tenant_id = :tenantId
-              AND submission_id = :submissionId
-            """)
-    Optional<SubmissionApprovalJdbcEntity> findOwn(@Param("tenantId") UUID tenantId,
-                                                  @Param("submissionId") UUID submissionId);
 }

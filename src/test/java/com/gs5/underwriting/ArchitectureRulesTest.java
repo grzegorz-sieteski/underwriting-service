@@ -48,7 +48,7 @@ class ArchitectureRulesTest {
      * KNOWN BLIND SPOT, found the hard way: javac inlines compile-time constants, so ArchUnit
      * cannot see a cross-package dependency that exists only as a `static final` primitive or
      * String constant. A class that reads `OtherPackage.SOME_INT` compiles to the literal value
-     * and leaves NO reference to the declaring class in the bytecode, so there is nothing for
+     * and leaves NO number to the declaring class in the bytecode, so there is nothing for
      * ArchUnit to find and the rule below passes while the leak is real.
      *
      * This bit once already: the first probe of this rule "passed" for exactly that reason, which
@@ -237,7 +237,7 @@ class ArchitectureRulesTest {
     @ArchTest
     static final ArchRule query_controllers_depend_on_no_write_use_case =
             noClasses()
-                    .that().haveSimpleNameEndingWith("QueryController")
+                    .that().haveSimpleNameEndingWith("QueryResource")
                     .should().dependOnClassesThat(useCaseExposing("execute"))
                     .because("a query endpoint may call only an ask use case; calling execute from it would "
                             + "let a read request change state");
@@ -245,12 +245,20 @@ class ArchitectureRulesTest {
     @ArchTest
     static final ArchRule command_controllers_depend_on_no_read_use_case =
             noClasses()
-                    .that().haveSimpleNameEndingWith("CommandController")
+                    .that().haveSimpleNameEndingWith("CommandResource")
                     .should().dependOnClassesThat(useCaseExposing("ask"))
                     .because("a command endpoint may call only an execute use case; calling ask from it would "
                             + "let a write request depend on a read");
 
     // ------------------------------------------- parse, don't validate (design §15.9)
+
+    /**
+     * The {@code valueOf(String)} that javac generates in every enum. It is not input: it is the
+     * enum's own name lookup, which the compiler writes and nobody calls on raw business text.
+     */
+    private static final DescribedPredicate<JavaMethod> ENUM_GENERATED_VALUE_OF =
+            DescribedPredicate.describe("the compiler-generated valueOf of an enum",
+                    method -> method.getOwner().isEnum() && method.getName().equals("valueOf"));
 
     /** A method with at least one String or BigDecimal parameter: raw input. */
     private static final DescribedPredicate<JavaMethod> TAKING_RAW_INPUT =
@@ -287,6 +295,7 @@ class ArchitectureRulesTest {
             methods()
                     .that().areDeclaredInClassesThat().resideInAPackage("..domain..")
                     .and().doNotHaveModifier(JavaModifier.SYNTHETIC)
+                    .and(DescribedPredicate.not(ENUM_GENERATED_VALUE_OF))
                     .and(TAKING_RAW_INPUT)
                     .should().haveName("parse")
                     .because("raw input enters the domain only as the parameter of a method named parse; "
@@ -297,7 +306,7 @@ class ArchitectureRulesTest {
      * Input objects only: commands, queries and the search filter. Output records — views, criteria,
      * snapshot — are out of scope by design (§5.3). Static fields are excluded: a constant is not
      * input. The filter's BigDecimal and Instant bounds are allowed on purpose, since every value of
-     * those types is a legal comparison value; its reference is an ExternalReference, so a String
+     * those types is a legal comparison value; its number is an SubmissionNumber, so a String
      * there would mean the parse was bypassed.
      *
      * The command/query selector is ONE combined predicate passed to areDeclaredInClassesThat(...),

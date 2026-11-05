@@ -9,8 +9,6 @@ import java.util.UUID;
 /** Outbound port: where a submission approval is recorded. */
 public interface SubmissionApprovalRepository {
 
-    boolean isApproved(UUID tenantId, SubmissionId submissionId);
-
     Result<SubmissionId, ApproveSubmissionError> approve(
             UUID tenantId,
             SubmissionId submissionId,

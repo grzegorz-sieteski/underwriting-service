@@ -6,6 +6,7 @@ import com.gs5.underwriting.shared.kernel.Result;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionError;
 import com.gs5.underwriting.submission.domain.SubmissionCommandRepository;
 import com.gs5.underwriting.submission.domain.SubmissionId;
+import com.gs5.underwriting.submission.domain.SubmissionNumber;
 import com.gs5.underwriting.submission.domain.SubmissionSnapshot;
 import org.springframework.stereotype.Component;
 
@@ -32,23 +33,32 @@ class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
 
     /**
      * The row count is the whole duplicate test: {@code 1} means the row was inserted, {@code 0}
-     * means this organisation had already used the reference (BR-06), including when a competing
+     * means this organisation had already used the number (BR-06), including when a competing
      * registration won the race (BR-09). No {@code DuplicateKeyException} is caught, by design.
      */
     @Override
-    public Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> insert(
+    public Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed> insert(
             SubmissionSnapshot snapshot) {
         var entity = SubmissionPersistenceMapper.toEntity(snapshot);
         var insertedRows = repository.insertIfReferenceFree(entity.id(), entity.tenantId(),
-                entity.externalRef(), entity.insuredLimit(), entity.registeredBy(),
+                entity.submissionNumber(), entity.insuredLimit(), entity.registeredBy(),
                 entity.registeredAt());
         return insertedRows == 1
                 ? Result.success(new SubmissionId(entity.id()))
                 : Result.failure(
-                        new RegisterSubmissionError.ReferenceAlreadyUsed(entity.externalRef()));
+                        new RegisterSubmissionError.NumberAlreadyUsed(entity.submissionNumber()));
     }
 
     @Override
+    public Optional<SubmissionSnapshot> findOwnByNumber(UUID tenantId, SubmissionNumber submissionNumber) {
+        return repository.findOwnByNumber(tenantId, submissionNumber.value())
+                .map(SubmissionPersistenceMapper::toSnapshot);
+    }
+
+    /**
+     * Reads one row back by its internal identity, for the snapshot round-trip checks. Not part of
+     * the port: no operation looks a submission up by identity (BR-47).
+     */
     public Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id) {
         return repository.findOwn(tenantId, id).map(SubmissionPersistenceMapper::toSnapshot);
     }

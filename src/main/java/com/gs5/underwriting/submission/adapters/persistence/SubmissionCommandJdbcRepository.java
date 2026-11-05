@@ -17,8 +17,8 @@ import org.springframework.data.repository.query.Param;
 interface SubmissionCommandJdbcRepository extends Repository<SubmissionJdbcEntity, UUID> {
 
     /**
-     * Inserts the row unless this organisation already used the reference, and reports which
-     * happened as a row count: {@code 1} inserted, {@code 0} the reference was already used.
+     * Inserts the row unless this organisation already used the number, and reports which
+     * happened as a row count: {@code 1} inserted, {@code 0} the number was already used.
      *
      * <p>{@code ON CONFLICT ... DO NOTHING} plus a row-count check is the right mechanism for
      * BR-09 for three reasons, and it is the same idiom {@code inbox_events} already uses in V1:
@@ -43,14 +43,14 @@ interface SubmissionCommandJdbcRepository extends Repository<SubmissionJdbcEntit
     @Modifying
     @Query("""
             INSERT INTO submissions
-                (id, tenant_id, external_ref, insured_limit, registered_by, registered_at, version)
+                (id, tenant_id, submission_number, insured_limit, registered_by, registered_at, version)
             VALUES
-                (:id, :tenantId, :externalRef, :insuredLimit, :registeredBy, :registeredAt, 0)
-            ON CONFLICT (tenant_id, external_ref) DO NOTHING
+                (:id, :tenantId, :submissionNumber, :insuredLimit, :registeredBy, :registeredAt, 0)
+            ON CONFLICT (tenant_id, submission_number) DO NOTHING
             """)
     int insertIfReferenceFree(@Param("id") UUID id,
                               @Param("tenantId") UUID tenantId,
-                              @Param("externalRef") String externalRef,
+                              @Param("submissionNumber") String submissionNumber,
                               @Param("insuredLimit") BigDecimal insuredLimit,
                               @Param("registeredBy") String registeredBy,
                               @Param("registeredAt") Instant registeredAt);
@@ -64,7 +64,21 @@ interface SubmissionCommandJdbcRepository extends Repository<SubmissionJdbcEntit
      * other statement in this module (BR-17).
      */
     @Query("""
-            SELECT id, tenant_id, external_ref, insured_limit, registered_by, registered_at, version
+            SELECT id, tenant_id, submission_number, insured_limit, registered_by, registered_at, version
+            FROM submissions
+            WHERE tenant_id = :tenantId
+              AND submission_number = :submissionNumber
+            """)
+    Optional<SubmissionJdbcEntity> findOwnByNumber(@Param("tenantId") UUID tenantId,
+                                                  @Param("submissionNumber") String submissionNumber);
+
+    /**
+     * The same row, read back by its internal identity. Used only by the snapshot round-trip
+     * checks, never by an operation and never exposed: the identity does not leave the service
+     * (BR-47).
+     */
+    @Query("""
+            SELECT id, tenant_id, submission_number, insured_limit, registered_by, registered_at, version
             FROM submissions
             WHERE tenant_id = :tenantId
               AND id = :id

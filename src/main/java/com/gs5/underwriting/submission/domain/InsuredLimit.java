@@ -9,7 +9,7 @@ import org.jspecify.annotations.Nullable;
 /**
  * An insured limit that is present, strictly positive and written with exactly two decimal places.
  *
- * <p>A {@code final class} for the same reason as {@link ExternalReference}: an invariant that a
+ * <p>A {@code final class} for the same reason as {@link SubmissionNumber}: an invariant that a
  * record's public canonical constructor would let anyone bypass. Raw amounts enter only through
  * {@link #parse}.
  *

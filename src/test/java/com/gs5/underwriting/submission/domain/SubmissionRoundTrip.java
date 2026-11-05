@@ -29,6 +29,6 @@ public final class SubmissionRoundTrip {
      * affecting zero rows — with no exception and no row.
      */
     public static SubmissionSnapshot reconstituteAndSnapshot(SubmissionSnapshot snapshot) {
-        return Submission.reconstitute(snapshot).toSnapshot();
+        return Submission.reconstitute(snapshot).orElseThrow().toSnapshot();
     }
 }

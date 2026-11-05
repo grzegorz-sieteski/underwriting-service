@@ -14,7 +14,7 @@ import java.time.Instant;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The search filter, which reuses {@link ExternalReference#parse} and folds its three failures into a
+ * The search filter, which reuses {@link SubmissionNumber#parse} and folds its three failures into a
  * search meaning: empty is not supplied (BR-31), a control character matches nothing (BR-30), more
  * than 64 characters matches nothing (BR-32). Spaces are compared exactly (BR-07), and nothing is
  * ever refused: search has one refusal reason, and it is decided at the edge.

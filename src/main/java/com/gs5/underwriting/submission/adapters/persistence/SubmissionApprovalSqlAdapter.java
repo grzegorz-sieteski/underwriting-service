@@ -22,11 +22,6 @@ class SubmissionApprovalSqlAdapter implements SubmissionApprovalRepository {
     }
 
     @Override
-    public boolean isApproved(UUID tenantId, SubmissionId submissionId) {
-        return repository.findOwn(tenantId, submissionId.value()).isPresent();
-    }
-
-    @Override
     public Result<SubmissionId, ApproveSubmissionError> approve(
             UUID tenantId,
             SubmissionId submissionId,
@@ -36,6 +31,6 @@ class SubmissionApprovalSqlAdapter implements SubmissionApprovalRepository {
                 actor.actorId(), approvedAt);
         return insertedRows == 1
                 ? Result.success(submissionId)
-                : Result.failure(new ApproveSubmissionError.SubmissionAlreadyApproved(submissionId));
+                : Result.failure(new ApproveSubmissionError.SubmissionAlreadyApproved());
     }
 }

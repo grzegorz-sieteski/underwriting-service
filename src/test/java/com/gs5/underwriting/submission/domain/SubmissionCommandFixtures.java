@@ -8,8 +8,8 @@ final class SubmissionCommandFixtures {
 
     private SubmissionCommandFixtures() { }
 
-    static RegisterSubmissionCommand parsedCommand(String externalRef, BigDecimal insuredLimit) {
-        return switch (RegisterSubmissionCommand.parse(externalRef, insuredLimit)) {
+    static RegisterSubmissionCommand parsedCommand(String submissionNumber, BigDecimal insuredLimit) {
+        return switch (RegisterSubmissionCommand.parse(submissionNumber, insuredLimit)) {
             case Result.Success<RegisterSubmissionCommand, RegisterSubmissionError>(var command) ->
                     command;
             case Result.Failure<RegisterSubmissionCommand, RegisterSubmissionError>(var error) ->

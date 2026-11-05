@@ -13,7 +13,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A view carries what the store holds, as the store holds it: a {@code String} reference and a
+ * A view carries what the store holds, as the store holds it: a {@code String} number and a
  * {@code BigDecimal} amount, not the value objects. A view is output read from our own store, not
  * client input, so parsing it again on the way out would need a branch for a failure the schema
  * already rules out.
@@ -35,15 +35,15 @@ class SubmissionViewContractTest {
     }
 
     @Test
-    @DisplayName("a summary row carries the identity typed, and the reference, amount, caller and "
-            + "moment as the store holds them")
-    void shouldCarryTypedIdentityAndStoredPrimitivesWhenSummaryViewIsRead() {
+    @DisplayName("a summary row carries the submission number and the stored amount, caller and "
+            + "moment, and no internal identity (BR-47)")
+    void shouldCarryNumberAndStoredPrimitivesButNoIdentityWhenSummaryViewIsRead() {
         assertThat(componentsOf(SubmissionSummaryView.class)).containsExactly(
-                Map.entry("submissionId", SubmissionId.class),
-                Map.entry("externalRef", String.class),
+                Map.entry("submissionNumber", String.class),
                 Map.entry("insuredLimit", BigDecimal.class),
                 Map.entry("registeredBy", String.class),
-                Map.entry("registeredAt", Instant.class));
+                Map.entry("registeredAt", Instant.class),
+                Map.entry("state", SubmissionState.class));
     }
 
     @Test
@@ -51,6 +51,6 @@ class SubmissionViewContractTest {
             + "re-parsing stored output would need a failure branch the schema rules out")
     void shouldNotCarryValueObjectsWhenSummaryViewIsRead() {
         assertThat(componentsOf(SubmissionSummaryView.class).values())
-                .doesNotContain(ExternalReference.class, InsuredLimit.class);
+                .doesNotContain(SubmissionNumber.class, InsuredLimit.class);
     }
 }

@@ -18,5 +18,5 @@ import org.jspecify.annotations.Nullable;
  * {@code float} here destroys the scale and makes BR-12 unenforceable, and nothing in the pipeline
  * normalises it afterwards.
  */
-record RegisterSubmissionRequest(@Nullable String externalRef,
+record RegisterSubmissionRequest(@Nullable String submissionNumber,
                                  @Nullable BigDecimal insuredLimit) { }

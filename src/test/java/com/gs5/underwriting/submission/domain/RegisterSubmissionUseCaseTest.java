@@ -68,9 +68,9 @@ class RegisterSubmissionUseCaseTest {
     }
 
     private Result<SubmissionId, RegisterSubmissionError> registerAs(ActorContext actor,
-                                                                     String externalRef,
+                                                                     String submissionNumber,
                                                                      BigDecimal insuredLimit) {
-        return RegisterSubmissionCommand.parse(externalRef, insuredLimit)
+        return RegisterSubmissionCommand.parse(submissionNumber, insuredLimit)
                 .flatMap(command -> useCase.execute(actor, command));
     }
 
@@ -89,31 +89,31 @@ class RegisterSubmissionUseCaseTest {
     @DisplayName("A submission reference must be supplied (BR-04, BR-07)")
     class ReferencePresence {
 
-        @ParameterizedTest(name = "[{index}] externalRef={0}")
+        @ParameterizedTest(name = "[{index}] submissionNumber={0}")
         @NullSource
         @ValueSource(strings = {""})
         @DisplayName("an absent reference, and one containing no characters at all, are refused")
-        void shouldRefuseRegistrationWhenReferenceIsAbsentOrEmpty(String externalRef) {
+        void shouldRefuseRegistrationWhenReferenceIsAbsentOrEmpty(String submissionNumber) {
             // Given & When
-            var result = registerAs(UNDERWRITER, externalRef, VALID_LIMIT);
+            var result = registerAs(UNDERWRITER, submissionNumber, VALID_LIMIT);
 
             // Then
-            assertThat(result).isEqualTo(refused(new RegisterSubmissionError.ReferenceMissing()));
+            assertThat(result).isEqualTo(refused(new RegisterSubmissionError.NumberMissing()));
         }
 
-        @ParameterizedTest(name = "[{index}] externalRef=\"{0}\"")
+        @ParameterizedTest(name = "[{index}] submissionNumber=\"{0}\"")
         @ValueSource(strings = {" ", "   ", "        ", " ABC-1", "ABC-1 ", "AB CD"})
         @DisplayName("a reference made only of SPACES is VALID: BR-04 refuses a reference with no "
                 + "characters at all, and BR-07 applies no trimming because none is confirmed")
-        void shouldAcceptRegistrationWhenReferenceContainsSpacesOnly(String externalRef) {
+        void shouldAcceptRegistrationWhenReferenceContainsSpacesOnly(String submissionNumber) {
             // Given & When
-            var result = registerAs(UNDERWRITER, externalRef, VALID_LIMIT);
+            var result = registerAs(UNDERWRITER, submissionNumber, VALID_LIMIT);
 
             // Then
             assertThat(result).isEqualTo(accepted());
-            assertThat(repository.storedSubmission(TENANT_A, externalRef))
+            assertThat(repository.storedSubmission(TENANT_A, submissionNumber))
                     .hasValueSatisfying(stored ->
-                            assertThat(stored.externalRef()).isEqualTo(externalRef));
+                            assertThat(stored.submissionNumber()).isEqualTo(submissionNumber));
         }
 
         @Test
@@ -157,7 +157,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(
-                    refused(new RegisterSubmissionError.ReferenceTooLong(64, 65)));
+                    refused(new RegisterSubmissionError.NumberTooLong(64, 65)));
         }
 
         @Test
@@ -183,7 +183,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(
-                    refused(new RegisterSubmissionError.ReferenceTooLong(64, 65)));
+                    refused(new RegisterSubmissionError.NumberTooLong(64, 65)));
         }
     }
 
@@ -202,7 +202,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0000, 3)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0000, 3)));
         }
 
         @ParameterizedTest(name = "[{index}] codePoint={0}")
@@ -215,7 +215,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(codePoint, 0)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(codePoint, 0)));
         }
 
         @Test
@@ -227,7 +227,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 2)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 2)));
             assertThat(repository.storedSubmissions()).isEmpty();
             assertThat(eventPublisher.publishedEvents()).isEmpty();
         }
@@ -247,7 +247,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(codePoint, 2)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(codePoint, 2)));
         }
 
         @ParameterizedTest(name = "[{index}] codePoint={0}")
@@ -266,7 +266,7 @@ class RegisterSubmissionUseCaseTest {
             assertThat(registerAs(UNDERWRITER, reference, VALID_LIMIT)).isEqualTo(accepted());
             assertThat(repository.storedSubmission(TENANT_A, reference))
                     .hasValueSatisfying(stored ->
-                            assertThat(stored.externalRef()).isEqualTo(reference));
+                            assertThat(stored.submissionNumber()).isEqualTo(reference));
         }
 
         @Test
@@ -278,7 +278,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0085, 2)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0085, 2)));
         }
 
         @Test
@@ -290,7 +290,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 1)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 1)));
         }
 
         @Test
@@ -302,7 +302,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 1)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 1)));
         }
 
         @Test
@@ -314,7 +314,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(
-                    refused(new RegisterSubmissionError.ReferenceTooLong(64, 65)));
+                    refused(new RegisterSubmissionError.NumberTooLong(64, 65)));
         }
 
         @Test
@@ -324,7 +324,7 @@ class RegisterSubmissionUseCaseTest {
             var result = registerAs(UNDERWRITER, "", VALID_LIMIT);
 
             // Then
-            assertThat(result).isEqualTo(refused(new RegisterSubmissionError.ReferenceMissing()));
+            assertThat(result).isEqualTo(refused(new RegisterSubmissionError.NumberMissing()));
         }
 
         @Test
@@ -336,7 +336,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(refused(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 2)));
+                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 2)));
         }
 
         @Test
@@ -344,12 +344,12 @@ class RegisterSubmissionUseCaseTest {
                 + "character cannot reach a log line or a ProblemDetail")
         void shouldEnsureRefusalCarriesOnlyNumericInformationWhenInspected() {
             // Given
-            var error = new RegisterSubmissionError.ReferenceContainsControlCharacter(0x000A, 2);
+            var error = new RegisterSubmissionError.NumberContainsControlCharacter(0x000A, 2);
 
             // When & Then
             assertThat(error.toString()).doesNotContain("\n", "\u0000", "\t");
             var componentTypes = Arrays.stream(
-                            RegisterSubmissionError.ReferenceContainsControlCharacter.class
+                            RegisterSubmissionError.NumberContainsControlCharacter.class
                                     .getRecordComponents())
                     .map(RecordComponent::getType)
                     .toList();
@@ -469,7 +469,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(second).isEqualTo(
-                    refused(new RegisterSubmissionError.ReferenceAlreadyUsed("ABC-1")));
+                    refused(new RegisterSubmissionError.NumberAlreadyUsed("ABC-1")));
         }
 
         @Test
@@ -537,7 +537,7 @@ class RegisterSubmissionUseCaseTest {
             // Then
             assertThat(outcomes).containsExactlyInAnyOrder(
                     accepted(),
-                    refused(new RegisterSubmissionError.ReferenceAlreadyUsed("RACE-1")));
+                    refused(new RegisterSubmissionError.NumberAlreadyUsed("RACE-1")));
             assertThat(repository.storedCount()).isEqualTo(1);
             assertThat(eventPublisher.publishedEvents()).hasSize(1);
         }
@@ -596,8 +596,8 @@ class RegisterSubmissionUseCaseTest {
             // Then
             assertThat(eventPublisher.publishedEvents()).containsExactly(
                     new SubmissionDomainEvent.SubmissionRegistered(
-                            FixedSubmissionIdGenerator.EVENT_UUID, EXPECTED_ID, TENANT_A,
-                            "ABC-1", VALID_LIMIT, "uw-01", REGISTERED_AT));
+                            FixedSubmissionIdGenerator.EVENT_UUID, SubmissionNumber.parse("ABC-1").toOptional().orElseThrow(), TENANT_A,
+                            VALID_LIMIT, "uw-01", REGISTERED_AT));
         }
 
         @Test
@@ -612,7 +612,7 @@ class RegisterSubmissionUseCaseTest {
 
             // Then
             assertThat(result).isEqualTo(
-                    refused(new RegisterSubmissionError.ReferenceAlreadyUsed("ABC-1")));
+                    refused(new RegisterSubmissionError.NumberAlreadyUsed("ABC-1")));
             assertThat(eventPublisher.publishedEvents()).isEmpty();
         }
 
@@ -654,10 +654,10 @@ class RegisterSubmissionUseCaseTest {
                     "InsuredLimitMissing",
                     "InsuredLimitNotPositive",
                     "InsuredLimitPrecisionInvalid",
-                    "ReferenceAlreadyUsed",
-                    "ReferenceContainsControlCharacter",
-                    "ReferenceMissing",
-                    "ReferenceTooLong");
+                    "NumberAlreadyUsed",
+                    "NumberContainsControlCharacter",
+                    "NumberMissing",
+                    "NumberTooLong");
         }
 
         @Test

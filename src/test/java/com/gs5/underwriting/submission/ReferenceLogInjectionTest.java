@@ -14,15 +14,15 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * C-1 / SEC-03 / SEC-04 / SEC-02: every record that prints a caller-supplied reference must
+ * C-1 / SEC-03 / SEC-04 / SEC-02: every record that prints a caller-supplied number must
  * print it escaped, and the record that holds the actor id first must not print it at all.
  *
- * <p>Raw references are either escaped in read criteria or rejected/folded to a safe value before
+ * <p>Raw numbers are either escaped in read criteria or rejected/folded to a safe value before
  * they are retained by a command or query.
  */
 class ReferenceLogInjectionTest {
 
-    /** A reference that, printed raw, forges what reads as a second log entry. */
+    /** A number that, printed raw, forges what reads as a second log entry. */
     private static final String HOSTILE = "S-1\n2026-11-02 INFO admin login ok";
     private static final String ESCAPED_NEWLINE = "\\u000A";
 

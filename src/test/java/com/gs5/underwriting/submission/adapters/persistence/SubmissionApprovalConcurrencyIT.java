@@ -6,11 +6,13 @@ import com.gs5.underwriting.shared.kernel.Result;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionCommand;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionError;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionUseCase;
+import com.gs5.underwriting.submission.domain.FixedSubmissionIdGenerator;
 import com.gs5.underwriting.submission.domain.SubmissionApprovalRepository;
 import com.gs5.underwriting.submission.domain.SubmissionCommandRepository;
 import com.gs5.underwriting.submission.domain.SubmissionDomainEvent;
 import com.gs5.underwriting.submission.domain.SubmissionEventPublisher;
 import com.gs5.underwriting.submission.domain.SubmissionId;
+import com.gs5.underwriting.submission.domain.SubmissionNumber;
 import com.gs5.underwriting.submission.domain.SubmissionSnapshot;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -101,8 +103,8 @@ class SubmissionApprovalConcurrencyIT {
                     new BigDecimal("100.00"), "uw-01", REGISTERED_AT, null));
             var publisher = new RecordingPublisher();
             var useCase = new ApproveSubmissionUseCase(commands, approvals, publisher,
-                    Clock.fixed(APPROVED_AT, ZoneOffset.UTC));
-            var command = new ApproveSubmissionCommand(new SubmissionId(submissionId));
+                    new FixedSubmissionIdGenerator(), Clock.fixed(APPROVED_AT, ZoneOffset.UTC));
+            var command = new ApproveSubmissionCommand(SubmissionNumber.parse("REF-" + round).toOptional().orElseThrow());
 
             var outcomes = raceTwice(useCase, command);
 
@@ -117,7 +119,7 @@ class SubmissionApprovalConcurrencyIT {
         }
     }
 
-    private List<Result<SubmissionId, ApproveSubmissionError>> raceTwice(
+    private List<Result<SubmissionNumber, ApproveSubmissionError>> raceTwice(
             ApproveSubmissionUseCase useCase, ApproveSubmissionCommand command) throws Exception {
         var start = new CountDownLatch(1);
         try (var pool = Executors.newFixedThreadPool(2)) {
@@ -134,7 +136,7 @@ class SubmissionApprovalConcurrencyIT {
         }
     }
 
-    private static List<String> refusalNames(List<Result<SubmissionId, ApproveSubmissionError>> outcomes) {
+    private static List<String> refusalNames(List<Result<SubmissionNumber, ApproveSubmissionError>> outcomes) {
         return outcomes.stream()
                 .filter(Result::isFailure)
                 .map(outcome -> outcome.errorToOptional().orElseThrow().getClass().getSimpleName())

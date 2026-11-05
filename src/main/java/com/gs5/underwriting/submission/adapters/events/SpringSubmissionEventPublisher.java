@@ -24,10 +24,10 @@ import org.springframework.stereotype.Component;
  * nothing crosses a process boundary. That is exactly the at-most-once
  * announcement the design
  * already accepts and documents: the state change is exactly-once, the
- * reference is a
+ * number is a
  * caller-supplied natural key unique per organisation, so a retry after an
  * ambiguous failure
- * returns {@code ReferenceAlreadyUsed} rather than registering twice. No
+ * returns {@code NumberAlreadyUsed} rather than registering twice. No
  * candidate that would
  * change this was available without a transaction boundary decision the design
  * deliberately left

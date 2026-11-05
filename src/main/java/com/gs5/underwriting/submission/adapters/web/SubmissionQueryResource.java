@@ -36,7 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/submissions")
-class SubmissionQueryController {
+class SubmissionQueryResource {
 
     private static final String PROBLEM_TYPE_PREFIX = "urn:problem-type:submission:";
 
@@ -44,7 +44,7 @@ class SubmissionQueryController {
     private final ActorContextResolver actorContextResolver;
     private final OperationGate<RawSearchRequest, SubmissionPageView> gate;
 
-    SubmissionQueryController(SearchSubmissionsUseCase useCase,
+    SubmissionQueryResource(SearchSubmissionsUseCase useCase,
                               ActorContextResolver actorContextResolver) {
         this.useCase = useCase;
         this.actorContextResolver = actorContextResolver;
@@ -53,22 +53,22 @@ class SubmissionQueryController {
 
     @GetMapping
     ResponseEntity<Object> search(
-            @RequestParam(required = false) @Nullable String reference,
+            @RequestParam(required = false) @Nullable String submissionNumber,
             @RequestParam(required = false) @Nullable BigDecimal insuredLimitFrom,
             @RequestParam(required = false) @Nullable BigDecimal insuredLimitTo,
             @RequestParam(required = false) @Nullable Instant registeredFrom,
             @RequestParam(required = false) @Nullable Instant registeredTo,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "100") int size) {
-        var request = new RawSearchRequest(reference, insuredLimitFrom, insuredLimitTo,
+        var request = new RawSearchRequest(submissionNumber, insuredLimitFrom, insuredLimitTo,
                 registeredFrom, registeredTo, page, size);
         return gate.admit(actorContextResolver.resolve())
                 .fold(admission -> found(admission.run(request)),
-                        SubmissionQueryController::refused);
+                        SubmissionQueryResource::refused);
     }
 
     private SubmissionPageView searchForActor(ActorContext actor, RawSearchRequest request) {
-        return useCase.ask(actor, SearchSubmissionsQuery.parse(request.reference(),
+        return useCase.ask(actor, SearchSubmissionsQuery.parse(request.submissionNumber(),
                 request.insuredLimitFrom(), request.insuredLimitTo(), request.registeredFrom(),
                 request.registeredTo(), request.page(), request.size()));
     }
@@ -103,7 +103,7 @@ class SubmissionQueryController {
         return problem;
     }
 
-    private record RawSearchRequest(@Nullable String reference,
+    private record RawSearchRequest(@Nullable String submissionNumber,
                                     @Nullable BigDecimal insuredLimitFrom,
                                     @Nullable BigDecimal insuredLimitTo,
                                     @Nullable Instant registeredFrom,

@@ -110,9 +110,9 @@ class SubmissionSearchStateIT {
 
     // ------------------------------------------------------------------ helpers
 
-    private UUID register(UUID tenantId, String externalRef, Instant registeredAt) {
+    private UUID register(UUID tenantId, String submissionNumber, Instant registeredAt) {
         var id = UUID.randomUUID();
-        commands.insert(new SubmissionSnapshot(id, tenantId, externalRef, new BigDecimal("100.00"),
+        commands.insert(new SubmissionSnapshot(id, tenantId, submissionNumber, new BigDecimal("100.00"),
                 "uw-01", registeredAt, null));
         return id;
     }
@@ -134,7 +134,7 @@ class SubmissionSearchStateIT {
     private static Map<String, String> stateByReference(JsonNode page) {
         var states = new LinkedHashMap<String, String>();
         for (JsonNode row : page.path("submissions")) {
-            states.put(row.path("externalRef").asString(), row.path("state").asString());
+            states.put(row.path("submissionNumber").asString(), row.path("state").asString());
         }
         return states;
     }

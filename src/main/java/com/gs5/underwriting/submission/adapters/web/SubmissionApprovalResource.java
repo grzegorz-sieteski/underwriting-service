@@ -4,13 +4,14 @@ import module java.base;
 
 import com.gs5.underwriting.shared.kernel.ActorContext;
 import com.gs5.underwriting.shared.kernel.Result;
+import com.gs5.underwriting.submission.adapters.access.Admission;
 import com.gs5.underwriting.submission.adapters.access.AccessRefusal;
 import com.gs5.underwriting.submission.adapters.access.OperationGate;
 import com.gs5.underwriting.submission.adapters.access.Permission;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionCommand;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionError;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionUseCase;
-import com.gs5.underwriting.submission.domain.SubmissionId;
+import com.gs5.underwriting.submission.domain.SubmissionNumber;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
@@ -22,78 +23,96 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/submissions")
-class SubmissionApprovalController {
+class SubmissionApprovalResource {
 
     private static final String PROBLEM_TYPE_PREFIX = "urn:problem-type:submission:";
+    /** A constant instance, so no problem detail copies the request path (BR-47). */
+    private static final String APPROVAL_INSTANCE = "/api/submissions/approval";
 
     private final ApproveSubmissionUseCase useCase;
     private final ActorContextResolver actorContextResolver;
     private final OperationGate<ApproveSubmissionCommand,
-            Result<SubmissionId, ApproveSubmissionError>> gate;
+            Result<SubmissionNumber, ApproveSubmissionError>> gate;
 
-    SubmissionApprovalController(ApproveSubmissionUseCase useCase,
-                                ActorContextResolver actorContextResolver,
-                                @Qualifier("approvalPermission") Permission approvalPermission) {
+    SubmissionApprovalResource(ApproveSubmissionUseCase useCase,
+                               ActorContextResolver actorContextResolver,
+                               @Qualifier("approvalPermission") Permission approvalPermission) {
         this.useCase = useCase;
         this.actorContextResolver = actorContextResolver;
         this.gate = new OperationGate<>(approvalPermission, this::approveForActor);
     }
 
-    @PostMapping("/{id}/approve")
-    ResponseEntity<Object> approve(@PathVariable UUID id) {
-        var command = new ApproveSubmissionCommand(new SubmissionId(id));
+    /**
+     * The submission number arrives as text and is parsed only after the caller is admitted, so a
+     * Viewer naming any number is refused by role (BR-33). A text that cannot be a number is then
+     * refused exactly as an unknown one is (BR-35, BR-48).
+     */
+    @PostMapping("/{number}/approve")
+    ResponseEntity<Object> approve(@PathVariable String number) {
         return gate.admit(actorContextResolver.resolve())
-                .fold(admission -> admission.run(command)
-                                .fold(SubmissionApprovalController::approved,
-                                        SubmissionApprovalController::refused),
-                        SubmissionApprovalController::refusedAccess);
+                .fold(admission -> approveAdmitted(admission, number),
+                        access -> refused(new ApproveRefusal.Access(access)));
     }
 
-    private Result<SubmissionId, ApproveSubmissionError> approveForActor(
+    private Result<SubmissionNumber, ApproveSubmissionError> approveForActor(
             ActorContext actor, ApproveSubmissionCommand command) {
         return useCase.execute(actor, command);
     }
 
-    private static ResponseEntity<Object> approved(SubmissionId id) {
-        return ResponseEntity.ok(new ApprovedSubmissionResponse(id.value()));
+    private static ResponseEntity<Object> approveAdmitted(
+            Admission<ApproveSubmissionCommand, Result<SubmissionNumber, ApproveSubmissionError>> admission,
+            String number) {
+        return ApproveSubmissionCommand.parse(number)
+                .fold(command -> admission.run(command)
+                                .fold(SubmissionApprovalResource::approved,
+                                        error -> refused(new ApproveRefusal.Rejected(error))),
+                        error -> refused(new ApproveRefusal.Rejected(error)));
     }
 
-    private static ResponseEntity<Object> refused(ApproveSubmissionError error) {
-        var problem = switch (error) {
-            case ApproveSubmissionError.SubmissionNotFound(var submissionId) -> problemDetail(
-                    HttpStatus.NOT_FOUND, "submission-not-found",
-                    "Submission " + submissionId.value() + " was not found.");
-            case ApproveSubmissionError.SubmissionAlreadyApproved(var submissionId) -> problemDetail(
-                    HttpStatus.CONFLICT, "submission-already-approved",
-                    "Submission " + submissionId.value() + " is already approved.");
-        };
-        return ResponseEntity.status(problem.getStatus())
-                .contentType(MediaType.APPLICATION_PROBLEM_JSON)
-                .body(problem);
+    private static ResponseEntity<Object> approved(SubmissionNumber number) {
+        return ResponseEntity.ok(new ApprovedSubmissionResponse(number.value()));
     }
 
-    private static ResponseEntity<Object> refusedAccess(AccessRefusal refusal) {
+    /** The one exhaustive mapping of every approval refusal (design section 19.3, D10). */
+    private static ResponseEntity<Object> refused(ApproveRefusal refusal) {
         var problem = switch (refusal) {
-            case AccessRefusal.CallerNotIdentified _ -> problemDetail(
+            case ApproveRefusal.Access(AccessRefusal.CallerNotIdentified _) -> problemDetail(
                     HttpStatus.UNAUTHORIZED, "caller-not-identified",
                     "The caller could not be identified.");
-            case AccessRefusal.PermissionDenied(var role) -> problemDetail(
+            case ApproveRefusal.Access(AccessRefusal.PermissionDenied(var role)) -> problemDetail(
                     HttpStatus.FORBIDDEN, "permission-denied",
                     "The role " + role + " may not approve a submission.");
+            case ApproveRefusal.Rejected(ApproveSubmissionError.SubmissionNotFound _) -> problemDetail(
+                    HttpStatus.NOT_FOUND, "submission-not-found",
+                    "The submission was not found.");
+            case ApproveRefusal.Rejected(ApproveSubmissionError.ApproverRegisteredSubmission _) -> problemDetail(
+                    HttpStatus.FORBIDDEN, "approver-registered-submission",
+                    "The caller registered this submission and may not approve it.");
+            case ApproveRefusal.Rejected(ApproveSubmissionError.SubmissionAlreadyApproved _) -> problemDetail(
+                    HttpStatus.CONFLICT, "submission-already-approved",
+                    "The submission is already approved.");
         };
+        return problemResponse(problem);
+    }
+
+    private static ResponseEntity<Object> problemResponse(ProblemDetail problem) {
         return ResponseEntity.status(problem.getStatus())
                 .contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(problem);
     }
 
+    /**
+     * {@code instance} is set to a constant, not left to Spring, which would copy the request path
+     * and so echo the submission number back (BR-47, D6).
+     */
     private static ProblemDetail problemDetail(HttpStatus status, String code, String detail) {
         var problem = ProblemDetail.forStatusAndDetail(status, detail);
         problem.setType(URI.create(PROBLEM_TYPE_PREFIX + code));
         problem.setTitle(status.getReasonPhrase());
+        problem.setInstance(URI.create(APPROVAL_INSTANCE));
         return problem;
     }
 }

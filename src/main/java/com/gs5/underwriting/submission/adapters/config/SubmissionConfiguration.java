@@ -107,8 +107,9 @@ class SubmissionConfiguration {
     ApproveSubmissionUseCase approveSubmissionUseCase(SubmissionCommandRepository commandRepository,
                                                      SubmissionApprovalRepository approvalRepository,
                                                      SubmissionEventPublisher eventPublisher,
+                                                     SubmissionIdGenerator idGenerator,
                                                      Clock clock) {
         return new ApproveSubmissionUseCase(commandRepository, approvalRepository,
-                eventPublisher, clock);
+                eventPublisher, idGenerator, clock);
     }
 }

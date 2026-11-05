@@ -16,19 +16,19 @@ package com.gs5.underwriting.submission.domain;
  */
 public sealed interface RegisterSubmissionError {
 
-    /** BR-04 — no reference supplied, or it contains no characters at all. */
-    record ReferenceMissing() implements RegisterSubmissionError { }
+    /** BR-04 — no number supplied, or it contains no characters at all. */
+    record NumberMissing() implements RegisterSubmissionError { }
 
-    /** BR-05 — reference longer than 64 characters, counted in code points. */
-    record ReferenceTooLong(int maxLength, int actualLength) implements RegisterSubmissionError { }
+    /** BR-05 — number longer than 64 characters, counted in code points. */
+    record NumberTooLong(int maxLength, int actualLength) implements RegisterSubmissionError { }
 
     /**
-     * BR-29 — the reference contains a character of Unicode general category {@code Cc}, that is
+     * BR-29 — the number contains a character of Unicode general category {@code Cc}, that is
      * one in U+0000–U+001F or U+007F–U+009F. NUL, TAB and NEWLINE are all such characters;
      * <strong>SPACE (U+0020) is not</strong>.
      *
-     * <p>It carries two <em>numbers</em> and deliberately not the reference, although BR-23 makes a
-     * reference loggable in full. The offending character is by definition unprintable, and the
+     * <p>It carries two <em>numbers</em> and deliberately not the number, although BR-23 makes a
+     * number loggable in full. The offending character is by definition unprintable, and the
      * whole point of this refusal is that such a character must not travel any further: a raw
      * NEWLINE in an error record forges a log line, and a raw NUL truncates one. Rendering the
      * code point as an integer names the problem exactly while keeping the character itself out of
@@ -39,7 +39,7 @@ public sealed interface RegisterSubmissionError {
      * @param index     its zero-based <strong>code point</strong> index, counted the same way
      *                  BR-05 counts length, so the two refusals measure positions alike
      */
-    record ReferenceContainsControlCharacter(int codePoint, int index)
+    record NumberContainsControlCharacter(int codePoint, int index)
             implements RegisterSubmissionError { }
 
     /** BR-10 — no insured limit supplied. */
@@ -52,6 +52,6 @@ public sealed interface RegisterSubmissionError {
     record InsuredLimitPrecisionInvalid(int requiredScale, int actualScale)
             implements RegisterSubmissionError { }
 
-    /** BR-06, BR-09 — the caller's own organisation already used this exact reference. */
-    record ReferenceAlreadyUsed(String externalRef) implements RegisterSubmissionError { }
+    /** BR-06, BR-09 — the caller's own organisation already used this exact number. */
+    record NumberAlreadyUsed(String submissionNumber) implements RegisterSubmissionError { }
 }

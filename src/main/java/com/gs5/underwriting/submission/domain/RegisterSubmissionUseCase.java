@@ -36,10 +36,10 @@ public final class RegisterSubmissionUseCase {
     public Result<SubmissionId, RegisterSubmissionError> execute(
             ActorContext actor, RegisterSubmissionCommand command) {
         var submission = Submission.register(idGenerator.nextSubmissionId(), actor,
-                command.externalRef(), command.insuredLimit(), clock.instant());
+                command.submissionNumber(), command.insuredLimit(), clock.instant());
         return repository.insert(submission.toSnapshot())
                 .<RegisterSubmissionError>mapError(error -> error)
-                .peek(_ -> eventPublisher.publish(
-                        submission.registeredEvent(idGenerator.nextEventId())));
+                .peek(id -> eventPublisher.publish(
+                        submission.registeredEvent(idGenerator.nextEventId(), command.submissionNumber())));
     }
 }

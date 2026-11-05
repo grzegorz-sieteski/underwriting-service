@@ -5,17 +5,20 @@ import module java.base;
 import com.gs5.underwriting.shared.kernel.LogSafeText;
 
 /**
- * The business facts this module announces. One today, because the specification names one.
+ * The business facts this module announces. Every event names its submission by the submission
+ * number, the only identifier that leaves this service (BR-47). The internal identity is never
+ * carried, so a recipient of an event cannot learn it.
  *
- * <p>Searching announces nothing — a read is not a business fact — and the event is never raised
- * for a refused registration.
+ * <p>Searching announces nothing, because a read is not a business fact, and the event is never
+ * raised for a refused operation.
  */
 public sealed interface SubmissionDomainEvent {
 
     /** Stable identity of this announcement, so an eventual recipient can recognise a repeat. */
     UUID eventId();
 
-    SubmissionId aggregateId();
+    /** The submission this fact is about, by its validated submission number (BR-47). */
+    SubmissionNumber submissionNumber();
 
     UUID tenantId();
 
@@ -28,9 +31,8 @@ public sealed interface SubmissionDomainEvent {
      * this is not a log, and BR-22 is a rule about logs. Any recipient inherits the obligation.
      */
     record SubmissionRegistered(UUID eventId,
-                                SubmissionId aggregateId,
+                                SubmissionNumber submissionNumber,
                                 UUID tenantId,
-                                String externalRef,
                                 BigDecimal insuredLimit,
                                 String registeredBy,
                                 Instant occurredAt) implements SubmissionDomainEvent {
@@ -45,28 +47,29 @@ public sealed interface SubmissionDomainEvent {
         @Override
         public String toString() {
             return "SubmissionRegistered[eventId=" + eventId
-                    + ", aggregateId=" + aggregateId
+                    + ", submissionNumber=" + LogSafeText.escapeControlCharacters(
+                            submissionNumber.value())
                     + ", tenantId=" + tenantId
-                    + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
                     + ", insuredLimit=" + MASKED
                     + ", registeredBy=" + MASKED
                     + ", occurredAt=" + occurredAt + "]";
         }
     }
 
-    /** A submission was approved by a caller permitted to decide. */
+    /** A submission was approved by a caller permitted to decide (BR-40). */
     record SubmissionApproved(UUID eventId,
-                             SubmissionId aggregateId,
-                             UUID tenantId,
-                             String approvedBy,
-                             Instant occurredAt) implements SubmissionDomainEvent {
+                              SubmissionNumber submissionNumber,
+                              UUID tenantId,
+                              String approvedBy,
+                              Instant occurredAt) implements SubmissionDomainEvent {
 
         private static final String MASKED = "***";
 
         @Override
         public String toString() {
             return "SubmissionApproved[eventId=" + eventId
-                    + ", aggregateId=" + aggregateId
+                    + ", submissionNumber=" + LogSafeText.escapeControlCharacters(
+                            submissionNumber.value())
                     + ", tenantId=" + tenantId
                     + ", approvedBy=" + MASKED
                     + ", occurredAt=" + occurredAt + "]";

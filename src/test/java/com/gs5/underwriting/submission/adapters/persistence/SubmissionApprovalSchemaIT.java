@@ -84,12 +84,12 @@ class SubmissionApprovalSchemaIT {
 
     // ------------------------------------------------------------------ helpers
 
-    private UUID insertSubmission(UUID tenantId, String externalRef) {
+    private UUID insertSubmission(UUID tenantId, String submissionNumber) {
         var id = UUID.randomUUID();
         jdbcTemplate.update("""
-                INSERT INTO submissions (id, tenant_id, external_ref, insured_limit, registered_by, registered_at, version)
+                INSERT INTO submissions (id, tenant_id, submission_number, insured_limit, registered_by, registered_at, version)
                 VALUES (?, ?, ?, ?, ?, ?, 0)
-                """, id, tenantId, externalRef, new BigDecimal("100.00"), "uw-01",
+                """, id, tenantId, submissionNumber, new BigDecimal("100.00"), "uw-01",
                 Timestamp.from(REGISTERED_AT));
         return id;
     }

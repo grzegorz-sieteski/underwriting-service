@@ -81,18 +81,16 @@ public record ActorContext(UUID tenantId, String actorId, ActorRole role) {
     public static Optional<ActorContext> parse(@Nullable String tenantId,
                                                @Nullable String actorId,
                                                @Nullable ActorRole role) {
-        if (tenantId == null || !CANONICAL_UUID.matcher(tenantId).matches()
+        var tenant = CanonicalUuid.parse(tenantId);
+        if (tenant.isEmpty()
                 || actorId == null || actorId.isBlank()
                 || actorId.codePointCount(0, actorId.length()) > MAX_ACTOR_ID_LENGTH
                 || ControlCharacters.firstIn(actorId).isPresent()
                 || role == null) {
             return Optional.empty();
         }
-        return Optional.of(new ActorContext(UUID.fromString(tenantId), actorId, role));
+        return Optional.of(new ActorContext(tenant.get(), actorId, role));
     }
-
-    private static final Pattern CANONICAL_UUID = Pattern.compile(
-            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     /** True when this actor may read data belonging to {@code otherTenantId}. */
     public boolean belongsToTenant(UUID otherTenantId) {

@@ -13,9 +13,9 @@ import java.util.Arrays;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@link RegisterSubmissionCommand#parse}: the register side's mapping of the reference's own
- * {@link ExternalReferenceError} onto the three {@link RegisterSubmissionError} reference refusals,
- * and the specification's order of judgement — reference first, amount second.
+ * {@link RegisterSubmissionCommand#parse}: the register side's mapping of the number's own
+ * {@link SubmissionNumberError} onto the three {@link RegisterSubmissionError} number refusals,
+ * and the specification's order of judgement — number first, amount second.
  *
  * <p>Only refusals and success are asserted, never a success value's components: the command's
  * components change from raw values to value objects in the implementation, and a test that read
@@ -30,20 +30,20 @@ class RegisterSubmissionCommandParseTest {
         return Result.failure(error);
     }
 
-    @ParameterizedTest(name = "reference {0} maps Missing onto ReferenceMissing")
+    @ParameterizedTest(name = "reference {0} maps Missing onto NumberMissing")
     @NullSource
     @ValueSource(strings = {""})
     @DisplayName("a missing reference is refused as reference missing (BR-04)")
     void shouldMapMissingWhenReferenceIsAbsentOrEmpty(String reference) {
         assertThat(RegisterSubmissionCommand.parse(reference, VALID_LIMIT))
-                .isEqualTo(refused(new RegisterSubmissionError.ReferenceMissing()));
+                .isEqualTo(refused(new RegisterSubmissionError.NumberMissing()));
     }
 
     @Test
     @DisplayName("a too-long reference is refused as reference too long, keeping both numbers (BR-05)")
     void shouldMapTooLongWhenReferenceExceedsMaximum() {
         assertThat(RegisterSubmissionCommand.parse("A".repeat(65), VALID_LIMIT))
-                .isEqualTo(refused(new RegisterSubmissionError.ReferenceTooLong(64, 65)));
+                .isEqualTo(refused(new RegisterSubmissionError.NumberTooLong(64, 65)));
     }
 
     @Test
@@ -52,7 +52,7 @@ class RegisterSubmissionCommandParseTest {
     void shouldMapControlCharacterWhenReferenceContainsOne() {
         assertThat(RegisterSubmissionCommand.parse("AB\tCD", VALID_LIMIT))
                 .isEqualTo(refused(
-                        new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 2)));
+                        new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 2)));
     }
 
     @Test
@@ -60,7 +60,7 @@ class RegisterSubmissionCommandParseTest {
             + "refused for the reference")
     void shouldRefuseReferenceBeforeAmountWhenBothAreInvalid() {
         assertThat(RegisterSubmissionCommand.parse("", null))
-                .isEqualTo(refused(new RegisterSubmissionError.ReferenceMissing()));
+                .isEqualTo(refused(new RegisterSubmissionError.NumberMissing()));
     }
 
     @Test
@@ -68,7 +68,7 @@ class RegisterSubmissionCommandParseTest {
     void shouldRefuseControlCharacterBeforeNonPositiveAmount() {
         assertThat(RegisterSubmissionCommand.parse("AB\tCD", BigDecimal.ZERO))
                 .isEqualTo(refused(
-                        new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0009, 2)));
+                        new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 2)));
     }
 
     @Test
@@ -104,7 +104,7 @@ class RegisterSubmissionCommandParseTest {
     @DisplayName("every reference error has a register mapping: the reference has exactly three "
             + "failure kinds")
     void shouldHaveExactlyThreeReferenceErrorKinds() {
-        var kinds = Arrays.stream(ExternalReferenceError.class.getPermittedSubclasses())
+        var kinds = Arrays.stream(SubmissionNumberError.class.getPermittedSubclasses())
                 .map(Class::getSimpleName)
                 .sorted()
                 .toList();

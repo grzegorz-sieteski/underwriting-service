@@ -72,8 +72,8 @@ class SubmissionSearchAdversarialTest {
         return SearchSubmissionsQuery.parse(null, null, null, null, null, page, size);
     }
 
-    private static SearchSubmissionsQuery byReference(String externalRef) {
-        return SearchSubmissionsQuery.parse(externalRef, null, null, null, null, 0, 100);
+    private static SearchSubmissionsQuery byReference(String submissionNumber) {
+        return SearchSubmissionsQuery.parse(submissionNumber, null, null, null, null, 0, 100);
     }
 
     // ================================================================ BOLA
@@ -86,8 +86,8 @@ class SubmissionSearchAdversarialTest {
         @BeforeEach
         void seedOtherTenantOnly() {
             // Everything in the store belongs to TENANT_B. TENANT_A owns nothing at all.
-            repository.givenSubmission(TENANT_B, uuid(1), "SECRET-REF", SECRET_AMOUNT, at(0));
-            repository.givenSubmission(TENANT_B, uuid(2), "SECRET-REF-2", "999.00", at(1));
+            repository.givenSubmission(TENANT_B, "SECRET-REF", SECRET_AMOUNT, at(0));
+            repository.givenSubmission(TENANT_B, "SECRET-REF-2", "999.00", at(1));
         }
 
         @Test
@@ -243,7 +243,7 @@ class SubmissionSearchAdversarialTest {
             // Given
             var expected = new ArrayList<SubmissionSummaryView>();
             IntStream.rangeClosed(1, 12).forEach(n ->
-                    repository.givenSubmission(TENANT_A, uuid(n), "S-" + n, n + ".00", at(n)));
+                    repository.givenSubmission(TENANT_A, "S-" + n, n + ".00", at(n)));
             var caller = actor(TENANT_A, ActorRole.VIEWER);
 
             // When
@@ -272,7 +272,7 @@ class SubmissionSearchAdversarialTest {
         void shouldDemonstrateRowSkippingWhenClientIgnoresEchoedSize() {
             // Given
             IntStream.rangeClosed(1, 12).forEach(n ->
-                    repository.givenSubmission(TENANT_A, uuid(n), "S-" + n, n + ".00", at(n)));
+                    repository.givenSubmission(TENANT_A, "S-" + n, n + ".00", at(n)));
             var caller = actor(TENANT_A, ActorRole.VIEWER);
 
             // When
@@ -301,7 +301,7 @@ class SubmissionSearchAdversarialTest {
         void shouldReturnIdenticalResultsWhenSearchedByAnyRole(ActorRole role) {
             // Given
             IntStream.rangeClosed(1, 3).forEach(n ->
-                    repository.givenSubmission(TENANT_A, uuid(n), "S-" + n, n + ".00", at(n)));
+                    repository.givenSubmission(TENANT_A, "S-" + n, n + ".00", at(n)));
 
             // When
             var asViewer = searchAs(actor(TENANT_A, ActorRole.VIEWER), unfiltered(0, 100));
@@ -344,9 +344,9 @@ class SubmissionSearchAdversarialTest {
                 + "and no answer is a refusal")
         void shouldMaintainStrictTenantIsolationWhenManySearchesRaceConcurrently() {
             // Given
-            repository.givenSubmission(TENANT_A, uuid(1), "A-1", "100.00", at(1));
-            repository.givenSubmission(TENANT_A, uuid(2), "A-2", "200.00", at(2));
-            repository.givenSubmission(TENANT_B, uuid(3), "B-1", "300.00", at(3));
+            repository.givenSubmission(TENANT_A, "A-1", "100.00", at(1));
+            repository.givenSubmission(TENANT_A, "A-2", "200.00", at(2));
+            repository.givenSubmission(TENANT_B, "B-1", "300.00", at(3));
 
             var answers = new ConcurrentLinkedQueue<SubmissionPageView>();
 
@@ -372,7 +372,7 @@ class SubmissionSearchAdversarialTest {
                     .containsExactlyInAnyOrder(2L, 1L);
             assertThat(answers).allSatisfy(view -> {
                 var references = view.submissions().stream()
-                        .map(SubmissionSummaryView::externalRef)
+                        .map(SubmissionSummaryView::submissionNumber)
                         .toList();
                 if (view.totalMatchCount() == 1L) {
                     assertThat(references).containsExactly("B-1");
@@ -393,7 +393,7 @@ class SubmissionSearchAdversarialTest {
             try (var pool = Executors.newVirtualThreadPerTaskExecutor()) {
                 var writer = CompletableFuture.runAsync(() ->
                         IntStream.rangeClosed(1, 40).forEach(n -> repository.givenSubmission(
-                                TENANT_A, uuid(n), "S-" + n, n + ".00", at(n))), pool);
+                                TENANT_A, "S-" + n, n + ".00", at(n))), pool);
 
                 var readers = IntStream.range(0, 32)
                         .mapToObj(_ -> CompletableFuture.supplyAsync(
@@ -464,7 +464,7 @@ class SubmissionSearchAdversarialTest {
                 + "one, so this test is the guard on that transitive property")
         void shouldDiscloseNeitherAmountNorCallerWhenSubmissionPageViewPrinted() {
             // Given
-            var row = new SubmissionSummaryView(uuid(1), "S-1", LOWER, "uw-secret-01", at(0));
+            var row = new SubmissionSummaryView("S-1", LOWER, "uw-secret-01", at(0), SubmissionState.REGISTERED);
             var view = new SubmissionPageView(List.of(row), 1L, 0, 100);
 
             // When

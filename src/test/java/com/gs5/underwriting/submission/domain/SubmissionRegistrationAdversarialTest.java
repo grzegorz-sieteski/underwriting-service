@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * do not reach: scientific notation (whose {@code BigDecimal} scale is <em>negative</em> and slips
  * past a naive "has a decimal point" check), a scale-2 amount written in a form that looks wrong,
  * an amount with hundreds of significant digits under BR-13's "no upper bound", control
- * characters and a NUL byte in a reference that no confirmed rule forbids, 64 code points made of
+ * characters and a NUL byte in a number that no confirmed rule forbids, 64 code points made of
  * combining marks, the role gate driven off {@code ActorRole.values()} so a fourth role cannot be
  * added silently, and the BR-09 race widened to 64 virtual threads and across two organisations.
  */
@@ -65,15 +65,15 @@ class SubmissionRegistrationAdversarialTest {
     }
 
     private Result<SubmissionId, RegisterSubmissionError> registerAs(ActorContext caller,
-                                                                      String externalRef,
+                                                                      String submissionNumber,
                                                                       BigDecimal insuredLimit) {
-        return RegisterSubmissionCommand.parse(externalRef, insuredLimit)
+        return RegisterSubmissionCommand.parse(submissionNumber, insuredLimit)
                 .flatMap(command -> useCase.execute(caller, command));
     }
 
-    private Result<SubmissionId, RegisterSubmissionError> register(String externalRef,
+    private Result<SubmissionId, RegisterSubmissionError> register(String submissionNumber,
                                                                     String insuredLimit) {
-        return registerAs(underwriterOf(TENANT_A), externalRef, new BigDecimal(insuredLimit));
+        return registerAs(underwriterOf(TENANT_A), submissionNumber, new BigDecimal(insuredLimit));
     }
 
     // ================================================================ amount notation
@@ -168,7 +168,7 @@ class SubmissionRegistrationAdversarialTest {
         }
     }
 
-    // ================================================================ reference boundary
+    // ================================================================ number boundary
 
     @Nested
     @DisplayName("The 64-code-point reference limit, exactly at and one past (BR-05)")
@@ -200,7 +200,7 @@ class SubmissionRegistrationAdversarialTest {
 
             // Then
             assertThat(result).isEqualTo(Result.failure(
-                    new RegisterSubmissionError.ReferenceTooLong(64, 65)));
+                    new RegisterSubmissionError.NumberTooLong(64, 65)));
         }
 
         @Test
@@ -228,7 +228,7 @@ class SubmissionRegistrationAdversarialTest {
 
             // Then
             assertThat(result).isEqualTo(Result.failure(
-                    new RegisterSubmissionError.ReferenceTooLong(64, 66)));
+                    new RegisterSubmissionError.NumberTooLong(64, 66)));
         }
 
         @Test
@@ -269,7 +269,7 @@ class SubmissionRegistrationAdversarialTest {
             assertThat(registerAs(underwriterOf(TENANT_A), Character.toString(codePoint),
                     VALID_LIMIT))
                     .isEqualTo(Result.<SubmissionId, RegisterSubmissionError>failure(
-                            new RegisterSubmissionError.ReferenceContainsControlCharacter(
+                            new RegisterSubmissionError.NumberContainsControlCharacter(
                                      codePoint, index)));
         }
 
@@ -286,7 +286,7 @@ class SubmissionRegistrationAdversarialTest {
 
             // Then
             assertThat(result).isEqualTo(Result.<SubmissionId, RegisterSubmissionError>failure(
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(
+                    new RegisterSubmissionError.NumberContainsControlCharacter(
                             0x0000, 3)));
             assertThat(repository.storedSubmission(TENANT_A, reference)).isEmpty();
             assertThat(repository.storedCount()).isZero();
@@ -310,7 +310,7 @@ class SubmissionRegistrationAdversarialTest {
                     .isEqualTo(Result.success(EXPECTED_ID));
             assertThat(repository.storedSubmission(TENANT_A, reference))
                     .get()
-                    .satisfies(stored -> assertThat(stored.externalRef()).isEqualTo(reference));
+                    .satisfies(stored -> assertThat(stored.submissionNumber()).isEqualTo(reference));
         }
 
         @Test
@@ -358,7 +358,7 @@ class SubmissionRegistrationAdversarialTest {
             assertThat(results.stream().filter(Result::isFailure)).hasSize(63);
             assertThat(results).allSatisfy(result -> assertThat(result).isIn(
                     Result.success(EXPECTED_ID),
-                    Result.failure(new RegisterSubmissionError.ReferenceAlreadyUsed("RACE-64"))));
+                    Result.failure(new RegisterSubmissionError.NumberAlreadyUsed("RACE-64"))));
             assertThat(repository.storedCount()).isEqualTo(1);
             assertThat(eventPublisher.publishedEvents()).hasSize(1);
         }
@@ -430,13 +430,13 @@ class SubmissionRegistrationAdversarialTest {
         void shouldNeverDiscloseAmountOrActorInAnyWriteSideRefusalReason() {
             // Given
             var everyVariant = List.<RegisterSubmissionError>of(
-                    new RegisterSubmissionError.ReferenceMissing(),
-                    new RegisterSubmissionError.ReferenceTooLong(64, 65),
-                    new RegisterSubmissionError.ReferenceContainsControlCharacter(0x0000, 3),
+                    new RegisterSubmissionError.NumberMissing(),
+                    new RegisterSubmissionError.NumberTooLong(64, 65),
+                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0000, 3),
                     new RegisterSubmissionError.InsuredLimitMissing(),
                     new RegisterSubmissionError.InsuredLimitNotPositive(),
                     new RegisterSubmissionError.InsuredLimitPrecisionInvalid(2, 3),
-                    new RegisterSubmissionError.ReferenceAlreadyUsed("S-1"));
+                    new RegisterSubmissionError.NumberAlreadyUsed("S-1"));
 
             // When & Then
             assertThat(everyVariant).hasSize(

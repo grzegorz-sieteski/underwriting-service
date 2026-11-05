@@ -42,11 +42,11 @@ class RefusalCatalogueTest {
                 "InsuredLimitMissing",
                 "InsuredLimitNotPositive",
                 "InsuredLimitPrecisionInvalid",
-                "PermissionDenied",
-                "ReferenceAlreadyUsed",
-                "ReferenceContainsControlCharacter",
-                "ReferenceMissing",
-                "ReferenceTooLong");
+                "NumberAlreadyUsed",
+                "NumberContainsControlCharacter",
+                "NumberMissing",
+                "NumberTooLong",
+                "PermissionDenied");
     }
 
     @Test

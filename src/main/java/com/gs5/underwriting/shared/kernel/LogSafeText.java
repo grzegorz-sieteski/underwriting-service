@@ -17,7 +17,7 @@ import org.jspecify.annotations.Nullable;
  *
  * <p><strong>This is escaping, not masking.</strong> Nothing is hidden and nothing is dropped: a
  * TAB becomes the six readable characters {@code \u0009}, which is both inert and strictly more
- * informative than an invisible character. That is what lets a reference stay loggable in full
+ * informative than an invisible character. That is what lets a number stay loggable in full
  * (BR-23) while a refusal about its characters (BR-29) cannot be turned into log forgery. A value
  * that must not be disclosed at all is masked instead, at its own record, and the two mechanisms
  * are deliberately separate.

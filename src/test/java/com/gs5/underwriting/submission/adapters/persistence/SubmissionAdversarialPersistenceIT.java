@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * <p><strong>Updated 2026-11-02 by {@code @test-designer}.</strong> This class used to carry
  * {@code a_nul_byte_reference_does_not_escape_as_an_exception}, which was expected to fail
  * because it pinned the QA-02 defect. QA-02 is closed: {@code BR-29} refuses every category-Cc
- * character in the domain, so a NUL-bearing reference can no longer reach this adapter. That test
+ * character in the domain, so a NUL-bearing number can no longer reach this adapter. That test
  * is replaced by {@code every_reference_the_domain_accepts_is_storable}, which asserts the
  * property BR-29 was decided to guarantee — that "valid" and "recordable" cannot disagree.
  * Nothing in this class is expected to fail any more.
@@ -99,17 +99,17 @@ class SubmissionAdversarialPersistenceIT {
     }
 
     private static SubmissionSnapshot snapshot(UUID tenantId,
-                                               String externalRef,
+                                               String submissionNumber,
                                                String insuredLimit) {
-        return snapshot(UUID.randomUUID(), tenantId, externalRef, insuredLimit);
+        return snapshot(UUID.randomUUID(), tenantId, submissionNumber, insuredLimit);
     }
 
     /** Same, with the id pinned, for a test that has to read the row back afterwards. */
     private static SubmissionSnapshot snapshot(UUID id,
                                                UUID tenantId,
-                                               String externalRef,
+                                               String submissionNumber,
                                                String insuredLimit) {
-        return new SubmissionSnapshot(id, tenantId, externalRef,
+        return new SubmissionSnapshot(id, tenantId, submissionNumber,
                 new BigDecimal(insuredLimit), "uw-01", REGISTERED_AT, null);
     }
 
@@ -127,9 +127,9 @@ class SubmissionAdversarialPersistenceIT {
          * REVERSED 2026-11-02 by BR-29, by @test-designer.
          *
          * This slot held a_nul_byte_reference_does_not_escape_as_an_exception, which asserted that
-         * the ADAPTER must turn a NUL-bearing reference into a Result rather than let PgJDBC's
+         * the ADAPTER must turn a NUL-bearing number into a Result rather than let PgJDBC's
          * "Zero bytes may not occur in string parameters" escape. That requirement no longer
-         * exists: BR-29 refuses every category-Cc character in the domain, so a NUL reference is
+         * exists: BR-29 refuses every category-Cc character in the domain, so a NUL number is
          * now rejected before any port is called and cannot reach this adapter through the useCase
          * at all. Asserting it here would pin a requirement nobody has, and the old test bypassed
          * the domain to construct a snapshot the domain can no longer produce.
@@ -145,7 +145,7 @@ class SubmissionAdversarialPersistenceIT {
         void shouldStoreEveryReferenceAcceptedByDomainWhenInserting() {
             // Given
             // The business point of BR-29 is that "valid" and "recordable" can no longer
-            // disagree. These are the awkward references that remain valid after it — spaces
+            // disagree. These are the awkward numbers that remain valid after it — spaces
             // only, leading and trailing spaces, a format character, an emoji at the 64-code-
             // point limit — and every one of them must reach the column without a driver refusal.
             var stillValid = List.of(
@@ -168,7 +168,7 @@ class SubmissionAdversarialPersistenceIT {
                         .isTrue();
                 assertThat(commandAdapter.findOwn(TENANT_A, id))
                         .hasValueSatisfying(stored ->
-                                assertThat(stored.externalRef()).isEqualTo(reference));
+                                assertThat(stored.submissionNumber()).isEqualTo(reference));
             });
         }
 
@@ -285,7 +285,7 @@ class SubmissionAdversarialPersistenceIT {
             // Then
             assertThat(result.isSuccess()).isTrue();
             assertThat(jdbcTemplate.queryForObject(
-                    "SELECT external_ref FROM submissions", String.class)).isEqualTo("   ");
+                    "SELECT submission_number FROM submissions", String.class)).isEqualTo("   ");
         }
     }
 
@@ -376,12 +376,12 @@ class SubmissionAdversarialPersistenceIT {
                         assertThat(rows)
                                 .doesNotContainNull()
                                 .allSatisfy(row -> {
-                                    assertThat(row.submissionId()).isNotNull();
+                                    assertThat(row.submissionNumber()).isNotNull();
                                     assertThat(row.insuredLimit())
                                             .isEqualTo(new BigDecimal("1200.00"));
-                                    // Only TENANT_A inserted even-numbered references.
+                                    // Only TENANT_A inserted even-numbered numbers.
                                     assertThat(Integer.parseInt(
-                                            row.externalRef().substring(2)) % 2).isZero();
+                                            row.submissionNumber().substring(2)) % 2).isZero();
                                 }));
             }
 

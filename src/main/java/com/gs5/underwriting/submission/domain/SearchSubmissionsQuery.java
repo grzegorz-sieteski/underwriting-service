@@ -37,9 +37,9 @@ public record SearchSubmissionsQuery(SubmissionFilter filter,
 
     /**
      * Parses raw transport filters into the value carried by this query. Search filters are total:
-     * an invalid reference becomes {@link SubmissionFilter.MatchesNothing}, not a refusal.
+     * an invalid number becomes {@link SubmissionFilter.MatchesNothing}, not a refusal.
      */
-    public static SearchSubmissionsQuery parse(@Nullable String externalRef,
+    public static SearchSubmissionsQuery parse(@Nullable String submissionNumber,
                                                @Nullable BigDecimal insuredLimitFrom,
                                                @Nullable BigDecimal insuredLimitTo,
                                                @Nullable Instant registeredFrom,
@@ -47,7 +47,7 @@ public record SearchSubmissionsQuery(SubmissionFilter filter,
                                                int page,
                                                int size) {
         return new SearchSubmissionsQuery(
-                SubmissionFilter.parse(externalRef, insuredLimitFrom, insuredLimitTo,
+                SubmissionFilter.parse(submissionNumber, insuredLimitFrom, insuredLimitTo,
                         registeredFrom, registeredTo),
                 page,
                 size);
@@ -56,7 +56,7 @@ public record SearchSubmissionsQuery(SubmissionFilter filter,
     /**
      * The insured limit bounds are masked, which is the strict reading of BR-22: a logged search
      * for {@code insuredLimitFrom=1200.00, insuredLimitTo=1200.00} that returns one row discloses
-     * that row's amount. The reference is printed in full (BR-23).
+     * that row's amount. The number is printed in full (BR-23).
      */
     @Override
     public String toString() {

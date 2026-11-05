@@ -75,7 +75,7 @@ class SubmissionDomainRecordsTest {
         void shouldMaskAmountInToStringWhileRetainingValueInAccessorWhenEventCreated() {
             // Given
             var event = new SubmissionDomainEvent.SubmissionRegistered(DIGIT_FREE_ID,
-                    new SubmissionId(DIGIT_FREE_ID), TENANT, "ABC-1", AMOUNT, "uw-01", MOMENT);
+                    SubmissionNumber.parse("ABC-1").toOptional().orElseThrow(), TENANT, AMOUNT, "uw-01", MOMENT);
 
             // When
             var printed = event.toString();
@@ -93,7 +93,7 @@ class SubmissionDomainRecordsTest {
         @Test
         @DisplayName("the reference is written in full and readable, because audit needs it to "
                 + "correlate submissions (BR-23)")
-        void shouldPreserveExternalReferenceInToStringWhenAuditReadableRequired() {
+        void shouldPreserveSubmissionNumberInToStringWhenAuditReadableRequired() {
             // Given
             var command = SubmissionCommandFixtures.parsedCommand("ABC-1", AMOUNT);
             var snapshot = new SubmissionSnapshot(DIGIT_FREE_ID, TENANT, "ABC-1", AMOUNT,
@@ -112,7 +112,7 @@ class SubmissionDomainRecordsTest {
             var snapshot = new SubmissionSnapshot(DIGIT_FREE_ID, TENANT, "ABC-1", AMOUNT,
                     "uw-01", MOMENT, null);
             var event = new SubmissionDomainEvent.SubmissionRegistered(DIGIT_FREE_ID,
-                    new SubmissionId(DIGIT_FREE_ID), TENANT, "ABC-1", AMOUNT, "uw-01", MOMENT);
+                    SubmissionNumber.parse("ABC-1").toOptional().orElseThrow(), TENANT, AMOUNT, "uw-01", MOMENT);
 
             // When & Then
             assertThat(snapshot.toString()).doesNotContain("uw-01");

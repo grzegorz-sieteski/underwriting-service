@@ -87,7 +87,7 @@ class SubmissionQueryRecordsTest {
                     narrowing -> {
                         assertThat(narrowing.reference())
                                 .isNotNull()
-                                .extracting(ExternalReference::value)
+                                .extracting(SubmissionNumber::value)
                                 .isEqualTo("S-1");
                         assertThat(narrowing.insuredLimitFrom()).isEqualTo(new BigDecimal("-1"));
                         assertThat(narrowing.insuredLimitTo()).isEqualTo(new BigDecimal("2.5"));
@@ -106,7 +106,7 @@ class SubmissionQueryRecordsTest {
                 + "still carries it for the caller")
         void shouldMaskInsuredLimitInToStringWhenSummaryViewPrinted() {
             // Given
-            var view = new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT);
+            var view = new SubmissionSummaryView("S-1", AMOUNT, "uw-01", MOMENT, SubmissionState.REGISTERED);
 
             // When
             var printed = view.toString();
@@ -120,7 +120,7 @@ class SubmissionQueryRecordsTest {
         @DisplayName("a result row does not disclose the registering caller when logged (OPEN-01)")
         void shouldMaskRegisteringCallerInToStringWhenSummaryViewPrinted() {
             // Given
-            var view = new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT);
+            var view = new SubmissionSummaryView("S-1", AMOUNT, "uw-01", MOMENT, SubmissionState.REGISTERED);
 
             // When
             var printed = view.toString();
@@ -134,7 +134,7 @@ class SubmissionQueryRecordsTest {
         @DisplayName("a result row prints the reference in full, because audit needs it (BR-23)")
         void shouldPrintReferenceInFullWhenSummaryViewPrinted() {
             // Given
-            var view = new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT);
+            var view = new SubmissionSummaryView("S-1", AMOUNT, "uw-01", MOMENT, SubmissionState.REGISTERED);
 
             // When & Then
             assertThat(view.toString()).contains("S-1");
@@ -164,7 +164,7 @@ class SubmissionQueryRecordsTest {
         void shouldDefensivelyCopyRowsWhenSubmissionPageViewConstructed() {
             // Given
             var rows = new ArrayList<SubmissionSummaryView>();
-            rows.add(new SubmissionSummaryView(DIGIT_FREE_ID, "S-1", AMOUNT, "uw-01", MOMENT));
+            rows.add(new SubmissionSummaryView("S-1", AMOUNT, "uw-01", MOMENT, SubmissionState.REGISTERED));
             var pageView = new SubmissionPageView(rows, 1L, 0, 10);
 
             // When

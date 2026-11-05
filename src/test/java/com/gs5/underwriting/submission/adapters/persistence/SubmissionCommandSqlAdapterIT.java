@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       domain, so Spring Data JDBC's "is this entity new?" test cannot use it. The column is
  *       {@code NOT NULL} with no {@code DEFAULT}, so a mapper that dropped {@code version} fails
  *       loudly here and nowhere else.</li>
- *   <li><strong>{@code UNIQUE (tenant_id, external_ref)} and {@code ON CONFLICT DO NOTHING}.</strong>
+ *   <li><strong>{@code UNIQUE (tenant_id, submission_number)} and {@code ON CONFLICT DO NOTHING}.</strong>
  *       BR-06, BR-08 and BR-09 are settled by the database, and a fake only imitates that.</li>
  *   <li><strong>The snapshot round trip.</strong> Insert, read the row back through the mapper,
  *       reconstitute it, and assert nothing was lost in either direction.</li>
@@ -103,10 +103,10 @@ class SubmissionCommandSqlAdapterIT {
 
     private static SubmissionSnapshot newSnapshot(UUID id,
                                                   UUID tenantId,
-                                                  String externalRef,
+                                                  String submissionNumber,
                                                   String insuredLimit) {
         // version is null: that null is what says "this aggregate has never been stored".
-        return new SubmissionSnapshot(id, tenantId, externalRef, new BigDecimal(insuredLimit),
+        return new SubmissionSnapshot(id, tenantId, submissionNumber, new BigDecimal(insuredLimit),
                 "uw-01", REGISTERED_AT, null);
     }
 
@@ -136,7 +136,7 @@ class SubmissionCommandSqlAdapterIT {
 
             // Then
             assertThat(result).isEqualTo(
-                    Result.<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>success(
+                    Result.<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed>success(
                             new SubmissionId(id)));
             // Asserted directly against the column, not through the mapper: without a @Version
             // property, save() on a fresh entity issues an UPDATE affecting zero rows and reports
@@ -159,7 +159,7 @@ class SubmissionCommandSqlAdapterIT {
             assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored -> {
                 assertThat(stored.id()).isEqualTo(id);
                 assertThat(stored.tenantId()).isEqualTo(TENANT_A);
-                assertThat(stored.externalRef()).isEqualTo("ABC-1");
+                assertThat(stored.submissionNumber()).isEqualTo("ABC-1");
                 // isEqualTo, not isEqualByComparingTo: BR-12 is a rule about the written scale,
                 // and 1200.00 must come back as 1200.00 rather than as 1200.
                 assertThat(stored.insuredLimit()).isEqualTo(new BigDecimal("1200.00"));
@@ -183,7 +183,7 @@ class SubmissionCommandSqlAdapterIT {
             // Then
             assertThat(result.isSuccess()).isTrue();
             assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored ->
-                    assertThat(stored.externalRef()).isEqualTo("   "));
+                    assertThat(stored.submissionNumber()).isEqualTo("   "));
         }
     }
 
@@ -249,7 +249,7 @@ class SubmissionCommandSqlAdapterIT {
     class Uniqueness {
 
         @Test
-        @DisplayName("a duplicate (tenant_id, external_ref) inserts nothing and is refused as "
+        @DisplayName("a duplicate (tenant_id, submission_number) inserts nothing and is refused as "
                 + "already used")
         void shouldRefuseInsertionAndReturnAlreadyUsedWhenDuplicateReferenceInserted() {
             // Given
@@ -261,8 +261,8 @@ class SubmissionCommandSqlAdapterIT {
 
             // Then
             assertThat(second).isEqualTo(
-                    Result.<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed>failure(
-                            new RegisterSubmissionError.ReferenceAlreadyUsed("ABC-1")));
+                    Result.<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed>failure(
+                            new RegisterSubmissionError.NumberAlreadyUsed("ABC-1")));
             assertThat(rowCount()).isEqualTo(1);
         }
 

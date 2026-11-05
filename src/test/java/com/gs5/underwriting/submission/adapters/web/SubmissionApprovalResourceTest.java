@@ -8,12 +8,14 @@ import com.gs5.underwriting.submission.adapters.access.AuthenticatedCaller;
 import com.gs5.underwriting.submission.adapters.access.Permission;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionError;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionUseCase;
+import com.gs5.underwriting.submission.domain.FixedSubmissionIdGenerator;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionError;
 import com.gs5.underwriting.submission.domain.SubmissionApprovalRepository;
 import com.gs5.underwriting.submission.domain.SubmissionCommandRepository;
 import com.gs5.underwriting.submission.domain.SubmissionDomainEvent;
 import com.gs5.underwriting.submission.domain.SubmissionEventPublisher;
 import com.gs5.underwriting.submission.domain.SubmissionId;
+import com.gs5.underwriting.submission.domain.SubmissionNumber;
 import com.gs5.underwriting.submission.domain.SubmissionSnapshot;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,27 +41,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * The approval endpoint at the HTTP edge: the real controller, the real use case over in-memory
- * ports, and a resolver that names whichever caller the test chooses. No Spring context, no database.
+ * The approval endpoint at the HTTP edge, addressed by submission number (BR-47, BR-48): the real
+ * resource, the real use case over in-memory ports, and a resolver that names whichever caller the
+ * test chooses. No Spring context, no database.
  *
  * <p>Findings pinned here:
  * <ul>
- *   <li>D1: a malformed identity from a Viewer is refused by role (403), not by the framework (400).</li>
- *   <li>D2: a lenient UUID spelling does not name a submission.</li>
- *   <li>D3 and D4: the registrant is refused with its own problem type, before already-approved.</li>
- *   <li>D5 and D6: malformed, unknown and other-organisation identities produce one body, with no echo.</li>
+ *   <li>A Viewer naming any number is refused by role, before the number is parsed (BR-33).</li>
+ *   <li>A text that cannot be a number, an unknown number and another organisation's number produce
+ *       one body, with no echo of the input (BR-35, BR-48).</li>
+ *   <li>The registrant is refused with its own problem type, before already-approved (BR-41).</li>
+ *   <li>A success names the submission by its number only (BR-47).</li>
  * </ul>
- * Tests named "guard" pass at HEAD and must keep passing, so that a fix cannot over-refuse.
  */
-class SubmissionApprovalControllerTest {
+class SubmissionApprovalResourceTest {
 
     private static final UUID TENANT_A = UUID.fromString("0a000000-0000-0000-0000-00000000000a");
     private static final UUID TENANT_B = UUID.fromString("0b000000-0000-0000-0000-00000000000b");
-    private static final UUID SUBMISSION = UUID.fromString("11111111-1111-1111-1111-111111111111");
-    private static final UUID OTHER_TENANT_SUBMISSION = UUID.fromString("22222222-2222-2222-2222-222222222222");
-    private static final UUID REGISTERED_BY_OTHER = UUID.fromString("33333333-3333-3333-3333-333333333333");
-    /** What Spring's lenient UUID converter makes of the text "1-1-1-1-1". */
-    private static final UUID LENIENT_TARGET = UUID.fromString("00000001-0001-0001-0001-000000000001");
     private static final Instant REGISTERED_AT = Instant.parse("2026-11-01T09:00:00Z");
     private static final Instant APPROVED_AT = Instant.parse("2026-11-02T12:00:00Z");
 
@@ -81,7 +79,7 @@ class SubmissionApprovalControllerTest {
         store = new InMemoryStore();
         resolver = new StubResolver();
         var useCase = new ApproveSubmissionUseCase(store, store, store,
-                Clock.fixed(APPROVED_AT, ZoneOffset.UTC));
+                new FixedSubmissionIdGenerator(), Clock.fixed(APPROVED_AT, ZoneOffset.UTC));
         var policy = new AccessPolicy() {
             @Override
             public boolean mayRegister(ActorRole role) {
@@ -98,29 +96,27 @@ class SubmissionApprovalControllerTest {
                 return Optional.empty();
             }
         };
-        var controller = new SubmissionApprovalController(useCase, resolver,
+        var resource = new SubmissionApprovalResource(useCase, resolver,
                 Permission.approval(policy));
-        mvc = MockMvcBuilders.standaloneSetup(controller).build();
+        mvc = MockMvcBuilders.standaloneSetup(resource).build();
 
         // Registered by uw-01, who is therefore NOT a valid approver of it in the tests below.
-        store.seed(SUBMISSION, TENANT_A, "uw-01");
+        store.seed("REF-1", TENANT_A, "uw-01");
     }
 
     @Test
-    @DisplayName("a viewer naming a malformed identity is refused by role as 403, not as a framework 400 (BR-33, D1)")
-    void aViewerNamingAMalformedIdentityIsRefusedByRoleFirst() throws Exception {
-        var result = approveAs(VIEWER, "not-a-uuid");
+    @DisplayName("a viewer naming any number is refused by role as 403, before the number is parsed (BR-33)")
+    void aViewerNamingAnyNumberIsRefusedByRoleFirst() throws Exception {
+        var result = approveAs(VIEWER, "bad\tnumber");
 
         assertThat(result.getResponse().getStatus()).isEqualTo(403);
         assertThat(problemType(result)).isEqualTo(PROBLEM_TYPE_PREFIX + "permission-denied");
     }
 
     @Test
-    @DisplayName("a lenient UUID spelling names no submission, so it is refused as not found and approves nothing (BR-35, D2)")
-    void aLenientUuidSpellingIsNotAcceptedAsTheSubmissionItNames() throws Exception {
-        store.seed(LENIENT_TARGET, TENANT_A, "uw-01");
-
-        var result = approveAs(OTHER_UNDERWRITER, "1-1-1-1-1");
+    @DisplayName("a text that cannot be a number names no submission and approves nothing (BR-35, BR-48)")
+    void aTextThatIsNotANumberNamesNoSubmission() throws Exception {
+        var result = approveAs(OTHER_UNDERWRITER, "bad\tnumber");
 
         assertThat(result.getResponse().getStatus()).isEqualTo(404);
         assertThat(store.approvalCount()).isZero();
@@ -128,25 +124,25 @@ class SubmissionApprovalControllerTest {
     }
 
     @Test
-    @DisplayName("a malformed identity and an unknown one produce the same refusal, byte for byte, with no echo (BR-35, D5, D6)")
-    void aMalformedAndAnUnknownIdentityProduceTheSameBody() throws Exception {
-        var malformed = approveAs(OTHER_UNDERWRITER, "not-a-uuid");
-        var unknown = approveAs(OTHER_UNDERWRITER, UUID.randomUUID().toString());
+    @DisplayName("a text that is not a number and an unknown number produce the same refusal, byte for byte, with no echo (BR-35, BR-47)")
+    void aMalformedAndAnUnknownNumberProduceTheSameBody() throws Exception {
+        var malformed = approveAs(OTHER_UNDERWRITER, "bad\tnumber");
+        var unknown = approveAs(OTHER_UNDERWRITER, "UNKNOWN-1");
 
         assertThat(malformed.getResponse().getStatus()).isEqualTo(404);
         assertThat(unknown.getResponse().getStatus()).isEqualTo(404);
         assertThat(malformed.getResponse().getContentAsString())
                 .isEqualTo(unknown.getResponse().getContentAsString());
-        assertThat(malformed.getResponse().getContentAsString()).doesNotContain("not-a-uuid");
+        assertThat(malformed.getResponse().getContentAsString()).doesNotContain("bad");
     }
 
     @Test
-    @DisplayName("another organisation's submission is refused with the same body as an unknown one (BR-35, D5, D6)")
+    @DisplayName("another organisation's submission is refused with the same body as an unknown one (BR-35, BR-47)")
     void anotherOrganisationsSubmissionIsIndistinguishableFromAnUnknownOne() throws Exception {
-        store.seed(OTHER_TENANT_SUBMISSION, TENANT_B, "uw-09");
+        store.seed("OTHER-1", TENANT_B, "uw-09");
 
-        var otherTenant = approveAs(OTHER_UNDERWRITER, OTHER_TENANT_SUBMISSION.toString());
-        var unknown = approveAs(OTHER_UNDERWRITER, UUID.randomUUID().toString());
+        var otherTenant = approveAs(OTHER_UNDERWRITER, "OTHER-1");
+        var unknown = approveAs(OTHER_UNDERWRITER, "UNKNOWN-1");
 
         assertThat(otherTenant.getResponse().getStatus()).isEqualTo(404);
         assertThat(otherTenant.getResponse().getContentAsString())
@@ -154,11 +150,11 @@ class SubmissionApprovalControllerTest {
     }
 
     @Test
-    @DisplayName("an approver who registered the submission is refused as approver-registered-submission, and nothing is recorded (BR-41, D3, D4)")
+    @DisplayName("an approver who registered the submission is refused as approver-registered-submission, and nothing is recorded (BR-41)")
     void anApproverWhoRegisteredTheSubmissionIsRefusedAndNothingIsRecorded() throws Exception {
-        store.seed(REGISTERED_BY_OTHER, TENANT_A, "uw-02");
+        store.seed("MINE-1", TENANT_A, "uw-02");
 
-        var result = approveAs(OTHER_UNDERWRITER, REGISTERED_BY_OTHER.toString());
+        var result = approveAs(OTHER_UNDERWRITER, "MINE-1");
 
         assertThat(result.getResponse().getStatus()).isEqualTo(403);
         assertThat(problemType(result)).isEqualTo(PROBLEM_TYPE_PREFIX + "approver-registered-submission");
@@ -167,31 +163,32 @@ class SubmissionApprovalControllerTest {
     }
 
     @Test
-    @DisplayName("the registrant is refused before already-approved, so an earlier approval does not change the answer (BR-41, D3)")
+    @DisplayName("the registrant is refused before already-approved, so an earlier approval does not change the answer (BR-41)")
     void theRegistrantIsRefusedBeforeAlreadyApproved() throws Exception {
-        store.seed(REGISTERED_BY_OTHER, TENANT_A, "uw-02");
-        store.approve(TENANT_A, new SubmissionId(REGISTERED_BY_OTHER), SENIOR_UNDERWRITER, APPROVED_AT);
+        store.seed("MINE-1", TENANT_A, "uw-02");
+        store.approve(TENANT_A, store.idOf("MINE-1"), SENIOR_UNDERWRITER, APPROVED_AT);
 
-        var result = approveAs(OTHER_UNDERWRITER, REGISTERED_BY_OTHER.toString());
+        var result = approveAs(OTHER_UNDERWRITER, "MINE-1");
 
         assertThat(result.getResponse().getStatus()).isEqualTo(403);
         assertThat(problemType(result)).isEqualTo(PROBLEM_TYPE_PREFIX + "approver-registered-submission");
     }
 
     @Test
-    @DisplayName("guard: an underwriter who did not register the submission may approve it, once, with one event (BR-33, BR-40)")
+    @DisplayName("guard: an underwriter who did not register the submission may approve it, once, and the response names it by its number only (BR-33, BR-40, BR-47)")
     void aNonRegistrantUnderwriterMayApprove() throws Exception {
-        var result = approveAs(OTHER_UNDERWRITER, SUBMISSION.toString());
+        var result = approveAs(OTHER_UNDERWRITER, "REF-1");
 
         assertThat(result.getResponse().getStatus()).isEqualTo(200);
+        assertThat(result.getResponse().getContentAsString()).contains("\"submissionNumber\":\"REF-1\"");
         assertThat(store.approvalCount()).isEqualTo(1);
         assertThat(store.publishedEvents()).hasSize(1);
     }
 
     @Test
-    @DisplayName("guard: a viewer naming a well-formed identity is refused by role and records nothing (BR-33)")
-    void aViewerIsRefusedByRoleForAWellFormedIdentity() throws Exception {
-        var result = approveAs(VIEWER, SUBMISSION.toString());
+    @DisplayName("guard: a viewer naming a well-formed number is refused by role and records nothing (BR-33)")
+    void aViewerIsRefusedByRoleForAWellFormedNumber() throws Exception {
+        var result = approveAs(VIEWER, "REF-1");
 
         assertThat(result.getResponse().getStatus()).isEqualTo(403);
         assertThat(problemType(result)).isEqualTo(PROBLEM_TYPE_PREFIX + "permission-denied");
@@ -200,10 +197,10 @@ class SubmissionApprovalControllerTest {
 
     // ------------------------------------------------------------------ helpers
 
-    private MvcResult approveAs(ActorContext actor, String pathId) throws Exception {
+    private MvcResult approveAs(ActorContext actor, String pathNumber) throws Exception {
         resolver.caller = Optional.of(AuthenticatedCaller.parse(
                 actor.tenantId().toString(), actor.actorId(), actor.role().name()).orElseThrow());
-        return mvc.perform(post("/api/submissions/{id}/approve", pathId)).andReturn();
+        return mvc.perform(post("/api/submissions/{number}/approve", pathNumber)).andReturn();
     }
 
     private static String problemType(MvcResult result) throws Exception {
@@ -226,31 +223,35 @@ class SubmissionApprovalControllerTest {
     private static final class InMemoryStore implements SubmissionCommandRepository,
             SubmissionApprovalRepository, SubmissionEventPublisher {
 
-        private final Map<UUID, SubmissionSnapshot> submissions = new ConcurrentHashMap<>();
+        private final Map<String, SubmissionSnapshot> byKey = new ConcurrentHashMap<>();
         private final Map<UUID, String> approvals = new ConcurrentHashMap<>();
         private final List<SubmissionDomainEvent> events = new CopyOnWriteArrayList<>();
 
-        void seed(UUID id, UUID tenantId, String registeredBy) {
-            submissions.put(id, new SubmissionSnapshot(id, tenantId, "REF-" + id.toString().substring(0, 8),
-                    new BigDecimal("100.00"), registeredBy, REGISTERED_AT, 0L));
+        void seed(String number, UUID tenantId, String registeredBy) {
+            var snapshot = new SubmissionSnapshot(UUID.randomUUID(), tenantId, number,
+                    new BigDecimal("100.00"), registeredBy, REGISTERED_AT, 0L);
+            byKey.put(tenantId + "/" + number, snapshot);
+        }
+
+        SubmissionId idOf(String number) {
+            return byKey.values().stream()
+                    .filter(snapshot -> snapshot.submissionNumber().equals(number))
+                    .map(snapshot -> new SubmissionId(snapshot.id()))
+                    .findFirst()
+                    .orElseThrow();
         }
 
         @Override
-        public Result<SubmissionId, RegisterSubmissionError.ReferenceAlreadyUsed> insert(
+        public Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed> insert(
                 SubmissionSnapshot snapshot) {
-            submissions.put(snapshot.id(), snapshot);
+            byKey.put(snapshot.tenantId() + "/" + snapshot.submissionNumber(), snapshot);
             return Result.success(new SubmissionId(snapshot.id()));
         }
 
         @Override
-        public Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id) {
-            return Optional.ofNullable(submissions.get(id))
-                    .filter(snapshot -> snapshot.tenantId().equals(tenantId));
-        }
-
-        @Override
-        public boolean isApproved(UUID tenantId, SubmissionId submissionId) {
-            return approvals.containsKey(submissionId.value());
+        public Optional<SubmissionSnapshot> findOwnByNumber(UUID tenantId,
+                                                            SubmissionNumber submissionNumber) {
+            return Optional.ofNullable(byKey.get(tenantId + "/" + submissionNumber.value()));
         }
 
         @Override
@@ -261,7 +262,7 @@ class SubmissionApprovalControllerTest {
             var existing = approvals.putIfAbsent(submissionId.value(), actor.actorId());
             return existing == null
                     ? Result.success(submissionId)
-                    : Result.failure(new ApproveSubmissionError.SubmissionAlreadyApproved(submissionId));
+                    : Result.failure(new ApproveSubmissionError.SubmissionAlreadyApproved());
         }
 
         @Override

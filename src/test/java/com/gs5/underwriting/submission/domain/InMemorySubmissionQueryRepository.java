@@ -48,13 +48,13 @@ final class InMemorySubmissionQueryRepository implements SubmissionQueryReposito
                 .map(StoredSubmission::view)
                 .filter(matches(criteria))
                 .sorted(Comparator.comparing(SubmissionSummaryView::registeredAt)
-                        .thenComparing(view -> view.submissionId().toString())
+                        .thenComparing(view -> view.submissionNumber())
                         .reversed());
     }
 
     private static Predicate<SubmissionSummaryView> matches(SubmissionSearchCriteria criteria) {
         return view ->
-                (criteria.externalRef() == null || view.externalRef().equals(criteria.externalRef()))
+                (criteria.submissionNumber() == null || view.submissionNumber().equals(criteria.submissionNumber()))
                         && (criteria.insuredLimitFrom() == null
                             || view.insuredLimit().compareTo(criteria.insuredLimitFrom()) >= 0)
                         && (criteria.insuredLimitTo() == null
@@ -68,12 +68,11 @@ final class InMemorySubmissionQueryRepository implements SubmissionQueryReposito
     // ------------------------------------------------------------------ arrange
 
     SubmissionSummaryView givenSubmission(UUID tenantId,
-                                          UUID submissionId,
-                                          String externalRef,
+                                          String submissionNumber,
                                           String insuredLimit,
                                           Instant registeredAt) {
-        var view = new SubmissionSummaryView(submissionId, externalRef,
-                new BigDecimal(insuredLimit), "uw-01", registeredAt);
+        var view = new SubmissionSummaryView(submissionNumber,
+                new BigDecimal(insuredLimit), "uw-01", registeredAt, SubmissionState.REGISTERED);
         rows.add(new StoredSubmission(tenantId, view));
         return view;
     }

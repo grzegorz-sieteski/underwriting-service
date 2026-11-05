@@ -6,12 +6,12 @@ CREATE TABLE submissions
 (
     id            UUID PRIMARY KEY,
     tenant_id     UUID                    NOT NULL,
-    -- COLLATE "C": BR-07 compares references exactly as supplied, including letter case and
+    -- COLLATE "C": BR-07 compares numbers exactly as supplied, including letter case and
     -- surrounding blank space. A database created with a case-insensitive ICU collation would
     -- otherwise make both this column's equality test and the unique index below case-folding,
     -- silently breaking BR-06 and BR-07. VARCHAR(64) counts characters, which is exactly the
-    -- code-point measure the domain applies for BR-05, so an accepted reference always fits.
-    external_ref  VARCHAR(64) COLLATE "C" NOT NULL,
+    -- code-point measure the domain applies for BR-05, so an accepted number always fits.
+    submission_number  VARCHAR(64) COLLATE "C" NOT NULL,
     -- Unconstrained NUMERIC on purpose. BR-13 states the insured limit has no upper bound and
     -- that none may be introduced without a business decision: NUMERIC(19, 2) would quietly
     -- impose one. Scale is enforced by the CHECK below rather than by the column type, because
@@ -23,13 +23,13 @@ CREATE TABLE submissions
     -- supplies the value, and a DEFAULT would mask a mapper that forgot to carry it.
     version       BIGINT                  NOT NULL,
 
-    -- BR-06 + BR-08: unique PER TENANT, so the same reference in another organisation is fine.
+    -- BR-06 + BR-08: unique PER TENANT, so the same number in another organisation is fine.
     -- This is also what settles the BR-09 race: the loser's insert conflicts.
-    CONSTRAINT uq_submissions_tenant_external_ref UNIQUE (tenant_id, external_ref),
+    CONSTRAINT uq_submissions_tenant_submission_number UNIQUE (tenant_id, submission_number),
 
     -- Defence in depth for the domain invariants. Each one mirrors a business rule that is
     -- already refused in the aggregate; a row that violates one of them is a bug, not a refusal.
-    CONSTRAINT ck_submissions_external_ref_not_empty CHECK (length(external_ref) > 0),          -- BR-04
+    CONSTRAINT ck_submissions_submission_number_not_empty CHECK (length(submission_number) > 0),          -- BR-04
     -- BR-29. Mirrors the domain check. Explicit ranges rather than [[:cntrl:]] because they state
     -- BR-29's two ranges literally and do not depend on how a given PostgreSQL build or locale
     -- implements regex character classes. On PostgreSQL 17 the two forms were verified
@@ -38,8 +38,8 @@ CREATE TABLE submissions
     -- \xhh is greedy over hex digits: any character added to this class must be followed by a
     -- non-hex character or written as a separate range. V2 has never been applied anywhere, so
     -- it is edited in place; after its first application a change here needs a V3.
-    CONSTRAINT ck_submissions_external_ref_no_control_chars
-        CHECK (external_ref !~ '[\x01-\x1F\x7F-\x9F]'),                                         -- BR-29
+    CONSTRAINT ck_submissions_submission_number_no_control_chars
+        CHECK (submission_number !~ '[\x01-\x1F\x7F-\x9F]'),                                         -- BR-29
     CONSTRAINT ck_submissions_insured_limit_positive CHECK (insured_limit > 0),                 -- BR-11
     CONSTRAINT ck_submissions_insured_limit_scale CHECK (scale(insured_limit) = 2)              -- BR-12
 );
@@ -54,6 +54,6 @@ CREATE INDEX idx_submissions_tenant_registered_at
 CREATE INDEX idx_submissions_tenant_insured_limit
     ON submissions (tenant_id, insured_limit);
 
--- No index for the reference filter: uq_submissions_tenant_external_ref already builds a
--- btree on (tenant_id, external_ref), which serves both the uniqueness check and the
--- exact-reference search. A second index on the same columns would only cost write throughput.
+-- No index for the number filter: uq_submissions_tenant_submission_number already builds a
+-- btree on (tenant_id, submission_number), which serves both the uniqueness check and the
+-- exact-number search. A second index on the same columns would only cost write throughput.

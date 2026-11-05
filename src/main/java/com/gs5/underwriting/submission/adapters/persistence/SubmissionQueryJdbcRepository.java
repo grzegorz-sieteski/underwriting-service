@@ -38,29 +38,33 @@ import org.springframework.data.repository.query.Param;
 interface SubmissionQueryJdbcRepository extends Repository<SubmissionJdbcEntity, UUID> {
 
     @Query("""
-            SELECT id AS submission_id,
-                   external_ref,
-                   insured_limit,
-                   registered_by,
-                   registered_at
-            FROM submissions
-            WHERE tenant_id = :tenantId
-              AND (CAST(:externalRef AS VARCHAR) IS NULL
-                   OR external_ref = CAST(:externalRef AS VARCHAR))
+            SELECT s.id AS submission_id,
+                   s.submission_number,
+                   s.insured_limit,
+                   s.registered_by,
+                   s.registered_at,
+                   (a.submission_id IS NOT NULL) AS approved
+            FROM submissions s
+            LEFT JOIN submission_approvals a
+                   ON a.submission_id = s.id
+                  AND a.tenant_id     = s.tenant_id
+            WHERE s.tenant_id = :tenantId
+              AND (CAST(:submissionNumber AS VARCHAR) IS NULL
+                   OR s.submission_number = CAST(:submissionNumber AS VARCHAR))
               AND (CAST(:insuredLimitFrom AS NUMERIC) IS NULL
-                   OR insured_limit >= CAST(:insuredLimitFrom AS NUMERIC))
+                   OR s.insured_limit >= CAST(:insuredLimitFrom AS NUMERIC))
               AND (CAST(:insuredLimitTo AS NUMERIC) IS NULL
-                   OR insured_limit <= CAST(:insuredLimitTo AS NUMERIC))
+                   OR s.insured_limit <= CAST(:insuredLimitTo AS NUMERIC))
               AND (CAST(:registeredFrom AS TIMESTAMPTZ) IS NULL
-                   OR registered_at >= CAST(:registeredFrom AS TIMESTAMPTZ))
+                   OR s.registered_at >= CAST(:registeredFrom AS TIMESTAMPTZ))
               AND (CAST(:registeredTo AS TIMESTAMPTZ) IS NULL
-                   OR registered_at <= CAST(:registeredTo AS TIMESTAMPTZ))
-            ORDER BY registered_at DESC, id DESC
+                   OR s.registered_at <= CAST(:registeredTo AS TIMESTAMPTZ))
+            ORDER BY s.registered_at DESC, s.id DESC
             LIMIT :limit OFFSET :offset
             """)
     List<SubmissionSummaryJdbcProjection> findPage(
             @Param("tenantId") UUID tenantId,
-            @Param("externalRef") @Nullable String externalRef,
+            @Param("submissionNumber") @Nullable String submissionNumber,
             @Param("insuredLimitFrom") @Nullable BigDecimal insuredLimitFrom,
             @Param("insuredLimitTo") @Nullable BigDecimal insuredLimitTo,
             @Param("registeredFrom") @Nullable Instant registeredFrom,
@@ -77,8 +81,8 @@ interface SubmissionQueryJdbcRepository extends Repository<SubmissionJdbcEntity,
             SELECT COUNT(*)
             FROM submissions
             WHERE tenant_id = :tenantId
-              AND (CAST(:externalRef AS VARCHAR) IS NULL
-                   OR external_ref = CAST(:externalRef AS VARCHAR))
+              AND (CAST(:submissionNumber AS VARCHAR) IS NULL
+                   OR submission_number = CAST(:submissionNumber AS VARCHAR))
               AND (CAST(:insuredLimitFrom AS NUMERIC) IS NULL
                    OR insured_limit >= CAST(:insuredLimitFrom AS NUMERIC))
               AND (CAST(:insuredLimitTo AS NUMERIC) IS NULL
@@ -90,7 +94,7 @@ interface SubmissionQueryJdbcRepository extends Repository<SubmissionJdbcEntity,
             """)
     long countMatching(
             @Param("tenantId") UUID tenantId,
-            @Param("externalRef") @Nullable String externalRef,
+            @Param("submissionNumber") @Nullable String submissionNumber,
             @Param("insuredLimitFrom") @Nullable BigDecimal insuredLimitFrom,
             @Param("insuredLimitTo") @Nullable BigDecimal insuredLimitTo,
             @Param("registeredFrom") @Nullable Instant registeredFrom,

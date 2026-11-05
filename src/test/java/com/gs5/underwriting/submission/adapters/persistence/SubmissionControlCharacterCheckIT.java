@@ -28,10 +28,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
- * SEC-09: pins {@code ck_submissions_external_ref_no_control_chars} in {@code V2} on its own.
+ * SEC-09: pins {@code ck_submissions_submission_number_no_control_chars} in {@code V2} on its own.
  *
  * <p>Every row here is written with raw {@code JdbcTemplate}, bypassing the domain, because the
- * domain refuses these references first (BR-29) — so no test going through the useCase or the
+ * domain refuses these numbers first (BR-29) — so no test going through the useCase or the
  * adapter could ever reach the CHECK, and until this class existed nothing did. Replacing the
  * CHECK with {@code [[:cntrl:]]} left all 44 ITs green. That form is wrong for this column:
  * PostgreSQL's {@code [[:cntrl:]]} does not cover U+0080–U+009F, so the upper-range cases below
@@ -62,13 +62,13 @@ class SubmissionControlCharacterCheckIT {
         jdbcTemplate.execute("TRUNCATE TABLE submission_approvals, submissions");
     }
 
-    private void insertRaw(String externalRef) {
+    private void insertRaw(String submissionNumber) {
         jdbcTemplate.update("""
                 INSERT INTO submissions
-                    (id, tenant_id, external_ref, insured_limit, registered_by, registered_at,
+                    (id, tenant_id, submission_number, insured_limit, registered_by, registered_at,
                      version)
                 VALUES (?, ?, ?, ?, ?, ?, 0)
-                """, UUID.randomUUID(), UUID.randomUUID(), externalRef,
+                """, UUID.randomUUID(), UUID.randomUUID(), submissionNumber,
                 new BigDecimal("1200.00"), "uw-01",
                 Timestamp.from(Instant.parse("2026-11-01T10:15:30Z")));
     }
@@ -100,7 +100,7 @@ class SubmissionControlCharacterCheckIT {
         // Then
         assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
         assertThat(sqlStateOf(thrown)).isEqualTo(CHECK_VIOLATION);
-        assertThat(thrown).hasMessageContaining("ck_submissions_external_ref_no_control_chars");
+        assertThat(thrown).hasMessageContaining("ck_submissions_submission_number_no_control_chars");
         assertThat(rowCount()).isZero();
     }
 
@@ -117,7 +117,7 @@ class SubmissionControlCharacterCheckIT {
 
         // Then
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT external_ref FROM submissions", String.class)).isEqualTo(reference);
+                "SELECT submission_number FROM submissions", String.class)).isEqualTo(reference);
     }
 
     @Test

@@ -22,7 +22,7 @@ import org.springframework.data.relational.core.mapping.Table;
 record SubmissionJdbcEntity(
         @Id UUID id,
         @Column("tenant_id") UUID tenantId,
-        @Column("external_ref") String externalRef,
+        @Column("submission_number") String submissionNumber,
         @Column("insured_limit") BigDecimal insuredLimit,
         @Column("registered_by") String registeredBy,
         @Column("registered_at") Instant registeredAt,

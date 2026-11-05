@@ -13,7 +13,7 @@ import org.jspecify.annotations.Nullable;
  * the tenant predicate is part of the port's vocabulary.
  */
 public record SubmissionSearchCriteria(UUID tenantId,
-                                       @Nullable String externalRef,
+                                       @Nullable String submissionNumber,
                                        @Nullable BigDecimal insuredLimitFrom,
                                        @Nullable BigDecimal insuredLimitTo,
                                        @Nullable Instant registeredFrom,
@@ -31,13 +31,13 @@ public record SubmissionSearchCriteria(UUID tenantId,
      * search for {@code from=1200.00, to=1200.00} that returns one row discloses that row's
      * amount, wherever it is logged.
      *
-     * <p>The reference is printed in full (BR-23) with category-Cc code points escaped, because a
+     * <p>The number is printed in full (BR-23) with category-Cc code points escaped, because a
      * filter value is caller-supplied and an unescaped NEWLINE in a log line is log injection.
      */
     @Override
     public String toString() {
         return "SubmissionSearchCriteria[tenantId=" + tenantId
-                + ", externalRef=" + LogSafeText.escapeControlCharacters(externalRef)
+                + ", submissionNumber=" + LogSafeText.escapeControlCharacters(submissionNumber)
                 + ", insuredLimitFrom=" + MASKED
                 + ", insuredLimitTo=" + MASKED
                 + ", registeredFrom=" + registeredFrom
