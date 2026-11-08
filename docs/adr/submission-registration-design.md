@@ -35,6 +35,10 @@ engineering decision with its reasoning. Nothing else in this document invents a
 
 ---
 
+> **Revision 6 (model A: append-only record).** Recorded facts are never changed or removed, a change of state is a new fact, and the view shows the most current state only (BR-44 to BR-46). The record and its latest-state view are [§20](#20-the-record-append-only-facts-and-the-latest-state-view). The submission number is the only identifier that leaves the service (BR-47), and this revision checks every surface against it.
+
+---
+
 ## 1. Scope
 
 Covers, and only covers, the three operations the spec puts in scope:
@@ -761,6 +765,8 @@ The rules themselves are in [§15.10](#1510-cqs-rules-verbatim).
 
 ## 6. SQL shape
 
+> **Amended in revision 6:** the search reads the `submission_current` view of [§20.3](#203-the-latest-state-view-the-strategy), not a join written into each statement.
+
 > **Amended in revision 5:** the `findPage` statement gains the approval state as a `LEFT JOIN` ([§19.9](#199-the-search-change)). `countMatching` is unchanged.
 
 Both statements are native SQL in `@Query("""...""")`, mapped straight into the projection record.
@@ -892,7 +898,9 @@ conversion, it runs before the guard.
 
 ## 8. Schema
 
-> V3, which adds the approval table, is specified in [§19.8](#198-schema-v3). It replaces the V3 committed at `5bf01b3`.
+> **Revision 6:** V1 to V3 are not edited. The single new migration is V4, specified in [§20.4](#204-the-migration-v4), and it is the only way the migration history changes.
+
+> V3, which adds the approval table, is specified in [§19.8](#198-schema-v3). Its reviewed content is the one committed at `5bf01b3`, which [§20.4](#204-the-migration-v4) restores.
 
 ### 8.1 `V2__create_submissions.sql`
 
@@ -1168,7 +1176,7 @@ inserts nothing; the same number under a different `tenant_id` inserts normally 
 `SubmissionQuerySqlAdapter implements SubmissionQueryRepository`, in `adapters/persistence`. It is a
 driven adapter for a port declared in `domain/`, exactly as the command adapter is. It unwraps
 `criteria.number()` into `number.value()` for the bound `submissionNumber` parameter, so the SQL in
-[§6](#6-sql-shape) is unchanged, and it returns the views it builds from rows.
+[§6](#6-sql-shape) is unchanged, and it returns the views it builds from rows. Since revision 6 it reads the `submission_current` view ([§20.3](#203-the-latest-state-view-the-strategy)), and the projection carries no internal identity.
 
 **Building a view from a row does not parse.** The adapter copies the stored number and amount into the view as `String` and `BigDecimal`, and wraps the stored id in a `SubmissionId`, which cannot fail ([§5.3](#53-views)). There is no failure branch, so there is no `throw`, no new error type and no refusal path on a search, which must not refuse. The values are trusted because the store will hold nothing else: `VARCHAR(64)` bounds the length, `CHECK (length > 0)` excludes the empty string, the control-character `CHECK` excludes every category-Cc character except U+0000, which PostgreSQL cannot store, and the two insured-limit `CHECK`s hold the amount to BR-11 and BR-12. Every row the database can hold is one the write side could have registered.
 
@@ -1486,7 +1494,7 @@ than from any transport:
   own versioned contract type in its own package; serialising `SubmissionRegistered` directly would
   weld every recipient to this module's internals. If it does not cross one, it needs no contract at
   all — which is part of why this is deferred.
-- **If the chosen mechanism orders or routes by key, the key is the aggregate id.** That is a
+- **If the chosen mechanism orders or routes by key, the key is the tenant and the submission number, never the internal identity (BR-47).** That is a
   property of the event (one submission's facts belong in one sequence), not a design choice being
   smuggled in: the `submissionNumber` accessor on the sealed interface is all the adapter needs, and this
   document names no mechanism that would use it.
@@ -1649,7 +1657,7 @@ on `shared/kernel/Result.java`; no combinator is invented.
 
 | Outcome | HTTP | Problem type |
 |---|---|---|
-| success | `201 Created`, `Location: /api/submissions/{id}`, body carries the id | — |
+| success | `201 Created`, `Location: /api/submissions/{number}`, body carries the submission number (BR-47) | — |
 | `Access(CallerNotIdentified)` | `401` | `caller-not-identified` |
 | `Access(PermissionDenied(role))` | `403` | `role-may-not-register` |
 | `Rejected(NumberMissing)` | `400` | `number-missing` |
@@ -1730,6 +1738,7 @@ Explicitly out of scope, so the next agent does not add it:
 
 - **No status column and no state machine.** The state is two values, *registered* and *approved* (BR-36), derived from the existence of an approval row ([§19.5](#195-the-approval-state)), not stored on the registered row.
 - **No decision other than approval** — no referral and no declinature, and no event about one. Approval is specified in [§19](#19-approval).
+- **No UPDATE or DELETE on a fact table, and no TRUNCATE** (BR-44, [§20.2](#202-append-only-how-the-database-enforces-it)).
 - **No amend, withdraw, cancel, delete or un-approve** operation. An approval is final (BR-36). A submission is immutable once registered,
   which is why `submissions` has no `UPDATE` path in this design. An approval is a row in its own table, so it cannot create one ([§19.5](#195-the-approval-state)).
 - **No authority limit** anywhere. BR-03 treats `UNDERWRITER` and `SENIOR_UNDERWRITER`
@@ -2830,7 +2839,7 @@ listed as a change.
 | 1 | caller identified | `OperationGate.admit`, through the resolver | `CallerNotIdentified` |
 | 2 | role permits approving | `OperationGate.admit`, through `Permission.approval` | `PermissionDenied` |
 | 3 | the number is in a valid form | `ApproveSubmissionCommand.parse` | `SubmissionNotFound` |
-| 4 | submission exists in the caller's own organisation | the use case: `findOwn(tenantId, id)` | `SubmissionNotFound` |
+| 4 | submission exists in the caller's own organisation | the use case: `findOwnByNumber(tenantId, number)` | `SubmissionNotFound` |
 | 5 | caller did not register it | the use case: `Submission.approvableBy(actor)` | `ApproverRegisteredSubmission` |
 | 6 | not already approved | the use case: the approval insert | `SubmissionAlreadyApproved` |
 
@@ -2854,7 +2863,7 @@ public Result<SubmissionId, ApproveSubmissionError> execute(ActorContext actor,
                                                             ApproveSubmissionCommand command) {
     var approvedAt = clock.instant();
     return Result.fromOptional(
-                    commandRepository.findOwn(actor.tenantId(), command.submissionId().value())
+                    commandRepository.findOwnByNumber(actor.tenantId(), command.submissionNumber())
                             .flatMap(Submission::reconstitute),         // Optional — §4.2, see note
                     ApproveSubmissionError.SubmissionNotFound::new)
             .flatMap(submission -> submission.approvableBy(actor))       // step 5: BR-41
@@ -2964,15 +2973,14 @@ record SubmissionApproved(UUID eventId, SubmissionNumber submissionNumber, UUID 
 - **Raised only on success,** through `peek` (§19.6).
 - **Identity from the id port:** `idGenerator.nextEventId()`, as for registration. The implementation's
   `UUID.randomUUID()` is listed in [§19.11](#1911-where-the-implementation-diverges-required-changes).
-- **Partition key, if a transport is chosen later:** the aggregate id, as for `SubmissionRegistered`
+- **Partition key, if a transport is chosen later:** the tenant and the submission number, never the internal identity (BR-47), for `SubmissionRegistered` too
   ([§12.1](#121-deferred-adapter-decision-how-the-event-is-published)). The transport is still deferred.
 - **Masking (BR-42).** `toString` prints `approvedBy=***`. The accessors still carry the value, because a
   recipient needs it (BR-42 is a rule about logs, as BR-22 is).
 
 ### 19.8 Schema: V3
 
-`V2__create_submissions.sql` is unchanged. This is the approval migration, and it replaces the V3
-committed at `5bf01b3`, which has three faults under the storage-fit rules of [§15.8](#158-storage-fit-in-one-table).
+`V2__create_submissions.sql` is unchanged by this section. This is the approval migration as the target state. Since revision 6 it is reached by V4 ([§20.4](#204-the-migration-v4)), and V3 is restored to its reviewed content, so the three faults below are corrected in V4, not in V3 under the storage-fit rules of [§15.8](#158-storage-fit-in-one-table).
 
 ```sql
 -- V3: approval. Edited in place only if V3 has never been applied to any database. Otherwise V4.
@@ -3035,21 +3043,12 @@ The `findPage` statement gains a `LEFT JOIN`. `countMatching` is **unchanged**, 
 state filter, so the count does not depend on state:
 
 ```sql
-SELECT s.id AS submission_id,
-       s.submission_number,
-       s.insured_limit,
-       s.registered_by,
-       s.registered_at,
-       (a.submission_id IS NOT NULL) AS approved
-FROM submissions s
-LEFT JOIN submission_approvals a
-       ON a.submission_id = s.id
-      AND a.tenant_id     = s.tenant_id
-WHERE s.tenant_id = :tenantId
-  AND (CAST(:submissionNumber AS VARCHAR) IS NULL
-       OR s.submission_number = CAST(:submissionNumber AS VARCHAR))
-  -- the insured-limit and registration-moment predicates are as in §6, prefixed with s.
-ORDER BY s.registered_at DESC, s.id DESC
+-- Since revision 6 the statement selects the view of [§20.3](#203-the-latest-state-view-the-strategy):
+SELECT submission_number, insured_limit, registered_by, registered_at, approved
+FROM submission_current
+WHERE tenant_id = :tenantId
+  -- the same predicates as §6, on the view's columns
+ORDER BY registered_at DESC, submission_id DESC
 LIMIT :limit OFFSET :offset
 ```
 
@@ -3151,6 +3150,11 @@ the design section it must match. Severity follows the review scale in `architec
 | D13 | The role rule is `ActorRole.canDecide()`, shared by registration and approval, and the design deleted that method in revision 3. | `ActorRole.java`, `SubmissionConfiguration` | Either keep `canDecide()` and record it as the business role set, which the product owner confirmed for both operations, or replace it with an explicit two-role set in configuration code. The set must not be configurable at runtime, since BR-33 is a business rule. A test pins the set to exactly the two approving roles. | WARNING |
 | D14 | The `AccessPolicy` seam is in the implementation and absent from the design. | `AccessPolicy.java` | Accept it as the named form of the permission data, with D13's fixed set behind it. The design's permission table ([§13](#13-wiring)) and the seam must name the same two roles. | WARNING |
 | D15 | The tests deleted in `5bf01b3` from registration are not restored, by the product owner's decision. | `RegisterSubmissionUseCaseTest` | Not restored. The test designer judges the coverage, and [§19.12](#1912-tests) lists what approval needs. | (decision) |
+| D16 | The search selects the internal identity and the projection maps it. The view does not need it, and no response may carry it (BR-47). | `SubmissionQueryJdbcRepository`, `SubmissionSummaryJdbcProjection` | Remove `id AS submission_id` from the response query; keep `submission_id` only for the `ORDER BY` tie-break inside the view ([§20.3](#203-the-latest-state-view-the-strategy)). | CRITICAL (BR-47) |
+| D17 | The design says the `201` body carries the id. The implementation returns the number, which is right. | design §13.2 | Corrected in the design ([§20.7](#207-submission-number-consistency-check)). No code change. | WARNING (design text) |
+| D18 | The design's partition key is the aggregate id, which is the internal identity and must not reach a transport. | design §12.1, §19.7 | Corrected to the tenant and the number ([§20.7](#207-submission-number-consistency-check)). | WARNING (design text) |
+| D19 | The migration history does not match the reviewed contents. `V2` was changed in place after its review (`566b76e`), and `V3` was changed in `44bc3de`. A database that applied the reviewed content would refuse to start against HEAD. | `V2`, `V3` | Restore `V2` and `V3` to the reviewed contents, after the check of [§20.4](#204-the-migration-v4); add V4 ([§20.4](#204-the-migration-v4)). | CRITICAL |
+| D20 | The design's approval lookup is by internal identity. The spec says approval names the submission by its number, and the implementation already looks up by number. | design §19.4 | Corrected in the design. No code change. | WARNING (design text) |
 
 Two further points. The implementation's `SubmissionApproved` record and `toString` already satisfy
 BR-42 for the event, and the approval record has no `toString` yet, which the developer must add
@@ -3224,6 +3228,350 @@ integration tests with a real PostgreSQL.
 - §10 masking gains the approver, and §12 gains `SubmissionApproved`.
 - §18 is the revision-4 change list for registration and search. The approval changes are the developer's
   list in §19.11.
+
+---
+
+## 20. The record: append-only facts, and the latest-state view
+
+Revision 6, decided by the product owner as model A. A recorded fact is never changed or removed
+(`BR-44`). A change of state is a new fact appended to the record. A view shows only the most
+current state of each submission (`BR-45`), and that state is the latest fact recorded (`BR-46`). This
+section is the design for that model. It amends [§6](#6-sql-shape), [§8](#8-schema),
+[§9.3](#93-command-adapter), [§12.1](#121-deferred-adapter-decision-how-the-event-is-published),
+[§13.2](#132-the-register-request-step-by-step), [§19.4](#194-the-check-order-and-which-part-enforces-each-step),
+[§19.7](#197-the-event-submissionapproved-br-40), [§19.8](#198-schema-v3),
+[§19.9](#199-the-search-change) and [§19.10](#1910-architecture-rules-for-approval), each of which
+says so where it changed.
+
+### 20.1 The model
+
+There are **two fact tables**, one per kind of recorded fact:
+
+| Fact | Table | Keyed by | Carries |
+|---|---|---|---|
+| registration (`BR-15`) | `submissions` | internal `id` (primary key), `(tenant_id, submission_number)` unique (`BR-06`) | the number, the insured limit, the registering caller, the registration moment |
+| approval (`BR-37`) | `submission_approvals` | `submission_id` (primary key, `BR-36`, `BR-39`) | the approving caller, the moment of approval |
+
+They are kept separate because the two kinds carry disjoint payloads. A single table would hold
+nullable columns for every kind, and the storage-fit rules of [§15.8](#158-storage-fit-in-one-table)
+would have to be stated per row. Two tables keep each fact's columns exact.
+
+**The outbox is not a fact table.** `outbox_events` is updated by the relay (`processed_at`), which is
+correct for an outbox. Nothing in this section applies to it, and [§20.5](#205-architecture-rules-and-how-the-rule-is-checked)
+scopes the rule so that it does not reach the relay.
+
+**No other table holds a state or an approval.** The current state of a submission is derived from these
+two tables and is never stored.
+
+### 20.2 Append-only: how the database enforces it
+
+Three controls, each able to fail without the others, and all three are recommended:
+
+| Control | Where it lives | What it stops | What it cannot stop |
+|---|---|---|---|
+| **Code and build** | the repositories hold only `INSERT` and `SELECT`; ArchUnit rule of [§20.5](#205-architecture-rules-and-how-the-rule-is-checked) | a change written by the service | a change written by a person with database access |
+| **Grants** (primary) | the service role has `SELECT, INSERT` on the two fact tables and nothing else; applied by the deployment, not by a migration | any change made through the service's role | the table owner, and any role granted more |
+| **Trigger** (backstop) | V4, statement-level `BEFORE UPDATE OR DELETE OR TRUNCATE` on both fact tables, raising an error | any change by any role other than a superuser, including the owner | the owner or a superuser disabling the trigger, which is visible in the migration history |
+
+**Why the trigger is statement-level.** A row-level trigger does not fire for an `UPDATE` that matches
+no row, so an attempted change that touches nothing would pass silently. A statement-level trigger fires
+once per statement regardless of the row count, so the attempt itself is refused.
+
+**Why grants are primary.** The grant is the least-privilege statement: the service's role cannot change a
+fact, whatever its code does. It cannot be in the migration, because the role's name belongs to the
+environment, not to the repository. It is a deployment step, and the integration test of
+[§20.5](#205-architecture-rules-and-how-the-rule-is-checked) proves it.
+
+**What the table owner can do.** The owner is the Flyway user. It can drop a trigger, so the trigger is a
+control against the service and against mistakes, not against an operator who controls migrations. An
+operator who drops the trigger changes the migration history, which is the place a review looks.
+
+The `security-owasp-java.instructions.md` line that gives "the service's role `SELECT/INSERT/UPDATE` on its
+own tables" is therefore wrong for the two fact tables, and [§20.6](#206-changes-outside-the-design) lists
+it.
+
+### 20.3 The latest-state view: the strategy
+
+Three strategies answer "the most current state of each submission":
+
+| Strategy | Shape | Correct under `BR-46`? | Tenant predicate | Cost |
+|---|---|---|---|---|
+| `DISTINCT ON (submission_id) … ORDER BY submission_id, occurred_at DESC` over the union of both fact tables | one row per submission, latest of its facts | yes, for any number of facts per kind | in each branch of the union and in the outer `WHERE` | reads every fact of every matching submission and sorts them, on each query |
+| `ROW_NUMBER() OVER (PARTITION BY submission_id ORDER BY occurred_at DESC) = 1` over the same union | identical result to `DISTINCT ON` | yes, for any number of facts per kind | as above | the same sort, plus a window pass |
+| `LEFT JOIN` of the registration to its approval on the approval's primary key | one row per registration, with `approved` set if an approval row exists | yes, **because `BR-46` allows at most one approval** and the primary key enforces it | in the join condition and in `WHERE` | one primary-key probe per registration row, no sort beyond the page |
+
+**The choice: the `LEFT JOIN` on the approval's primary key, in a database view.**
+
+**The argument.** `BR-46` fixes two facts: a submission has at most one registration and at most one
+approval, and the state is the approval if one exists, otherwise the registration. The primary key of
+`submission_approvals` makes the first half a constraint. Under that constraint the join returns exactly
+one row per submission, so it cannot duplicate a submission or drop one. `BR-45` then holds by
+construction: the row shows `approved` or nothing, and an earlier state is not a column of the view at
+all. The join is also the cheapest of the three, because it probes a primary key once per row of the
+page and never sorts the whole matching set.
+
+**The tenant rule (`BR-17`).** The tenant predicate appears in the join condition
+(`a.tenant_id = s.tenant_id`) and in the `WHERE` (`s.tenant_id = :tenantId`). The composite foreign key of
+[§20.4](#204-the-migration-v4) makes the two equal in the database, so the join cannot pair an approval with a
+registration of another organisation. The predicate appears in each place the rule could be broken, and
+the `DISTINCT ON` and window forms would need it in every branch of a union, which is where a branch is
+most easily forgotten.
+
+**The trade-off accepted.** The join is correct only while `BR-46` holds. If the business ever allowed two
+approvals, the join would become wrong, and the replacement would be a `LATERAL` subquery ordered by
+`occurred_at` with `LIMIT 1`. That change is a business change, so the design does not pre-empt it. The
+`DISTINCT ON` form would survive such a change without edit, and that is the price of the join's cost
+advantage: the join states `BR-46` in its shape, and a future reader must see it there.
+
+**Why a database view and not a Java mapping.** `BR-45` says "search and every other way of reading a
+submission" obeys the latest-state rule. A view makes the rule one definition in the database, which every
+read statement selects from. A rule kept in one Java statement would have to be copied into each read
+path, and a copy is the way a later read path shows an earlier state as current. The view carries
+`tenant_id`, so each reader still applies the tenant predicate; the view does not enforce it, and the
+ArchUnit rule of [§20.5](#205-architecture-rules-and-how-the-rule-is-checked) requires every read repository
+to name `tenant_id`.
+
+**The view.** It is created in V4 ([§20.4](#204-the-migration-v4)):
+
+```sql
+CREATE VIEW submission_current AS
+SELECT s.tenant_id,
+       s.id              AS submission_id,   -- internal: the ORDER BY tie-break only; never mapped to a response
+       s.submission_number,
+       s.insured_limit,
+       s.registered_by,
+       s.registered_at,
+       (a.submission_id IS NOT NULL) AS approved
+FROM submissions s
+LEFT JOIN submission_approvals a
+       ON a.submission_id = s.id
+      AND a.tenant_id     = s.tenant_id;
+```
+
+The search statement of [§19.9](#199-the-search-change) reads this view, with the same predicates as before,
+`ORDER BY registered_at DESC, submission_id DESC`, and the same `LIMIT`/`OFFSET`. The count reads the view
+with the same predicates and `COUNT(*)`. `submission_id` stays in the view only for the tie-break that makes
+the order total (`BR-28`). The projection record does not map it, so it reaches no response.
+
+**The read path must not reach the internal identity.** The current search statement selects
+`s.id AS submission_id` and the projection maps it. The view does not need it for the response, and it is
+removed from the projection (divergence D16 of [§19.11](#1911-where-the-implementation-diverges-required-changes)).
+
+### 20.4 The migration: V4
+
+**Versioning.** `V1`, `V2` and `V3` are not edited by this design. A new versioned migration is the only way
+to change a database that may already have applied them. `V4__record_append_only_and_current_state.sql` is
+the single migration this section adds.
+
+**The reviewed contents are the reference.** The repository's history shows `V2` changed in place several times
+after the review that approved it (`566b76e`), and `V3` changed in `44bc3de` after `5bf01b3` introduced it. A
+database that applied the reviewed content has a Flyway checksum that the current file no longer matches.
+Flyway refuses to start against such a database, and editing the file again does not repair it. The plan
+therefore depends on which content each database applied, and that is established before V4 runs:
+
+| What the database applied | Action | Result |
+|---|---|---|
+| `V2` from `566b76e` and `V3` from `5bf01b3`, or no database at all | restore `V2` and `V3` to those exact contents, then add V4 | a clean history; V4 applies |
+| `V2` or `V3` from HEAD, which is not in the reviewed history | a human checks the live schema against the reviewed contents; if it matches, `flyway repair` after the check; if not, a decision with the product owner ([§20.8](#208-questions-for-the-product-owner), Q15) | the file in git matches the database, or the database is repaired deliberately |
+
+The restore is not an edit of V2 or V3 in the sense this section forbids. It puts back the bytes that were
+reviewed, so the history matches a database that already exists. The developer performs it once, and
+[§20.6](#206-changes-outside-the-design) names it.
+
+**What V4 contains, with the reviewed `V2` and `V3` as its starting point.** The column in the reviewed
+`V2` is `external_ref`, and HEAD's `V2` renames it to `submission_number`. V4 performs the rename, so the
+name the spec uses (`BR-47`) exists on every database, whichever content it applied.
+
+```sql
+-- V4: the record is append-only (BR-44), and the latest-state view (BR-45, BR-46).
+-- Changes no row. Assumes V2 and V3 are the reviewed contents (566b76e, 5bf01b3).
+
+-- 1. The name the spec uses. Metadata only: no row is rewritten.
+ALTER TABLE submissions RENAME COLUMN external_ref TO submission_number;
+
+-- 2. The approval references the registration on both keys, without cascade.
+--    The single-column cascading key of V3 is replaced. The redundant index of V3 is dropped.
+ALTER TABLE submission_approvals DROP CONSTRAINT fk_submission_approvals_submission;
+DROP INDEX idx_submission_approvals_tenant_submission;
+ALTER TABLE submissions ADD CONSTRAINT uq_submissions_id_tenant UNIQUE (id, tenant_id);
+ALTER TABLE submission_approvals
+    ADD CONSTRAINT fk_submission_approvals_submission
+    FOREIGN KEY (submission_id, tenant_id) REFERENCES submissions (id, tenant_id) NOT VALID;
+ALTER TABLE submission_approvals VALIDATE CONSTRAINT fk_submission_approvals_submission;
+
+-- 3. Append-only: any UPDATE, DELETE or TRUNCATE on a fact table is refused, statement by statement.
+CREATE FUNCTION refuse_change_to_recorded_fact() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'recorded facts are append-only (BR-44): % on % refused', TG_OP, TG_TABLE_NAME
+        USING ERRCODE = 'insufficient_privilege';
+    RETURN NULL;
+END;
+$$;
+
+CREATE TRIGGER submissions_append_only
+    BEFORE UPDATE OR DELETE OR TRUNCATE ON submissions
+    FOR EACH STATEMENT EXECUTE FUNCTION refuse_change_to_recorded_fact();
+
+CREATE TRIGGER submission_approvals_append_only
+    BEFORE UPDATE OR DELETE OR TRUNCATE ON submission_approvals
+    FOR EACH STATEMENT EXECUTE FUNCTION refuse_change_to_recorded_fact();
+
+-- 4. The latest-state view (§20.3).
+CREATE VIEW submission_current AS
+SELECT s.tenant_id,
+       s.id AS submission_id,
+       s.submission_number,
+       s.insured_limit,
+       s.registered_by,
+       s.registered_at,
+       (a.submission_id IS NOT NULL) AS approved
+FROM submissions s
+LEFT JOIN submission_approvals a
+       ON a.submission_id = s.id
+      AND a.tenant_id     = s.tenant_id;
+```
+
+**Why V4 does not rewrite existing rows.** Every statement is metadata or a read:
+
+- `RENAME COLUMN` changes the catalogue. No row is read or written.
+- `DROP CONSTRAINT`, `DROP INDEX` and `ADD CONSTRAINT … UNIQUE` change the catalogue. The unique constraint
+  on `(id, tenant_id)` is built from a column that is already unique by its primary key, so it cannot fail.
+- `ADD CONSTRAINT … FOREIGN KEY … NOT VALID` changes the catalogue and does not look at existing rows.
+- `VALIDATE CONSTRAINT` reads every existing approval once to confirm that its tenant is its submission's
+  tenant. It writes nothing. If a row disagrees, the migration **stops** and the row is left as it is. Repair
+  would be a change to a recorded fact, which `BR-44` forbids, so a human decides what the row should mean.
+- `CREATE FUNCTION`, `CREATE TRIGGER` and `CREATE VIEW` add objects. No row is touched.
+- No column is added, no default is set, and no type changes, so no table is rewritten.
+
+**Locks.** `RENAME` takes a brief exclusive lock on `submissions`. `ADD CONSTRAINT … NOT VALID` and
+`CREATE TRIGGER` take a lock that blocks writes, not reads, for their duration. `VALIDATE CONSTRAINT`
+blocks neither reads nor writes. The whole migration is short, and it should run outside peak
+registration hours.
+
+**What V4 does not do.** It adds no index. The join uses the primary key of `submission_approvals` and the
+unique `(id, tenant_id)`, which exists. The search's predicates on `submissions` are served by the indexes
+that V2 already creates, as [§8.2](#82-indexes-which-index-serves-which-filter) states.
+
+**Grants are not in V4.** The service role's grants are a deployment step ([§20.2](#202-append-only-how-the-database-enforces-it)),
+because the role's name is not in the repository.
+
+### 20.5 Architecture rules, and how the rule is checked
+
+**No existing rule fails with the new model.** The new repository methods are plain `INSERT` and `SELECT`,
+the view is read through the existing projection path, and the new value `SubmissionState` is an enum. Each
+existing rule of [§15.10](#1510-cqs-rules-verbatim) and [§19.10](#1910-architecture-rules-for-approval) was
+checked against the design. The one that gives false comfort is rule A of [§19.10](#1910-architecture-rules-for-approval),
+`no_operation_reverses_or_rewrites_a_recorded_fact`. It is name-based, so it passes today because no method is
+named `update`, not because no operation can change a fact. It stays for `domain/`, and the rule below is the one
+that pins the persistence layer.
+
+**The rule, verbatim.** It reads the SQL of each `@Query` on the submission repositories:
+
+```java
+@ArchTest
+static final ArchRule submission_repositories_issue_only_inserts_and_selects =
+        methods().that().areDeclaredInClassesThat().resideInAPackage("..adapters.persistence..")
+                .and().areDeclaredInClassesThat().haveSimpleNameStartingWith("Submission")
+                .and().areDeclaredInClassesThat().haveSimpleNameEndingWith("JdbcRepository")
+                .and().areAnnotatedWith(Query.class)
+                .should(new ArchCondition<JavaMethod>(
+                        "issue only INSERT or SELECT, never UPDATE, DELETE or TRUNCATE") {
+                    @Override
+                    public void check(JavaMethod method, ConditionEvents events) {
+                        var sql = method.getAnnotationOfType(Query.class.getName())
+                                .get("value").map(String::valueOf).orElse("");
+                        var changesRecord = Pattern.compile(
+                                "(?i)\\b(UPDATE|DELETE|TRUNCATE)\\b").matcher(sql).find();
+                        if (changesRecord) {
+                            events.add(SimpleConditionEvent.violated(method,
+                                    method.getFullName() + " changes a recorded fact, which BR-44 forbids"));
+                        }
+                    }
+                })
+                .because("recorded facts are append-only (BR-44). The service's persistence never changes a row "
+                        + "of a submission table; a change of state is an INSERT into its own fact table");
+```
+
+**Why the scope is by name.** `haveSimpleNameStartingWith("Submission")` selects the submission repositories
+and excludes the outbox relay, whose `UPDATE` on `processed_at` is correct for an outbox. A new submission
+repository that does not start with `Submission` escapes the rule, and the next reviewer must notice that.
+This is a known limit, recorded here rather than hidden.
+
+**Why this, and not a grep.** A grep over the source reads the text of a file. It does not see a statement
+built at run time, and it is not in the build, so a developer can run it or not. The ArchUnit rule reads the
+annotation value the framework will execute, and it fails `./mvnw test`.
+
+**The runtime proof: an integration test.** The rule checks the source. The database proves the other half.
+An integration test, against real PostgreSQL, does the following, once as the service's role and once as the
+owner:
+
+- `UPDATE` and `DELETE` on each fact table fail, including an `UPDATE` that matches no row.
+- `TRUNCATE` on each fact table fails.
+- A registration and an approval, both inserted, leave the view showing `approved = true` for that submission
+  and one row per submission.
+
+The test that fails when the grant is missing is the one that runs as the service's role. A test run only as
+the owner would pass whether or not the grant exists.
+
+**The view's tenant rule is not checked by the rule above.** That rule reads the shape of the SQL, not whether a predicate is present. A second rule would require the token `tenant_id` in every statement that names `submission_current`, and it is added with the view. Until it is, the tenant predicate is a review item for every new read statement, and the integration test of this section is the only automated check.
+
+---
+
+### 20.6 Changes outside the design
+
+| File | Line or section | Change |
+|---|---|---|
+| `.github/instructions/security-owasp-java.instructions.md` | "the service's role gets `SELECT/INSERT/UPDATE` on its own tables" | `SELECT, INSERT` on the fact tables; `SELECT, INSERT, UPDATE` on the outbox only |
+| `src/main/resources/db/migration/V2__create_submissions.sql` | HEAD content | restore the reviewed content (`566b76e`) if the database check of [§20.4](#204-the-migration-v4) says so, and not otherwise. The developer does not edit it on a guess |
+| `src/main/resources/db/migration/V3__create_submission_approvals.sql` | HEAD content | restore the content of `5bf01b3`, the content the reviewed history contains. The composite key moves to V4 |
+| `src/main/resources/db/migration/V4__record_append_only_and_current_state.sql` | new | the migration of [§20.4](#204-the-migration-v4) |
+| `docs/adr/submission-registration-design.md` §19.8 | "Edited in place only because V3 was never applied" | withdrawn: that claim was not verified and the history contradicts it |
+| `ArchitectureRulesTest.java` | new | `submission_repositories_issue_only_inserts_and_selects` |
+| integration test tree | new | the append-only and view test of [§20.5](#205-architecture-rules-and-how-the-rule-is-checked), as the service's role and as the owner |
+| deployment | new step | the grants on the fact tables for the service's role |
+
+### 20.7 Submission number: consistency check
+
+**Every fact, view, event and response is keyed by the submission number, and the internal identity is used
+only inside the service.** The check, item by item:
+
+| Surface | Identifies the submission by | Internal id present? | Status |
+|---|---|---|---|
+| `submissions`, `submission_approvals` (storage) | `submission_number` (unique per tenant), `id` (primary key) | yes, as the key | consistent: the key is internal and allowed (`BR-47`: "used only inside this service") |
+| `submission_current` (view) | `submission_number` | yes, for the tie-break only | consistent with [§20.3](#203-the-latest-state-view-the-strategy): not mapped to any response |
+| search response, `SubmissionSummaryView` | `submissionNumber` | no | consistent in the design; the current search projection selects the internal id (D16) |
+| `SubmissionRegistered` event | `submissionNumber` | no | consistent (HEAD design) |
+| `SubmissionApproved` event | `submissionNumber` | no | consistent (HEAD design) |
+| approval path `POST …/{number}/approve` | the number | no | consistent; the implementation looks up by number |
+| registration response, `201` body | the number | no | the design says "carries the id" in [§13.2](#132-the-register-request-step-by-step), which is wrong; the implementation returns the number (D17) |
+| `Location` of `201` | the number | no | consistent with the implementation |
+| partition key, if a transport is chosen | the internal id in [§12.1](#121-deferred-adapter-decision-how-the-event-is-published) and [§19.7](#197-the-event-submissionapproved-br-40) | **yes, through the design's own rule** | **mismatch**: a key derived from the internal id would put it into the transport. It must be the tenant and the number (D18) |
+| approval lookup, [§19.4](#194-the-check-order-and-which-part-enforces-each-step) | `findOwn(tenantId, id)` | yes | **mismatch**: the spec says approval names the submission by its number. The implementation uses `findOwnByNumber`; the design text is corrected |
+| logs | the number, which `BR-23` allows | no | consistent |
+
+**The mismatches the design must correct,** all in sections this revision amends: the partition key (§12.1 and
+§19.7), the registration response in §13.2, and the approval lookup in §19.4. The implementation is already right
+on the approval lookup and on the registration response. The search projection and the design's partition-key
+rule are the two places that need a change in the code or the text.
+
+**Naming.** The reviewed `V2` names the column `external_ref`, and the spec's term is "submission number". V4
+renames the column. Until V4 has run on a database, its code and its name disagree, which is why the rename and
+the code change must ship together.
+
+### 20.8 Questions for the product owner
+
+- **Q15. Which content have the databases applied?** The check in [§20.4](#204-the-migration-v4) needs the Flyway
+  history of each environment. If no environment outside a developer's machine has applied `V2` or `V3`, the
+  plan is a restore and V4. If one has, the answer depends on whether its live schema matches the reviewed
+  contents, and that is a decision on the data, not only on the file.
+- **Q16. Is any data removal in scope?** `BR-44` forbids removing a recorded fact. The specification leaves
+  retention out of scope, as it did before. A removal request for an approver's identity would meet an
+  append-only table. Confirm that no deletion, anonymisation or retention job is wanted in this feature.
+- **Q17. Can a caller read the history of a submission?** `BR-45` says an earlier state "remains on record" and
+  is never shown as current. The specification does not say whether a caller may read it, or only audit may.
+  This section adds no endpoint for history, and a history endpoint would need its own rule.
+
+---
 
 ---
 
