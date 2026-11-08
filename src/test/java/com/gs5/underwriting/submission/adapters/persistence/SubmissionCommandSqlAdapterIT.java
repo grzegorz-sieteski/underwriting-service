@@ -3,6 +3,7 @@ package com.gs5.underwriting.submission.adapters.persistence;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionError;
 import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.gs5.underwriting.submission.domain.SubmissionRoundTrip;
+import com.gs5.underwriting.submission.domain.SubmissionNumber;
 import com.gs5.underwriting.submission.domain.SubmissionSnapshot;
 import com.gs5.underwriting.shared.kernel.Result;
 import org.junit.jupiter.api.DisplayName;
@@ -156,7 +157,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(snapshot);
 
             // Then
-            assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored -> {
+            assertThat(adapter.findOwnByNumber(TENANT_A, number("ABC-1"))).hasValueSatisfying(stored -> {
                 assertThat(stored.id()).isEqualTo(id);
                 assertThat(stored.tenantId()).isEqualTo(TENANT_A);
                 assertThat(stored.submissionNumber()).isEqualTo("ABC-1");
@@ -182,7 +183,7 @@ class SubmissionCommandSqlAdapterIT {
 
             // Then
             assertThat(result.isSuccess()).isTrue();
-            assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored ->
+            assertThat(adapter.findOwnByNumber(TENANT_A, number("-"))).hasValueSatisfying(stored ->
                     assertThat(stored.submissionNumber()).isEqualTo("-"));
         }
     }
@@ -200,7 +201,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
             // When
-            var loaded = adapter.findOwn(TENANT_A, id).orElseThrow();
+            var loaded = adapter.findOwnByNumber(TENANT_A, number("ABC-1")).orElseThrow();
             var reconstituted = SubmissionRoundTrip.reconstituteAndSnapshot(loaded);
 
             // Then
@@ -220,7 +221,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
             // When
-            var loaded = adapter.findOwn(TENANT_A, id).orElseThrow();
+            var loaded = adapter.findOwnByNumber(TENANT_A, number("ABC-1")).orElseThrow();
             var reconstituted = SubmissionRoundTrip.reconstituteAndSnapshot(loaded);
 
             // Then
@@ -237,7 +238,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
             // When
-            var result = adapter.findOwn(TENANT_B, id);
+            var result = adapter.findOwnByNumber(TENANT_B, number("ABC-1"));
 
             // Then
             assertThat(result).isEmpty();
@@ -273,13 +274,13 @@ class SubmissionCommandSqlAdapterIT {
             // Given
             var firstId = UUID.randomUUID();
             adapter.insert(newSnapshot(firstId, TENANT_A, "ABC-1", "1200.00"));
-            var before = adapter.findOwn(TENANT_A, firstId).orElseThrow();
+            var before = adapter.findOwnByNumber(TENANT_A, number("ABC-1")).orElseThrow();
 
             // When
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "77.00"));
 
             // Then
-            assertThat(adapter.findOwn(TENANT_A, firstId)).hasValue(before);
+            assertThat(adapter.findOwnByNumber(TENANT_A, number("ABC-1"))).hasValue(before);
         }
 
         @Test
@@ -333,5 +334,10 @@ class SubmissionCommandSqlAdapterIT {
             assertThat(lowerCase.isSuccess()).isTrue();
             assertThat(rowCount()).isEqualTo(2);
         }
+    }
+
+    /** The number as the port takes it; the text is a valid number in every caller. */
+    private static SubmissionNumber number(String text) {
+        return SubmissionNumber.parse(text).toOptional().orElseThrow();
     }
 }
