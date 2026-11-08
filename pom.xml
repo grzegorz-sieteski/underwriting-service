@@ -230,38 +230,23 @@
                 </executions>
             </plugin>
 
-            <!-- Gate 2: fast unit tests + ArchUnit -->
+            <!--
+              The single test gate: `./mvnw test` runs unit tests, ArchUnit rules and the
+              Testcontainers integration tests (*IT.java). Integration tests run in the test
+              phase, not in a separate verify phase, so a green `test` means everything.
+              Requires a running Docker daemon for the *IT.java classes.
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <includes>
                         <include>**/*Test.java</include>
-                    </includes>
-                    <excludes>
-                        <exclude>**/*IT.java</exclude>
-                    </excludes>
-                </configuration>
-            </plugin>
-
-            <!-- Gate 3: Testcontainers integration tests -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-failsafe-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>integration-test</goal>
-                            <goal>verify</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <includes>
                         <include>**/*IT.java</include>
                     </includes>
                 </configuration>
             </plugin>
+
 
             <plugin>
                 <groupId>org.springframework.boot</groupId>

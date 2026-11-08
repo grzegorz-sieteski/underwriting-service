@@ -7,15 +7,16 @@ Read this before anything else; `.github/copilot-instructions.md` holds the hard
 
 ```bash
 ./mvnw -B validate                                   # Checkstyle architecture gate
-./mvnw -B test                                       # fast unit tests + ArchUnit (Surefire)
-./mvnw -B verify                                     # the above + Testcontainers ITs (Failsafe)
+./mvnw -B test                                       # unit tests, ArchUnit AND Testcontainers ITs (needs Docker)
+./mvnw -B verify                                     # the same gates plus packaging
 ./mvnw -B verify -DskipITs                           # skip ITs when Docker is unavailable
 ./mvnw -B test -Dtest=ArchitectureRulesTest          # architecture rules only
 ./mvnw -B test -Dtest=ResultTest                     # one test class
 ./mvnw -B spring-boot:run                            # run locally (needs Postgres + Kafka)
 ```
 
-JDK 25 is required. Integration tests (`*IT.java`) need a running Docker daemon.
+JDK 25 is required. Integration tests (`*IT.java`) run in the `test` phase, not a separate one,
+so a green `./mvnw test` means everything; they need a running Docker daemon.
 
 **Never report a build result you did not run.** Paste the terminal output. If you could not run
 it, say so.
