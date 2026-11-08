@@ -49,8 +49,8 @@ public record RegisterSubmissionCommand(SubmissionNumber submissionNumber,
             case SubmissionNumberError.Missing _ -> new RegisterSubmissionError.NumberMissing();
             case SubmissionNumberError.TooLong(var maxLength, var actualLength) ->
                     new RegisterSubmissionError.NumberTooLong(maxLength, actualLength);
-            case SubmissionNumberError.ControlCharacter(var codePoint, var index) ->
-                    new RegisterSubmissionError.NumberContainsControlCharacter(codePoint, index);
+            case SubmissionNumberError.CharacterNotAllowed(var codePoint, var index) ->
+                    new RegisterSubmissionError.NumberContainsCharacterNotAllowed(codePoint, index);
         };
     }
 

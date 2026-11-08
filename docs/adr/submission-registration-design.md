@@ -3573,6 +3573,408 @@ the code change must ship together.
 
 ---
 
+## 21. Revision 7 (2026-11-08): allowed characters, V4, and the review blockers
+
+Product owner decisions of 2026-11-08, binding: a submission number has no special characters
+(`BR-29` rewritten); write V4; no separate migration role (R-03 accepted while the service is not
+in production); adapters are public, so tests may drive them from outside their package (G1).
+Q15 is answered by "not in production": no database has to be preserved, V2 and V3 stay as they
+are at `44bc3de`, and V4 is the next migration on top of them.
+
+### 21.1 BR-29: the allowed set
+
+`SubmissionNumber.parse` keeps its order (presence, length, content). Content is now an allow
+list, `A`-`Z`, `a`-`z`, `0`-`9`, `-`, checked code point by code point. The first other code
+point is reported:
+
+- `SubmissionNumberError.CharacterNotAllowed(int codePoint, int index)` replaces `ControlCharacter`;
+- `RegisterSubmissionError.NumberContainsCharacterNotAllowed(int codePoint, int index)` replaces
+  `NumberContainsControlCharacter`; HTTP 400, problem type
+  `urn:problem-type:submission:number-contains-character-not-allowed`;
+- the search filter maps `CharacterNotAllowed` to `MatchesNothing` (BR-30).
+
+Every allowed character is ASCII, so a code point is a character and `VARCHAR(64)` counts the
+same thing; BR-05 does not change. `ControlCharacters` stays in the kernel for actor ids.
+
+### 21.2 R-01: the number in the path
+
+With the allow list, no registrable number contains `;`, `/`, `%` or `.`. That alone does not fix
+R-01: Spring strips `;...` from `{number}` before the resource sees it, so `REF;1` would still
+arrive as `REF`. The approval resource therefore reads the number from the raw request URI, the
+segment between `/api/submissions/` and `/approve`, **not** decoded, and parses that. No
+allowed character ever needs percent-encoding, so a `%` is itself refused by `BR-29`, and an invalid
+escape cannot fail as a 500. `REF;1`
+then fails `BR-29` and is refused as not found (`BR-48`), with the one constant 404 body. A path
+with an extra `/` matches no mapping and gets the framework's 404; no registrable number can
+produce it.
+
+### 21.3 V4
+
+`V4__allowed_characters_append_only_and_current_state.sql`:
+
+1. replace `ck_submissions_submission_number_no_control_chars` by
+   `ck_submissions_submission_number_allowed_chars CHECK (submission_number ~ '^[A-Za-z0-9-]+$')`;
+2. `refuse_change_to_recorded_fact()` and statement-level `BEFORE UPDATE OR DELETE OR TRUNCATE`
+   triggers on `submissions` and `submission_approvals` (BR-44). The service role owns the tables
+   (R-03 accepted), so an owner can still disable a trigger; the trigger stops every ordinary
+   statement, which is what BR-44 asks of the service;
+3. `submission_current`: one row per submission with `tenant_id`, `submission_number`,
+   `insured_limit`, `registered_by`, `registered_at`, `approved`. No internal id (BR-47, D16).
+
+Search reads `submission_current` only. The tie-break of the order becomes
+`submission_number DESC`, unique within a tenant: BR-28 needs a total order, and BR-24 decides only
+the newest-first part.
+
+Test teardown can no longer `TRUNCATE` or `DELETE` the fact tables. Tests clear them as the owner
+by disabling the triggers for the clean-up only (`FactTables.clear` in the test tree). That helper
+is also the executable record that R-03 is a real, accepted gap.
+
+### 21.4 ArchUnit
+
+- Rule C no longer depends on the constructor signature: only `ApproveSubmissionUseCase` may call
+  any constructor of `SubmissionApproved`.
+- New: `submission_repositories_issue_only_inserts_and_selects`. No `@Query` in
+  `submission.adapters.persistence` contains `UPDATE`, `DELETE` or `TRUNCATE`.
+
+### 21.5 Public adapters (G1)
+
+`ActorContextResolver` (with `resolve()`), the three resources and the three SQL adapters become
+`public` classes. The resources get public constructors. JDBC entities, the projection, the mapper
+and the Spring Data repositories stay package-private: they are the adapters' internals, and the
+Test contract still excludes them.
+
+## Test contract
+
+Design mode, written against the code at HEAD (`bedd141`). This is the only surface a test may use.
+Every name below exists in `src/main` today and can be found with grep. Where the code differs from
+what an earlier section of this design intends, this section states **the code**, because tests
+compile against the code, and lists the difference under
+[Divergences from design](#divergences-from-design). Nothing here is a change request to the code.
+
+A test enters and observes the module only through what is listed here. If a scenario cannot be
+expressed through it, the contract is missing something: report it, and do not reach inside.
+Package names below are relative to `com.gs5.underwriting`.
+
+### TC1. Types every test may use
+
+| Type | Package | Contract surface |
+|---|---|---|
+| `Result<T, E>` | `shared.kernel` | `Result.success`, `Result.failure`, `Result.fromOptional`, the records `Success(T value)` and `Failure(E error)`, and every public default method (`isSuccess`, `isFailure`, `map`, `flatMap`, `mapError`, `fold`, `peek`, `toOptional`, `errorToOptional`, ...) |
+| `ActorContext` | `shared.kernel` | `record ActorContext(UUID tenantId, String actorId, ActorRole role)`; `static Optional<ActorContext> parse(@Nullable String tenantId, @Nullable String actorId, @Nullable ActorRole role)`; `MAX_ACTOR_ID_LENGTH = 255` |
+| `ActorRole` | `shared.kernel` | `VIEWER`, `UNDERWRITER`, `SENIOR_UNDERWRITER`; `boolean canDecide()` |
+| `AuthenticatedCaller` | `submission.adapters.access` | `static Optional<AuthenticatedCaller> parse(@Nullable String tenantId, @Nullable String actorId, @Nullable String role)`; `ActorContext actor()`; `ActorRole role()` |
+| `AccessRefusal` | `submission.adapters.access` | sealed: `CallerNotIdentified()`, `PermissionDenied(ActorRole role)` |
+| `AccessPolicy` | `submission.adapters.access` | `boolean mayRegister(ActorRole role)`, `boolean mayApprove(ActorRole role)`, `Optional<String> tenantIdFrom(Map<String, String> identityClaims)` |
+| `Permission` | `submission.adapters.access` | `Result<AuthenticatedCaller, AccessRefusal> check(Optional<AuthenticatedCaller> caller)`; `static anyIdentifiedCaller()`, `static registration(AccessPolicy policy)`, `static approval(AccessPolicy policy)` |
+| `OperationGate<C, R>` | `submission.adapters.access` | `new OperationGate<>(Permission permission, BiFunction<ActorContext, C, R> operation)`; `Result<Admission<C, R>, AccessRefusal> admit(Optional<AuthenticatedCaller> caller)` |
+| `Admission<C, R>` | `submission.adapters.access` | `R run(C input)`; no public constructor |
+| `SubmissionNumber` | `submission.domain` | `static Result<SubmissionNumber, SubmissionNumberError> parse(@Nullable String text)`; `String value()`; `MAX_LENGTH = 64`; value equality |
+| `SubmissionNumberError` | `submission.domain` | sealed: `Missing()`, `TooLong(int maxLength, int actualLength)`, `ControlCharacter(int codePoint, int index)` |
+| `InsuredLimit` | `submission.domain` | `static Result<InsuredLimit, RegisterSubmissionError> parse(@Nullable BigDecimal amount)`; `BigDecimal amount()`; `REQUIRED_SCALE = 2`; value equality |
+| `SubmissionId` | `submission.domain` | `record SubmissionId(UUID value)` |
+| `SubmissionSnapshot` | `submission.domain` | `record SubmissionSnapshot(UUID id, UUID tenantId, String submissionNumber, BigDecimal insuredLimit, String registeredBy, Instant registeredAt, @Nullable Long version)`: what a command-repository fake stores and returns |
+| `SubmissionState` | `submission.domain` | `REGISTERED`, `APPROVED` |
+| `SubmissionDomainEvent` | `submission.domain` | sealed; `UUID eventId()`, `SubmissionNumber submissionNumber()`, `UUID tenantId()`, `Instant occurredAt()`; records `SubmissionRegistered(UUID eventId, SubmissionNumber submissionNumber, UUID tenantId, BigDecimal insuredLimit, String registeredBy, Instant occurredAt)` and `SubmissionApproved(UUID eventId, SubmissionNumber submissionNumber, UUID tenantId, String approvedBy, Instant occurredAt)` |
+
+**Masking is a contract property, the wording is not (BR-22, BR-42, OPEN-01).** For `ActorContext`,
+`InsuredLimit`, `RegisterSubmissionCommand`, `SearchSubmissionsQuery`, `SubmissionFilter.Narrowing`,
+`SubmissionSearchCriteria`, `SubmissionSnapshot`, `SubmissionSummaryView`, `SubmissionRegistered` and
+`SubmissionApproved`, a test may assert that `toString()` contains neither the insured limit (nor an
+insured-limit bound) nor the caller's `actorId` / `approvedBy`. The rest of the `toString()` text is
+not contract.
+
+### TC2. Register a submission (BR-01 to BR-15, BR-29)
+
+**Use case entry point.**
+
+| | |
+|---|---|
+| Class | `submission.domain.RegisterSubmissionUseCase` |
+| Constructor | `RegisterSubmissionUseCase(SubmissionCommandRepository repository, SubmissionEventPublisher eventPublisher, SubmissionIdGenerator idGenerator, Clock clock)` |
+| Method | `Result<SubmissionId, RegisterSubmissionError> execute(ActorContext actor, RegisterSubmissionCommand command)` |
+| Command | `record RegisterSubmissionCommand(SubmissionNumber submissionNumber, InsuredLimit insuredLimit)`; factory `static Result<RegisterSubmissionCommand, RegisterSubmissionError> parse(@Nullable String submissionNumber, @Nullable BigDecimal insuredLimit)` |
+| Success | `Success(SubmissionId)`, the id the repository port returned for the inserted snapshot |
+| Event | on success only, exactly one `SubmissionRegistered` handed to `SubmissionEventPublisher.publish`: `eventId` is a value returned by `nextEventId()`, then the command's number, `actor.tenantId()`, the command's amount, `actor.actorId()`, and `occurredAt` = the clock's instant. Nothing is published on failure |
+
+Error variants of `RegisterSubmissionError`, and which entry point returns each:
+
+| Variant | Returned by | Rule |
+|---|---|---|
+| `NumberMissing()` | `RegisterSubmissionCommand.parse` | BR-04 |
+| `NumberTooLong(int maxLength, int actualLength)` | `RegisterSubmissionCommand.parse` | BR-05 |
+| `NumberContainsControlCharacter(int codePoint, int index)` | `RegisterSubmissionCommand.parse` | BR-29 |
+| `InsuredLimitMissing()` | `RegisterSubmissionCommand.parse` | BR-10 |
+| `InsuredLimitNotPositive()` | `RegisterSubmissionCommand.parse` | BR-11 |
+| `InsuredLimitPrecisionInvalid(int requiredScale, int actualScale)` | `RegisterSubmissionCommand.parse` | BR-12 |
+| `NumberAlreadyUsed(String submissionNumber)` | `execute`, passed through from `SubmissionCommandRepository.insert` | BR-06, BR-09 |
+
+`parse` judges the number first and then the amount, and returns the first failure (§4.3). The
+declared error type of `execute` is the whole hierarchy (divergence E1), but the only variant it
+returns is `NumberAlreadyUsed`. Caller not identified (BR-01) and role may not register (BR-02) are
+not domain errors: they are the `AccessRefusal` of `Permission.registration(AccessPolicy)`.
+
+**HTTP endpoint.** `POST /api/submissions`, `Content-Type: application/json`.
+
+Request body: `{"submissionNumber": string | null, "insuredLimit": number | null}`. `insuredLimit` is
+read as a `BigDecimal`, so its scale is the scale written in the JSON: `1200.00` has scale 2 and `1200`
+has scale 0. No other field is read. The organisation, the caller and the moment never come from the
+body (BR-15).
+
+| Outcome | Status | `type` | `detail`, as implemented |
+|---|---|---|---|
+| registered | `201`, header `Location: /api/submissions/{number}` | — | body `{"submissionNumber": "<number>"}` |
+| caller not identified (BR-01) | `401` | `urn:problem-type:submission:caller-not-identified` | `The caller could not be identified.` |
+| role may not register (BR-02) | `403` | `urn:problem-type:submission:permission-denied` | `The role VIEWER may not register a submission.` |
+| number missing (BR-04) | `400` | `urn:problem-type:submission:number-missing` | `submissionNumber is required and must contain at least one character.` |
+| number too long (BR-05) | `400` | `urn:problem-type:submission:number-too-long` | `submissionNumber must be at most 64 characters, but was <n>.` |
+| control character (BR-29) | `400` | `urn:problem-type:submission:number-contains-control-character` | `submissionNumber must not contain a control character, but U+<hex> was found at code point index <i>.` |
+| insured limit missing (BR-10) | `400` | `urn:problem-type:submission:insured-limit-missing` | `insuredLimit is required.` |
+| insured limit not positive (BR-11) | `400` | `urn:problem-type:submission:insured-limit-not-positive` | `insuredLimit must be greater than zero.` |
+| precision invalid (BR-12) | `400` | `urn:problem-type:submission:insured-limit-precision-invalid` | `insuredLimit must have exactly 2 decimal places, but had <s>.` |
+| number already used (BR-06, BR-09) | `409` | `urn:problem-type:submission:number-already-used` | `The submission number '<number, category Cc escaped as \uXXXX>' is already used by a submission of your organisation.` |
+
+Every refusal body is `application/problem+json` with `type`, `title` (the HTTP reason phrase),
+`status` and `detail`. **The contract is the status and the `type`.** The `detail` column is there so
+a test can assert what a body must never contain (the insured limit, BR-22; an internal id, BR-47),
+not to pin wording. `instance` is not set by this resource and is not contract. No `GET` handler exists
+for the `Location` path.
+
+The order at the edge, as implemented: `ActorContextResolver.resolve()`, then the gate (`401`, `403`),
+then `RegisterSubmissionCommand.parse` (`400`), then `execute` (`409`). Spring reads the JSON body
+before the gate runs, so a body that is not readable JSON, or an `insuredLimit` that cannot be read as
+a `BigDecimal`, is a framework `400` before any `401` or `403` (divergence E9). The body of that `400`
+is not specified by this module.
+
+### TC3. Search submissions (BR-01, BR-16 to BR-28, BR-30 to BR-32, BR-45)
+
+**Use case entry point.**
+
+| | |
+|---|---|
+| Class | `submission.domain.SearchSubmissionsUseCase` |
+| Constructor | `SearchSubmissionsUseCase(SubmissionQueryRepository repository)` |
+| Method | `SubmissionPageView ask(ActorContext actor, SearchSubmissionsQuery query)`. There is no `Result` and no error variant: the read side refuses nothing (§5) |
+| Query | `record SearchSubmissionsQuery(SubmissionFilter filter, int page, int size)`. The compact constructor clamps `page` to `>= 0` and `size` into `[MIN_PAGE_SIZE, MAX_PAGE_SIZE]`, which are `1` and `100`. Factory: `static SearchSubmissionsQuery parse(@Nullable String submissionNumber, @Nullable BigDecimal insuredLimitFrom, @Nullable BigDecimal insuredLimitTo, @Nullable Instant registeredFrom, @Nullable Instant registeredTo, int page, int size)` |
+| Filter | `sealed interface SubmissionFilter` with `Narrowing(@Nullable SubmissionNumber reference, @Nullable BigDecimal insuredLimitFrom, @Nullable BigDecimal insuredLimitTo, @Nullable Instant registeredFrom, @Nullable Instant registeredTo)` and `MatchesNothing()`; `static SubmissionFilter parse(...)` with the same five parameters as `SearchSubmissionsQuery.parse` |
+| Success | `record SubmissionPageView(List<SubmissionSummaryView> submissions, long totalMatchCount, int page, int size)`. Each row is `record SubmissionSummaryView(String submissionNumber, BigDecimal insuredLimit, String registeredBy, Instant registeredAt, SubmissionState state)`. `page` and `size` echo the clamped values. No row carries an internal id (BR-47) |
+| Event | none |
+
+How the number filter folds, through `SubmissionNumber.parse`:
+
+| Number filter | Filter | Rule |
+|---|---|---|
+| `null` or `""` | `Narrowing` with `reference == null` | BR-19, BR-31 |
+| contains a category-Cc character | `MatchesNothing` | BR-30 |
+| 65 or more code points | `MatchesNothing` | BR-32 |
+| otherwise | `Narrowing` with that `SubmissionNumber`, compared exactly | BR-07 |
+
+For `MatchesNothing`, `ask` returns an empty page with `totalMatchCount == 0` and the echoed page and
+size, and calls the repository not at all. For `Narrowing`, `ask` calls
+`findPage(criteria, query.size(), (long) query.page() * query.size())` and `countMatching(criteria)`,
+with `criteria.tenantId()` equal to `actor.tenantId()` and `criteria.submissionNumber()` equal to the
+filter's number text, or `null`. The only refusal is BR-01, as `AccessRefusal.CallerNotIdentified` from
+`Permission.anyIdentifiedCaller()`.
+
+**HTTP endpoint.** `GET /api/submissions`, no body. Query parameters, all optional:
+
+| Parameter | Type | Default |
+|---|---|---|
+| `submissionNumber` | text | absent |
+| `insuredLimitFrom`, `insuredLimitTo` | decimal | absent |
+| `registeredFrom`, `registeredTo` | ISO-8601 instant, converted by Spring | absent |
+| `page` | int | `0` |
+| `size` | int | `100` |
+
+| Outcome | Status | Body |
+|---|---|---|
+| found, including an empty page (BR-20, BR-21, BR-27, BR-30 to BR-32) | `200` | `{"submissions": [{"submissionNumber", "insuredLimit", "registeredBy", "registeredAt", "state"}], "totalMatchCount", "page", "size"}`, with `state` as `"REGISTERED"` or `"APPROVED"` |
+| caller not identified (BR-01) | `401` | problem, `type` `urn:problem-type:submission:caller-not-identified` |
+| `PermissionDenied` | `403` | problem, `type` `urn:problem-type:submission:permission-denied`. Unreachable for search (BR-16), and a test proves it never occurs |
+
+Rows are ordered by `registeredAt`, newest first (BR-24). Among rows with equal `registeredAt` the
+order is deterministic but not contract beyond BR-28: each row appears on exactly one page. A query
+parameter that Spring cannot convert (`size=abc`, `insuredLimitFrom=x`, a malformed instant) is a
+framework `400` before the gate runs (divergence E9). The JSON text format of `registeredAt` comes from
+the application's Jackson configuration, and nothing in `src/main` pins it.
+
+### TC4. Approve a submission (BR-01, BR-33 to BR-43, BR-48)
+
+**Use case entry point.**
+
+| | |
+|---|---|
+| Class | `submission.domain.ApproveSubmissionUseCase` |
+| Constructor | `ApproveSubmissionUseCase(SubmissionCommandRepository commandRepository, SubmissionApprovalRepository approvalRepository, SubmissionEventPublisher eventPublisher, SubmissionIdGenerator idGenerator, Clock clock)` |
+| Method | `Result<SubmissionNumber, ApproveSubmissionError> execute(ActorContext actor, ApproveSubmissionCommand command)` |
+| Command | `record ApproveSubmissionCommand(SubmissionNumber submissionNumber)`; factory `static Result<ApproveSubmissionCommand, ApproveSubmissionError> parse(String rawNumber)`. Every parse failure is `SubmissionNotFound()` (BR-48) |
+| Success | `Success(SubmissionNumber)`, the command's number. The internal id is not returned (BR-47) |
+| Event | on success only, exactly one `SubmissionApproved` to `SubmissionEventPublisher.publish`: `eventId` from `nextEventId()`, the command's number, `actor.tenantId()`, `approvedBy = actor.actorId()`, and `occurredAt` = the same instant that was handed to the approval port. Nothing is published on failure (BR-40) |
+
+Error variants of `ApproveSubmissionError`. All three are fieldless:
+
+| Variant | Returned when | Rule |
+|---|---|---|
+| `SubmissionNotFound()` | `ApproveSubmissionCommand.parse` fails; or `findOwnByNumber(actor.tenantId(), number)` is empty; or the stored snapshot no longer parses | BR-35, BR-48 |
+| `ApproverRegisteredSubmission()` | the snapshot's `registeredBy` equals `actor.actorId()`. Checked before the approval port is called | BR-41 |
+| `SubmissionAlreadyApproved()` | returned by `SubmissionApprovalRepository.approve` and passed through unchanged | BR-36, BR-39 |
+
+Order inside `execute`: lookup by number in the caller's organisation, then the self-approval check,
+then `approve(actor.tenantId(), <the snapshot's id as SubmissionId>, actor, clock.instant())`. The
+clock is read only on the path that reaches the approval port. Caller not identified (BR-01) and role
+may not approve (BR-33) are the `AccessRefusal` of `Permission.approval(AccessPolicy)`.
+
+**HTTP endpoint.** `POST /api/submissions/{number}/approve`, no body. `{number}` is a `String` path
+variable. Spring does not convert it, and it is parsed only after the caller is admitted.
+
+| Outcome | Status | `type` | `detail`, as implemented |
+|---|---|---|---|
+| approved | `200` | — | body `{"submissionNumber": "<number>"}` |
+| caller not identified (BR-01) | `401` | `urn:problem-type:submission:caller-not-identified` | `The caller could not be identified.` |
+| role may not approve (BR-33) | `403` | `urn:problem-type:submission:permission-denied` | `The role VIEWER may not approve a submission.` |
+| submission not found (BR-35, BR-48) | `404` | `urn:problem-type:submission:submission-not-found` | `The submission was not found.` |
+| approver registered this submission (BR-41) | `403` | `urn:problem-type:submission:approver-registered-submission` | `The caller registered this submission and may not approve it.` |
+| already approved (BR-36, BR-39) | `409` | `urn:problem-type:submission:submission-already-approved` | `The submission is already approved.` |
+
+Every approval refusal is `application/problem+json` with `instance` set to the constant
+`/api/submissions/approval`, so no body echoes the path. **The `404` body is contract in full:** it is
+byte-identical for a malformed number, an unknown number and another organisation's number (BR-35,
+BR-43, BR-48). For the other outcomes the contract is the status and the `type`.
+
+### TC5. Outbound ports a test may replace with a fake
+
+All five are public interfaces in `submission.domain`. The right-hand column states what the
+production adapter does, so that a fake which does the same lets a use-case test stand in for an
+integration test.
+
+| Port | Methods | Used by | A fake behaves like the adapter when it |
+|---|---|---|---|
+| `SubmissionCommandRepository` | `Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed> insert(SubmissionSnapshot snapshot)`; `Optional<SubmissionSnapshot> findOwnByNumber(UUID tenantId, SubmissionNumber submissionNumber)` | register, approve | refuses `insert` with `NumberAlreadyUsed(snapshot.submissionNumber())` when the same `(tenantId, submissionNumber)` is held, compared exactly, and otherwise returns `new SubmissionId(snapshot.id())`; finds only within the given tenant |
+| `SubmissionApprovalRepository` | `Result<SubmissionId, ApproveSubmissionError> approve(UUID tenantId, SubmissionId submissionId, ActorContext actor, Instant approvedAt)` | approve | returns `Success(submissionId)` the first time a `submissionId` is approved, and `SubmissionAlreadyApproved()` every later time |
+| `SubmissionQueryRepository` | `List<SubmissionSummaryView> findPage(SubmissionSearchCriteria criteria, int limit, long offset)`; `long countMatching(SubmissionSearchCriteria criteria)` | search | matches `criteria.tenantId()` and every non-null criterion, with inclusive bounds and an exact number; orders newest `registeredAt` first; counts the whole match and ignores `limit` and `offset`; reports `APPROVED` only for an approved submission |
+| `SubmissionEventPublisher` | `void publish(SubmissionDomainEvent event)` | register, approve | records what it was handed |
+| `SubmissionIdGenerator` | `SubmissionId nextSubmissionId()`; `UUID nextEventId()` | register (both), approve (`nextEventId`) | returns fixed values |
+
+The read port's input is `record SubmissionSearchCriteria(UUID tenantId, @Nullable String
+submissionNumber, @Nullable BigDecimal insuredLimitFrom, @Nullable BigDecimal insuredLimitTo,
+@Nullable Instant registeredFrom, @Nullable Instant registeredTo)`.
+
+Also replaceable:
+
+- **`java.time.Clock`**, a constructor argument of both write use cases and a bean in the Spring
+  context.
+- **`AccessPolicy`**, which a test may implement and pass to `Permission.registration` or
+  `Permission.approval`.
+- **The caller identity at the web edge, `ActorContextResolver`.** It is a package-private class in
+  `submission.adapters.web`, its method `Optional<AuthenticatedCaller> resolve()` is package-private,
+  and in production it always returns `Optional.empty()`, so every request answers `401`. As
+  implemented, the only way to replace it is a subclass declared in package
+  `com.gs5.underwriting.submission.adapters.web`. An HTTP test therefore lives in that package. It
+  builds a resource through its package-private constructor:
+  `SubmissionCommandResource(RegisterSubmissionUseCase, ActorContextResolver, Permission)`,
+  `SubmissionQueryResource(SearchSubmissionsUseCase, ActorContextResolver)` or
+  `SubmissionApprovalResource(ApproveSubmissionUseCase, ActorContextResolver, Permission)`, or it
+  overrides the resolver bean in a Spring context. See gap G1.
+
+In a Spring context, a test may override by interface type the beans `SubmissionEventPublisher`,
+`SubmissionIdGenerator` and `Clock`, and, where a test needs it, the three repository ports.
+
+### TC6. What an `*IT` may read
+
+The schema is `V1` to `V3` as committed. There is no `V4`.
+
+| Object | Columns an IT may read | Constraints an IT may rely on |
+|---|---|---|
+| `submissions` | `id`, `tenant_id`, `submission_number`, `insured_limit`, `registered_by`, `registered_at`, `version` | `uq_submissions_tenant_submission_number` (BR-06, BR-08, BR-09); `ck_submissions_submission_number_not_empty` (BR-04); `ck_submissions_submission_number_no_control_chars` (BR-29; U+0000 is refused by the type itself); `ck_submissions_insured_limit_positive` (BR-11); `ck_submissions_insured_limit_scale` (BR-12); `uq_submissions_id_tenant` |
+| `submission_approvals` | `submission_id`, `tenant_id`, `approved_by`, `approved_at`, `version` | primary key on `submission_id` (BR-36, BR-39); `fk_submission_approvals_submission`, `(submission_id, tenant_id)` referencing `submissions (id, tenant_id)`, with no cascade |
+| `outbox_events` | `id`, `tenant_id`, `aggregate_id`, `topic`, `event_type`, `payload_json`, `created_at`, `processed_at`, `version` | **The submission module writes nothing here.** Events are published in-process through Spring's `ApplicationEventPublisher` (§12.1, still deferred), so an IT must not expect a row per event |
+| `inbox_events` | `event_id`, `topic`, `processed_at` | not used by this module |
+| `submission_current` (view) | — | **does not exist.** §20.3 and §20.4 specify it, and it is not implemented (D19). An IT must not reference it |
+
+An IT may inject the three use case beans (`RegisterSubmissionUseCase`, `SearchSubmissionsUseCase`,
+`ApproveSubmissionUseCase`) and the five ports by interface type. It may observe the published events
+as Spring application events of the two `SubmissionDomainEvent` record types. Fixture rows are created
+through the use cases or the port beans. A direct `INSERT` into the two tables is allowed only to test
+the database's own constraints (§19.12), and names only the columns listed above.
+
+### TC7. Not in the contract
+
+The developer may rename, restructure or delete the following. No test may depend on any of it.
+
+- **The aggregate** `Submission` (package-private) and all of its members: `register`, `reconstitute`,
+  `toSnapshot`, `registeredEvent`, `id`, `isRegisteredBy`.
+- **Value-object internals:** the private fields and constructors of `SubmissionNumber` and
+  `InsuredLimit`, the exact text of every `toString()` beyond the masking property of TC1, and
+  `RegisterSubmissionCommand.asRegistrationRefusal` (package-private).
+- **Persistence:** `SubmissionJdbcEntity`, `SubmissionApprovalJdbcEntity`, `SubmissionPersistenceMapper`,
+  `SubmissionSummaryJdbcProjection`, the interfaces `SubmissionCommandJdbcRepository`,
+  `SubmissionQueryJdbcRepository` and `SubmissionApprovalJdbcRepository` with their method names and
+  SQL text, and the classes `SubmissionCommandSqlAdapter`, `SubmissionQuerySqlAdapter` and
+  `SubmissionApprovalSqlAdapter`. This includes the public method
+  `SubmissionCommandSqlAdapter.findOwn(UUID, UUID)`, which is not on the port and exists only for
+  round-trip checks: an IT that needs the stored row reads `submissions`. The index names are not
+  contract either.
+- **Web internals:** `ApproveRefusal`, the private `RawSearchRequest`, the private fold and helper
+  methods, and the Java type names `RegisterSubmissionRequest`, `RegisteredSubmissionResponse` and
+  `ApprovedSubmissionResponse`. Their JSON shape is contract, and their names are not. The wording of
+  `detail`, except for the approval `404`. The `instance` of register and search problems.
+- **Wiring:** `SubmissionConfiguration`, its bean names (`approvalPermission`, `registrationPermission`,
+  `submissionAccessPolicy`, ...), where the gates are constructed, and `SpringSubmissionEventPublisher`.
+- **Call counts and order on the id generator,** beyond this: an event's `eventId` is a value that
+  `nextEventId()` returned.
+
+### TC8. Gaps in the contract
+
+- **G1. No public seam for the caller identity.** `ActorContextResolver` is package-private and is the
+  only way an HTTP request gets an identified caller. A flow test in a package of its own, as
+  `test-designer.agent.md` asks, can drive every use case and the access gate through public types, but
+  it cannot drive an HTTP endpoint with an identified caller. Closing this needs a design decision on a
+  public identity port. That decision is open here and is not made by this section.
+- **G2. The `Location` of `201` names a path with no `GET` handler.** A test may assert the header's
+  value, and must not follow it.
+- **G3. The JSON format of `Instant` fields** is the application's Jackson default, and nothing in
+  `src/main` pins it.
+
+### Divergences from design
+
+**Status of §19.11, checked against the code at HEAD.**
+
+| # | Still holds? | Evidence in `src/main` |
+|---|---|---|
+| D1 | no | `approve(@PathVariable String number)`; the gate admits first, then `ApproveSubmissionCommand.parse(number)` runs |
+| D2 | no | no UUID is read from the path; the number goes through `SubmissionNumber.parse` |
+| D3 | no | `Submission.isRegisteredBy(actor)` runs after the lookup and before `approve`. The method is named differently from §19.4's `approvableBy`, which is not contract |
+| D4 | no | three variants; `403` with `approver-registered-submission` |
+| D5 | no | `SubmissionNotFound()` is fieldless |
+| D6 | no | constant `detail`, and constant `instance` `/api/submissions/approval` |
+| D7 | no | `idGenerator.nextEventId()` |
+| D8 | no, in substance | `SubmissionState` is on the view, filled by a `LEFT JOIN` in `findPage`; `countMatching` has no join. It reads the tables, not `submission_current` (see D19) |
+| D9 | in a changed form | V3 at HEAD already holds the §19.8 target: composite key, `uq_submissions_id_tenant`, no cascade, no redundant index. It got there by an in-place edit (`44bc3de`; `5bf01b3` had the single-column cascading key and the redundant index), which §20.4 and §20.6 withdraw in favour of a restore plus V4. Carried by D19 |
+| D10 | no, for approval | `ApproveRefusal` and one switch. Registration still has two switches (E4) |
+| D11 | no | `isApproved` does not exist |
+| D12 | no | `reconstitute` re-parses and returns `Optional<Submission>` |
+| D13 | resolved as option 1 | `canDecide()` is kept and used for both operations, as §13 records. §16.5 still says it is deleted, which is stale text |
+| D14 | accepted | `AccessPolicy` exists |
+| D15 | decision | about tests, not `src/main`; not checked here |
+| D16 | partly | `findPage` still selects `s.id AS submission_id`, and `SubmissionSummaryJdbcProjection` still has `UUID submissionId`. It is not mapped into `SubmissionSummaryView`, so no response carries it |
+| D17, D18, D20 | design text only | the code is consistent: the number in the `201` body and in the events; lookup by `findOwnByNumber` |
+| D19 | yes | no `V4`, no `submission_current`, no append-only triggers, and no `submission_repositories_issue_only_inserts_and_selects` rule. V2 and V3 hold HEAD content, not the reviewed content |
+
+**Divergences that hold. The contract above is written as the code does it.**
+
+| Item | Design says | Code does | BR affected |
+|---|---|---|---|
+| D16 | the search does not select or map the internal id (§20.3) | `s.id AS submission_id` is selected and held in the projection, and dropped before the view | BR-47 (no response leaks it today) |
+| D19 | V2 and V3 restored to the reviewed content; V4 adds the rename, the composite key, the append-only triggers and the `submission_current` view; search reads the view (§20.3, §20.4) | V2 and V3 edited in place; no V4; search and count read `submissions` and `submission_approvals` directly | BR-44, BR-45, BR-46 |
+| E1 | `execute` returns `Result<SubmissionId, RegisterSubmissionError.NumberAlreadyUsed>` (§3.3) | `Result<SubmissionId, RegisterSubmissionError>`, widened with `.mapError(error -> error)` | BR-06, BR-09 (the type no longer proves that only the duplicate refusal can come out) |
+| E2 | `ActorContext` is a final class of `tenantId` and `actorId` with no role; `ActorRole` lives in `adapters/access` with no methods (§16.5) | `record ActorContext(UUID tenantId, String actorId, ActorRole role)`; `ActorRole` is in `shared.kernel` with `canDecide()` | BR-16, BR-02, BR-33 (a role check in `domain/` is not a build failure) |
+| E3 | gates are built only in `adapters/config`; raw use cases are not beans; ArchUnit A1 to A3 (§13, §16.4, §19.10 rule D) | the use cases are beans; each resource injects its raw use case and calls `new OperationGate<>(...)`; A1 to A3 are absent from `ArchitectureRulesTest` | BR-01, BR-02, BR-33 (the bypass protection is convention) |
+| E4 | one `RegisterRefusal` union folded by one switch with no `default` (§3.2, §13.1) | two switches, `refused(RegisterSubmissionError)` and `refusedAccess(AccessRefusal)`; no `RegisterRefusal` type | BR-01, BR-02, BR-04 to BR-06, BR-09 to BR-12, BR-29 (the nine-leaf completeness at one switch) |
+| E5 | register `403` has problem type `role-may-not-register` (§3.2, §13.2) | `permission-denied` | BR-02 |
+| E6 | `SubmissionSearchCriteria.number` is `@Nullable SubmissionNumber`; the `Narrowing` component is `number` (§5.1, §5.4) | `@Nullable String submissionNumber`; the component is `reference` | BR-30, BR-32 (store safety rests on the use case, not on the type) |
+| E7 | `approve(SubmissionApproval)`, error narrowed to `SubmissionAlreadyApproved`, with a masking `SubmissionApproval` record (§19.5, §19.11) | `approve(UUID tenantId, SubmissionId submissionId, ActorContext actor, Instant approvedAt)` returning `Result<SubmissionId, ApproveSubmissionError>`; no `SubmissionApproval` type | BR-36, BR-39 (an adapter could return any refusal); BR-42 (masking relies on `ActorContext.toString`) |
+| E8 | approval `execute` returns `Result<SubmissionId, ...>` (§19.4) | `Result<SubmissionNumber, ApproveSubmissionError>` | BR-47 (the code is the consistent one, and §19.4 is stale) |
+| E9 | the order is identify, then permission, then parse; framework conversion is a known residual (§16.3, Q1) | the JSON body and the typed query parameters are converted by Spring before `admit`, so unreadable input is a `400` before `401` or `403` | BR-01, BR-02; search's single refusal reason |
+
 ---
 
 Design written to `docs/adr/submission-registration-design.md`. Open a new chat and call

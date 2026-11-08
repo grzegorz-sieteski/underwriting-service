@@ -59,7 +59,7 @@ class SubmissionControlCharacterCheckIT {
 
     @AfterEach
     void emptyTheTable() {
-        jdbcTemplate.execute("TRUNCATE TABLE submission_approvals, submissions");
+        FactTables.clear(jdbcTemplate);
     }
 
     private void insertRaw(String submissionNumber) {
@@ -86,42 +86,39 @@ class SubmissionControlCharacterCheckIT {
         return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM submissions", Integer.class);
     }
 
-    @ParameterizedTest(name = "U+{0} inside a reference is rejected by the CHECK (23514)")
-    @ValueSource(strings = {"0085", "009F", "0001", "001F", "007F"})
-    @DisplayName("a control character written past the domain is rejected by the CHECK itself, "
-            + "including the upper range that [[:cntrl:]] misses")
-    void shouldRejectRowWhenExternalRefContainsControlCharacter(String hex) {
+    @ParameterizedTest(name = "SC-81: U+{0} inside a number is rejected by the CHECK (23514)")
+    @ValueSource(strings = {"0085", "009F", "0001", "001F", "007F", "0020", "00A0", "003B", "002F",
+            "002E", "0025", "005F", "007E", "0141", "1F600"})
+    @DisplayName("SC-81: a character that is not allowed, written past the domain, is rejected by the "
+            + "CHECK itself (BR-29 defence in depth, V4)")
+    void shouldRejectRowWhenNumberContainsCharacterNotAllowed(String hex) {
         // Given
-        var reference = "AB" + Character.toString(Integer.parseInt(hex, 16)) + "CD";
+        var number = "AB" + Character.toString(Integer.parseInt(hex, 16)) + "CD";
 
         // When
-        var thrown = catchThrowable(() -> insertRaw(reference));
+        var thrown = catchThrowable(() -> insertRaw(number));
 
         // Then
         assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
         assertThat(sqlStateOf(thrown)).isEqualTo(CHECK_VIOLATION);
-        assertThat(thrown).hasMessageContaining("ck_submissions_submission_number_no_control_chars");
+        assertThat(thrown).hasMessageContaining("ck_submissions_submission_number_allowed_chars");
         assertThat(rowCount()).isZero();
     }
 
-    @ParameterizedTest(name = "U+{0} inside a reference is accepted by the CHECK")
-    @ValueSource(strings = {"0020", "00A0"})
-    @DisplayName("SPACE and NO-BREAK SPACE are not control characters and pass the CHECK, so it "
-            + "is not one code point too wide")
-    void shouldAcceptRowWhenExternalRefContainsCharacterOutsideCc(String hex) {
-        // Given
-        var reference = "AB" + Character.toString(Integer.parseInt(hex, 16)) + "CD";
-
+    @ParameterizedTest(name = "SC-81: number {0} is accepted by the CHECK")
+    @ValueSource(strings = {"AB-CD", "abcd", "0123456789", "-", "Zz-09"})
+    @DisplayName("SC-81: ASCII letters, digits and the hyphen pass the CHECK, so it is not one "
+            + "character too narrow")
+    void shouldAcceptRowWhenNumberUsesOnlyAllowedCharacters(String number) {
         // When
-        insertRaw(reference);
+        insertRaw(number);
 
         // Then
         assertThat(jdbcTemplate.queryForObject(
-                "SELECT submission_number FROM submissions", String.class)).isEqualTo(reference);
+                "SELECT submission_number FROM submissions", String.class)).isEqualTo(number);
     }
-
     @Test
-    @DisplayName("U+0000 is rejected too — but by the driver/type, NOT by the CHECK")
+    @DisplayName("SC-81: U+0000 is rejected too — but by the driver/type, NOT by the CHECK")
     void shouldRejectRowWhenExternalRefContainsNulButNotByTheCheck() {
         // Given: a text column cannot hold U+0000 at all, so PgJDBC refuses the parameter before
         // the statement executes. That is why the CHECK's class starts at \x01, not \x00 — and

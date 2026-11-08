@@ -84,7 +84,7 @@ class ActorContextTest {
     }
 
     @Test
-    @DisplayName("only underwriter roles may decide")
+    @DisplayName("SC-75: only underwriter roles may decide")
     void shouldAllowDecisionsOnlyForUnderwriterRolesWhenCanDecideChecked() {
         // Given & When & Then
         assertThat(ActorRole.VIEWER.canDecide()).isFalse();

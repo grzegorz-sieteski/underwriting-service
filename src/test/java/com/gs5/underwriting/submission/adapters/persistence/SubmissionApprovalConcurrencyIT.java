@@ -90,12 +90,11 @@ class SubmissionApprovalConcurrencyIT {
 
     @AfterEach
     void removeRows() {
-        jdbcTemplate.update("DELETE FROM submission_approvals");
-        jdbcTemplate.update("DELETE FROM submissions");
+        FactTables.clear(jdbcTemplate);
     }
 
     @Test
-    @DisplayName("two concurrent approvals record exactly one approval and announce exactly one event (BR-36, BR-39, BR-40)")
+    @DisplayName("SC-61: two concurrent approvals record exactly one approval and announce exactly one event (BR-36, BR-39, BR-40)")
     void twoConcurrentApprovalsRecordOneRowAndOneEvent() throws Exception {
         for (int round = 0; round < ROUNDS; round++) {
             var submissionId = UUID.randomUUID();

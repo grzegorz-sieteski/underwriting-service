@@ -124,7 +124,7 @@ class SubmissionCommandSqlAdapterIT {
     class InsertingANewAggregate {
 
         @Test
-        @DisplayName("the row is inserted and its version is NOT NULL afterwards, which is the "
+        @DisplayName("SC-82: the row is inserted and its version is NOT NULL afterwards, which is the "
                 + "trap the @Version @Nullable Long design exists for")
         void shouldInsertRowAndSetVersionWhenAggregateIsNew() {
             // Given
@@ -146,7 +146,7 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("every supplied field reaches the row exactly as supplied, scale included")
+        @DisplayName("SC-82: every supplied field reaches the row exactly as supplied, scale included")
         void shouldStoreEveryFieldExactlyAsSuppliedWhenInsertingNewAggregate() {
             // Given
             var id = UUID.randomUUID();
@@ -170,12 +170,12 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("a whitespace-only reference reaches the row untouched, because BR-07 applies "
-                + "no trimming and the CHECK only forbids a reference of length zero")
-        void shouldStoreWhitespaceOnlyReferenceUntouchedWhenInserting() {
+        @DisplayName("SC-79: a number of a single hyphen reaches the row untouched: it is present, "
+                + "uses only allowed characters, and BR-07 applies no normalisation")
+        void shouldStoreSingleHyphenNumberUntouchedWhenInserting() {
             // Given
             var id = UUID.randomUUID();
-            var snapshot = newSnapshot(id, TENANT_A, "   ", "1200.00");
+            var snapshot = newSnapshot(id, TENANT_A, "-", "1200.00");
 
             // When
             var result = adapter.insert(snapshot);
@@ -183,7 +183,7 @@ class SubmissionCommandSqlAdapterIT {
             // Then
             assertThat(result.isSuccess()).isTrue();
             assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored ->
-                    assertThat(stored.submissionNumber()).isEqualTo("   "));
+                    assertThat(stored.submissionNumber()).isEqualTo("-"));
         }
     }
 
@@ -192,7 +192,7 @@ class SubmissionCommandSqlAdapterIT {
     class SnapshotRoundTrip {
 
         @Test
-        @DisplayName("the version survives both directions: out through the mapper into the row, "
+        @DisplayName("SC-82: the version survives both directions: out through the mapper into the row, "
                 + "back through the mapper, and through reconstitute()")
         void shouldPreserveVersionInBothDirectionsWhenRoundTrippingSnapshot() {
             // Given
@@ -213,7 +213,7 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("the whole snapshot survives the round trip, not merely the version")
+        @DisplayName("SC-82: the whole snapshot survives the round trip, not merely the version")
         void shouldPreserveWholeSnapshotWhenRoundTrippingThroughMapperAndAggregate() {
             // Given
             var id = UUID.randomUUID();
@@ -229,7 +229,7 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("a row of another organisation is not loadable, so the read-back is tenant "
+        @DisplayName("SC-85: a row of another organisation is not loadable, so the read-back is tenant "
                 + "filtered like every other statement (BR-17)")
         void shouldNotLoadRowWhenTenantBelongsToAnotherOrganisation() {
             // Given
@@ -249,7 +249,7 @@ class SubmissionCommandSqlAdapterIT {
     class Uniqueness {
 
         @Test
-        @DisplayName("a duplicate (tenant_id, submission_number) inserts nothing and is refused as "
+        @DisplayName("SC-83: a duplicate (tenant_id, submission_number) inserts nothing and is refused as "
                 + "already used")
         void shouldRefuseInsertionAndReturnAlreadyUsedWhenDuplicateReferenceInserted() {
             // Given
@@ -267,7 +267,7 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("the earlier row is left completely untouched by the refused duplicate: "
+        @DisplayName("SC-83: the earlier row is left completely untouched by the refused duplicate: "
                 + "ON CONFLICT DO NOTHING must not become DO UPDATE")
         void shouldLeaveEarlierRowUntouchedWhenDuplicateReferenceRefused() {
             // Given
@@ -283,7 +283,7 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("a refused duplicate leaves the session usable, which a caught "
+        @DisplayName("SC-83: a refused duplicate leaves the session usable, which a caught "
                 + "DuplicateKeyException inside a transaction would not")
         void shouldKeepSessionUsableWhenDuplicateReferenceIsRefused() {
             // Given
@@ -301,7 +301,7 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("the identical reference under a DIFFERENT tenant_id inserts normally: "
+        @DisplayName("SC-84: the identical reference under a DIFFERENT tenant_id inserts normally: "
                 + "uniqueness never crosses organisations (BR-08)")
         void shouldInsertSuccessfullyWhenSameReferenceUnderDifferentTenant() {
             // Given
@@ -317,7 +317,7 @@ class SubmissionCommandSqlAdapterIT {
         }
 
         @Test
-        @DisplayName("references differing only in letter case are different references, which is "
+        @DisplayName("SC-84: references differing only in letter case are different references, which is "
                 + "what COLLATE \"C\" on the column protects (BR-07)")
         void shouldTreatReferencesDifferingOnlyInCaseAsDistinctWhenInserting() {
             // Given

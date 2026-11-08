@@ -1,9 +1,13 @@
 # submission-registration
 
-Stage: 6 · Status: **APPROVED by both reviewers at `566b76e`** — with the release conditions below
-Updated: 2026-11-02
+Stage: 6 · Status: **blockers R-01 and R-02 fixed in revision 7; re-review `[CHANGES REQUIRED]` addressed (2026-11-08)**
+Updated: 2026-11-08
 
-Scope: register an insurance submission, and search submissions by filter.
+The approval at `566b76e` covered registration and search only. Approval, latest state and the
+submission number (BR-33..BR-48) were reviewed for the first time on 2026-11-08; see the last
+section.
+
+Scope: register an insurance submission, search submissions by filter, approve a submission.
 First business module in this repository.
 
 ## Confirmed business decisions
@@ -584,6 +588,73 @@ again. Not fixed in this entry.
 - **Stubs and contracts for test-first work live only in `src/test`.** Nothing that is a stub
   is placed in `src/main`. Consequence for the test designer: tests may reference only types that
   already exist in `src/main`, or types the test tree itself defines.
+- **Refined later the same day (commit `bedd141`):** types belong in `src/main`, test doubles in
+  `src/test`. The test designer writes the scenario catalogue and tests only, through the design's
+  Test contract, and never writes `src/main`. The developer writes the contract as an uncommitted
+  skeleton (stage 4a), and the skeleton gate proves every NEW test fails against it.
+
+## Stage 6 on the approval feature — first review, 2026-11-08
+
+Scope: commits `0b90859`, `5e5c5f8`, `44bc3de` and `main` at `bedd141`. Reviewers ran
+independently, read-only. `@code-reviewer` ran `./mvnw -B test -Dtest='*Test'` (423 tests, green)
+and probes against compiled classes; `@sec-reviewer` ran nothing. ITs were not run by either.
+
+**`@code-reviewer`: `[REJECTED — BLOCKER]`. `@sec-reviewer`: `[REJECTED — BLOCKER]`.**
+
+| ID | Source | Severity | Finding | Failing test written? |
+|---|---|---|---|---|
+| R-01 | code + sec (S4) | BLOCKER | A number containing `;` approves a different submission: `POST /api/submissions/REF;1/approve` approves `REF` (Spring strips matrix parameters from `{number}`). Verified with MockMvc by the code reviewer. A number containing `/` can never be approved. Breaks BR-07, BR-35, BR-36. Needs an architect decision on how a number travels in the path. | no |
+| R-02 | sec (S1) + code (4) | BLOCKER | Append-only (BR-44..46) is not enforced: no V4, no trigger, no `submission_current` view, no ArchUnit rule, no IT. The service role can UPDATE/DELETE/TRUNCATE facts, e.g. delete an approval and approve again. Blocked on Q15. | no |
+| R-03 | sec (S2) | CRITICAL | Flyway runs on the service datasource, so the service role owns the tables; grants cannot restrict an owner, who can also disable a trigger. Needs a separate migration role. | no |
+| R-04 | code (3) + sec (S3) | CRITICAL | V2 and V3 edited in place after review (`44bc3de`); Flyway checksum mismatch on any database migrated at `5bf01b3`. Same as Q15. | no |
+| R-05 | code (2) | CRITICAL | ArchUnit rule C (§19.10) is vacuous again: it names `SubmissionId` in the `SubmissionApproved` constructor, which now takes `SubmissionNumber`. Proven by probe. Breaks BR-40. | no |
+| R-06 | code (6) | CRITICAL | Nothing tests the content of `SubmissionApproved` (approver, time, event id, BR-37) or its masked `toString` (BR-42). | no |
+| R-07 | code (5) | CRITICAL (design) | D16 open: search selects the internal id into the projection (BR-47); nothing leaks today. | no |
+| R-08 | code (7, 8, 9) | WARNING | Approval port shape differs from §19.5 (full error hierarchy, no `SubmissionApproval` record); imperative use case; public test-only `SubmissionCommandSqlAdapter.findOwn`. | n/a |
+| R-09 | sec (S5, S6) | LOW | BR-41 not re-asserted in the insert (only matters with R-02); default `toString` on JDBC records holding actor ids (no logging exists today). | n/a |
+| R-10 | sec (S7) | INFO | Register and search bind body and typed query parameters before the gate (known, design §16.3 Q1). | n/a |
+
+Checked and found correct by both: identity never from headers, resolver fails closed (401);
+order identify → permission → parse → execute on approve; malformed, unknown and other-tenant
+numbers return one identical 404; self-approval before already-approved; 409 decided by the
+primary key; bound SQL parameters only; no logging in `src/main`.
+
+The architect added a **Test contract** section to the design (TC1–TC8) with divergences E1–E9 and
+gaps G1–G3. G1: `ActorContextResolver` is package-private and always empty in production, so HTTP
+tests can only live in `adapters.web`; a public identity port is a design decision still open.
+
+**Next:** per the feedback rule, back to stage 3. `@test-designer` writes failing tests for
+R-01, R-05, R-06 (and R-02/R-03 once Q15 is answered); `@architect` decides R-01's path encoding
+first. Q15–Q17 remain with the product owner.
 
 Still open before the migration (V4) can be written: Q15 (which migration content each database
 has applied), Q16 (is removal in scope), Q17 (may a caller read a submission's history).
+
+## Revision 7 — 2026-11-08 (product owner: "no special characters", V4, no migration role, public adapters)
+
+| Commit | Stage | Content |
+|---|---|---|
+| `4bcb9d2` | 3 (RED, pinned) | spec BR-29/BR-30 rewritten, design section 21, catalogue rows, tests. Does not compile alone |
+| — | 4a | contract renames only; 63 tests failed against it, every NEW scenario among them |
+| `83fff51` | 4b (GREEN) | allow list, raw approval path (R-01), V4 triggers and `submission_current` (R-02, R-07), public adapters (G1) |
+| `6f13832` | 3 (review fixes, pinned) | SC-89 precise (42501 and 23503), rule C covers constructor references, gates frozen in green |
+| `37c5414` | 4 | V4 index for the new search order |
+
+Verified by the orchestrator, not taken on report: green gate run from the pinned baseline's copy,
+`clean verify` 544 tests, 0 failures, 0 Checkstyle violations. Deliberate breaks failed the build
+for rule C (a call and a `::new` reference) and for the append-only ArchUnit rule; the green gate
+failed on an edited `scripts/check-write-lock.sh`.
+
+Re-review of `4bcb9d2..83fff51` (code and security, read-only): `[CHANGES REQUIRED]`, no blocker.
+R-01, R-02, R-05, R-06, R-07 confirmed fixed by reading. Findings 1, 2, 4-8 fixed above. Open:
+
+| ID | Severity | Item |
+|---|---|---|
+| RR-3 | WARNING | 10 GAP scenarios remain (register/search HTTP edge SC-27..32, SC-51, SC-52; SC-66, SC-67); `trace` fails until they have tests. The renamed problem type `number-contains-character-not-allowed` has no HTTP test (SC-30) |
+| RR-T | unverified | R-01 on real Tomcat: only MockMvc ran. Servlet contract says `getRequestURI` keeps `;` undecoded; a `RANDOM_PORT` test would close it |
+| R-03 | accepted | the service owns the tables; an owner can disable the trigger. Separate migration role deferred until production |
+| R-08..R-10 | WARNING/LOW/INFO | unchanged from the first review |
+
+Q15 answered: not in production, so V2/V3 stay as they are and V4 builds on them. Q16, Q17 remain
+open (removal in scope; may a caller read history).
+

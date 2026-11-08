@@ -82,7 +82,7 @@ class SubmissionRegistrationAdversarialTest {
     @DisplayName("Amount scale, at and past every notational edge (BR-11, BR-12, BR-13)")
     class AmountNotation {
 
-        @ParameterizedTest(name = "[{index}] literal={0}, expectedScale={1}")
+        @ParameterizedTest(name = "SC-18: [{index}] literal={0}, expectedScale={1}")
         @CsvSource({
             "1.2E+3, -2",
             "1.2E+1, 0",
@@ -90,31 +90,31 @@ class SubmissionRegistrationAdversarialTest {
             "1E+10, -10",
             "1200E+0, 0",
         })
-        @DisplayName("scientific notation is refused on the SCALE IT ACTUALLY HAS, which is "
+        @DisplayName("SC-18: scientific notation is refused on the SCALE IT ACTUALLY HAS, which is "
                 + "NEGATIVE: a check written as 'reject if scale > 2' would accept every one of "
                 + "these")
         void shouldRefuseRegistrationWhenScientificNotationHasNegativeScale(String literal,
                                                                            int expectedScale) {
             // Given & When & Then
             assertThat(new BigDecimal(literal).scale()).isEqualTo(expectedScale);
-            assertThat(register("SCI-" + literal, literal)).isEqualTo(
+            assertThat(register("SCI-1", literal)).isEqualTo(
                     Result.failure(new RegisterSubmissionError.InsuredLimitPrecisionInvalid(
                             2, expectedScale)));
         }
 
-        @ParameterizedTest(name = "[{index}] literal={0}")
+        @ParameterizedTest(name = "SC-18: [{index}] literal={0}")
         @ValueSource(strings = {"120000E-2", "1.20000E+3", "0.0120E+2"})
-        @DisplayName("an exponent form whose resulting scale IS 2 is accepted, because BR-12 is a "
+        @DisplayName("SC-18: an exponent form whose resulting scale IS 2 is accepted, because BR-12 is a "
                 + "rule about the scale as supplied and not about how the caller spelled it")
         void shouldAcceptRegistrationWhenExponentFormProducesScaleTwo(String literal) {
             // Given & When & Then
             assertThat(new BigDecimal(literal).scale()).isEqualTo(2);
-            assertThat(register("SCI-OK-" + literal, literal)).isEqualTo(Result.success(
+            assertThat(register("SCI-OK-1", literal)).isEqualTo(Result.success(
                     EXPECTED_ID));
         }
 
         @Test
-        @DisplayName("an amount with 400 significant digits and scale 2 is accepted: BR-13 says "
+        @DisplayName("SC-19: an amount with 400 significant digits and scale 2 is accepted: BR-13 says "
                 + "there is no upper bound and none may be introduced")
         void shouldAcceptRegistrationWhenAmountHas400DigitsWithoutUpperBound() {
             // Given
@@ -132,7 +132,7 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("an amount with an absurd exponent is refused cheaply, on its scale, without "
+        @DisplayName("SC-18: an amount with an absurd exponent is refused cheaply, on its scale, without "
                 + "ever being expanded into digits")
         void shouldRefuseRegistrationWhenExponentIsAbsurdWithoutExpandingDigits() {
             // Given & When
@@ -144,13 +144,13 @@ class SubmissionRegistrationAdversarialTest {
                             2, -2_000_000_000)));
         }
 
-        @ParameterizedTest(name = "[{index}] literal={0}")
+        @ParameterizedTest(name = "SC-15: [{index}] literal={0}")
         @ValueSource(strings = {"-0.00", "0.00", "-0.01", "-99999999999999999999.00"})
-        @DisplayName("zero in any spelling, and every negative amount, is refused as not positive "
+        @DisplayName("SC-15: zero in any spelling, and every negative amount, is refused as not positive "
                 + "and never as imprecise")
         void shouldRefuseRegistrationWhenAmountIsZeroOrNegativeInAnySpelling(String literal) {
             // Given & When
-            var result = register("NP-" + literal, literal);
+            var result = register("NP-1", literal);
 
             // Then
             assertThat(result).isEqualTo(
@@ -158,7 +158,7 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("the smallest accepted amount is 0.01, and the amount one step below it is "
+        @DisplayName("SC-16: the smallest accepted amount is 0.01, and the amount one step below it is "
                 + "refused on its scale rather than on its sign")
         void shouldAcceptSmallestValidAmountAndRefuseBelowOnScale() {
             // Given & When & Then
@@ -171,26 +171,24 @@ class SubmissionRegistrationAdversarialTest {
     // ================================================================ number boundary
 
     @Nested
-    @DisplayName("The 64-code-point reference limit, exactly at and one past (BR-05)")
+    @DisplayName("The 64-character number limit, exactly at and one past (BR-05)")
     class ReferenceLength {
 
         @Test
-        @DisplayName("64 code points occupying 128 UTF-16 chars are accepted: the limit is counted "
-                + "in code points, so String.length() would wrongly report 128")
-        void shouldAcceptRegistrationWhenReferenceHas64CodePointsIn128Chars() {
+        @DisplayName("SC-07: 64 allowed characters are accepted")
+        void shouldAcceptRegistrationWhenNumberHas64Characters() {
             // Given
-            var reference = "😀".repeat(64);
+            var number = "A1-".repeat(21) + "Z";
 
             // When & Then
-            assertThat(reference.length()).isEqualTo(128);
-            assertThat(reference.codePointCount(0, reference.length())).isEqualTo(64);
-            assertThat(registerAs(underwriterOf(TENANT_A), reference, VALID_LIMIT))
+            assertThat(number.length()).isEqualTo(64);
+            assertThat(registerAs(underwriterOf(TENANT_A), number, VALID_LIMIT))
                     .isEqualTo(Result.success(EXPECTED_ID));
         }
 
         @Test
-        @DisplayName("65 code points occupying 130 UTF-16 chars are refused, and the length "
-                + "reported to the caller is 65 and not 130")
+        @DisplayName("SC-08: 65 code points occupying 130 UTF-16 chars are refused as too long, and the "
+                + "length reported to the caller is 65 and not 130")
         void shouldRefuseRegistrationWhenReferenceHas65CodePoints() {
             // Given
             var reference = "😀".repeat(65);
@@ -204,24 +202,11 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("64 code points made of base letters plus COMBINING marks are accepted, "
-                + "although they render as only 32 visible characters")
-        void shouldAcceptRegistrationWhenCombiningMarksTotal64CodePoints() {
-            // Given
-            var reference = "é".repeat(32);
-
-            // When & Then
-            assertThat(reference.codePointCount(0, reference.length())).isEqualTo(64);
-            assertThat(registerAs(underwriterOf(TENANT_A), reference, VALID_LIMIT))
-                    .isEqualTo(Result.success(EXPECTED_ID));
-        }
-
-        @Test
-        @DisplayName("33 base-plus-combining pairs is 66 code points and is refused, reported as "
-                + "66 rather than as the 33 graphemes the caller sees")
+        @DisplayName("SC-08: 33 base-plus-combining pairs is 66 code points and is refused as too long, "
+                + "reported as 66 rather than as the 33 graphemes the caller sees")
         void shouldRefuseRegistrationWhenCombiningMarksTotal66CodePoints() {
             // Given
-            var reference = "é".repeat(33);
+            var reference = "e\u0301".repeat(33);
 
             // When
             var result = registerAs(underwriterOf(TENANT_A), reference, VALID_LIMIT);
@@ -232,8 +217,9 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("an unpaired surrogate counts as one code point and does not crash the count")
-        void shouldCountUnpairedSurrogateAsCodePointWithoutCrashing() {
+        @DisplayName("SC-09: an unpaired surrogate is a character that is not allowed and does not crash "
+                + "the scan")
+        void shouldRefuseUnpairedSurrogateWithoutCrashing() {
             // Given
             var reference = "A\uD83DB";
 
@@ -241,42 +227,42 @@ class SubmissionRegistrationAdversarialTest {
             var result = registerAs(underwriterOf(TENANT_A), reference, VALID_LIMIT);
 
             // Then
-            assertThat(result).isEqualTo(Result.success(EXPECTED_ID));
+            assertThat(result).isEqualTo(Result.<SubmissionId, RegisterSubmissionError>failure(
+                    new RegisterSubmissionError.NumberContainsCharacterNotAllowed(0xD83D, 1)));
         }
     }
 
     @Nested
-    @DisplayName("What a reference may contain — control characters are the ONE restriction "
-            + "(BR-04, BR-07, BR-29)")
+    @DisplayName("What a number may contain: ASCII letters, digits and the hyphen only (BR-04, BR-07, "
+            + "BR-29)")
     class ReferenceCharacterSet {
 
-        @ParameterizedTest(name = "[{index}] reference=\"{0}\"")
+        @ParameterizedTest(name = "SC-10: [{index}] reference=\"{0}\"")
         @ValueSource(strings = {" ", "    ", "        "})
-        @DisplayName("SPACES alone are a VALID reference: BR-04 refuses a reference with no "
-                + "characters, and BR-29 did not touch SPACE because it is not a control character")
-        void shouldAcceptRegistrationWhenReferenceConsistsOnlyOfSpaces(String reference) {
+        @DisplayName("SC-10: spaces alone are refused: present, so not missing, but a space is not "
+                + "allowed (BR-29, revision of 2026-11-08)")
+        void shouldRefuseRegistrationWhenReferenceConsistsOnlyOfSpaces(String reference) {
             // Given & When & Then
             assertThat(registerAs(underwriterOf(TENANT_A), reference, VALID_LIMIT))
-                    .isEqualTo(Result.success(EXPECTED_ID));
+                    .isEqualTo(Result.<SubmissionId, RegisterSubmissionError>failure(
+                            new RegisterSubmissionError.NumberContainsCharacterNotAllowed(0x0020, 0)));
         }
 
-        @ParameterizedTest(name = "[{index}] codePoint={0}, index={1}")
+        @ParameterizedTest(name = "SC-09: [{index}] codePoint={0}, index={1}")
         @CsvSource({"9, 0", "10, 0", "13, 0"})
-        @DisplayName("a reference of a lone TAB, NEWLINE or CARRIAGE RETURN is now REFUSED, "
-                + "reversing what this class previously pinned as valid (BR-29)")
+        @DisplayName("SC-09: a number of a lone TAB, NEWLINE or CARRIAGE RETURN is refused (BR-29)")
         void shouldRefuseRegistrationWhenReferenceIsLoneControlCharacter(int codePoint, int index) {
             // Given & When & Then
             assertThat(registerAs(underwriterOf(TENANT_A), Character.toString(codePoint),
                     VALID_LIMIT))
                     .isEqualTo(Result.<SubmissionId, RegisterSubmissionError>failure(
-                            new RegisterSubmissionError.NumberContainsControlCharacter(
+                            new RegisterSubmissionError.NumberContainsCharacterNotAllowed(
                                      codePoint, index)));
         }
 
         @Test
-        @DisplayName("FINDING QA-02, now CLOSED — a reference containing U+0000 is REFUSED by the "
-                + "domain, so the input that used to reach a VARCHAR that cannot store it never "
-                + "leaves the business core at all")
+        @DisplayName("SC-09: FINDING QA-02 stays closed: a number containing U+0000 is refused by the "
+                + "domain, so it never reaches a VARCHAR that cannot store it")
         void shouldRefuseRegistrationWhenReferenceContainsNulByte() {
             // Given
             var reference = "ABC\u0000DEF";
@@ -286,40 +272,41 @@ class SubmissionRegistrationAdversarialTest {
 
             // Then
             assertThat(result).isEqualTo(Result.<SubmissionId, RegisterSubmissionError>failure(
-                    new RegisterSubmissionError.NumberContainsControlCharacter(
+                    new RegisterSubmissionError.NumberContainsCharacterNotAllowed(
                             0x0000, 3)));
             assertThat(repository.storedSubmission(TENANT_A, reference)).isEmpty();
             assertThat(repository.storedCount()).isZero();
         }
 
-        @ParameterizedTest(name = "[{index}] reference={0}")
-        @ValueSource(strings = {
-            "'; DROP TABLE submissions; --",
-            "' OR 1=1 --",
-            "<script>alert(1)</script>",
-            "{{7*7}}",
-            "../../etc/passwd",
-            "%00",
-            "‮exe.txt",
+        @ParameterizedTest(name = "SC-06: [{index}] reference={0}")
+        @CsvSource(delimiter = '|', quoteCharacter = '"', value = {
+            "'; DROP TABLE submissions; -- | 0027 | 0",
+            "' OR 1=1 --                   | 0027 | 0",
+            "<script>alert(1)</script>     | 003C | 0",
+            "{{7*7}}                       | 007B | 0",
+            "../../etc/passwd              | 002E | 0",
+            "%00                           | 0025 | 0",
+            "REF;1                         | 003B | 3",
+            "‮exe.txt                      | 202E | 0"
         })
-        @DisplayName("an injection-shaped reference is stored verbatim and matches only itself: "
-                + "BR-07 forbids normalisation, and every statement binds parameters")
-        void shouldStoreInjectionShapedReferencesVerbatimWithoutEvaluation(String reference) {
+        @DisplayName("SC-06: an injection-shaped number is refused at its first character that is not "
+                + "allowed, so none of these inputs is ever stored")
+        void shouldRefuseInjectionShapedNumbers(String reference, String hexCodePoint, int index) {
             // Given & When & Then
             assertThat(registerAs(underwriterOf(TENANT_A), reference, VALID_LIMIT))
-                    .isEqualTo(Result.success(EXPECTED_ID));
-            assertThat(repository.storedSubmission(TENANT_A, reference))
-                    .get()
-                    .satisfies(stored -> assertThat(stored.submissionNumber()).isEqualTo(reference));
+                    .isEqualTo(Result.<SubmissionId, RegisterSubmissionError>failure(
+                            new RegisterSubmissionError.NumberContainsCharacterNotAllowed(
+                                    Integer.parseInt(hexCodePoint, 16), index)));
+            assertThat(repository.storedCount()).isZero();
         }
 
         @Test
-        @DisplayName("references that differ only by Unicode normal form are DIFFERENT references, "
-                + "because BR-07 applies no normalisation of any kind")
-        void shouldTreatUnicodeNormalFormsAsDistinctReferencesWithoutFolding() {
+        @DisplayName("SC-05: numbers differing only in letter case are different numbers, because "
+                + "BR-07 applies no normalisation of any kind")
+        void shouldTreatCaseVariantsAsDistinctNumbersWithoutFolding() {
             // Given & When
-            var first = registerAs(underwriterOf(TENANT_A), "café", VALID_LIMIT);
-            var second = registerAs(underwriterOf(TENANT_A), "café", VALID_LIMIT);
+            var first = registerAs(underwriterOf(TENANT_A), "CAFE-1", VALID_LIMIT);
+            var second = registerAs(underwriterOf(TENANT_A), "cafe-1", VALID_LIMIT);
 
             // Then
             assertThat(first.isSuccess()).isTrue();
@@ -335,7 +322,7 @@ class SubmissionRegistrationAdversarialTest {
     class Races {
 
         @Test
-        @DisplayName("64 registrations racing for ONE reference in ONE organisation record exactly "
+        @DisplayName("SC-22: 64 registrations racing for ONE reference in ONE organisation record exactly "
                 + "one row and announce exactly one fact; the other 63 are refused as already used")
         void shouldRecordExactlyOneRowWhen64RegistrationsRaceForSingleReference() {
             // Given
@@ -364,7 +351,7 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("the SAME reference racing across TWO organisations records one row EACH: "
+        @DisplayName("SC-21: the SAME reference racing across TWO organisations records one row EACH: "
                 + "uniqueness never crosses an organisation, not even under contention (BR-08)")
         void shouldRecordOneRowPerOrganizationWhenSameReferenceRacesAcrossTwoOrganizations() {
             // Given & When
@@ -391,7 +378,7 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("each racing registration is announced at most once, so a refused loser never "
+        @DisplayName("SC-94: each racing registration is announced at most once, so a refused loser never "
                 + "reaches the publisher")
         void shouldNeverAnnounceEventWhenRegistrationLosesRace() {
             // Given
@@ -425,14 +412,14 @@ class SubmissionRegistrationAdversarialTest {
         private static final String ACTOR = "uw-secret-identity";
 
         @Test
-        @DisplayName("every one of the seven domain refusal reasons, instantiated and printed, "
+        @DisplayName("SC-24: every one of the seven domain refusal reasons, instantiated and printed, "
                 + "discloses neither the amount nor the actor")
         void shouldNeverDiscloseAmountOrActorInAnyWriteSideRefusalReason() {
             // Given
             var everyVariant = List.<RegisterSubmissionError>of(
                     new RegisterSubmissionError.NumberMissing(),
                     new RegisterSubmissionError.NumberTooLong(64, 65),
-                    new RegisterSubmissionError.NumberContainsControlCharacter(0x0000, 3),
+                    new RegisterSubmissionError.NumberContainsCharacterNotAllowed(0x0000, 3),
                     new RegisterSubmissionError.InsuredLimitMissing(),
                     new RegisterSubmissionError.InsuredLimitNotPositive(),
                     new RegisterSubmissionError.InsuredLimitPrecisionInvalid(2, 3),
@@ -448,7 +435,7 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("the whole pipeline — command, snapshot and event — hides the amount and the "
+        @DisplayName("SC-25: the whole pipeline — command, snapshot and event — hides the amount and the "
                 + "actor while still carrying both to their legitimate consumers")
         void shouldMaskAmountAndActorAcrossEntirePipelineWhileRetainingValues() {
             // Given
@@ -474,7 +461,7 @@ class SubmissionRegistrationAdversarialTest {
         }
 
         @Test
-        @DisplayName("the submission id discloses nothing because it carries nothing: it is a "
+        @DisplayName("SC-26: the submission id discloses nothing because it carries nothing: it is a "
                 + "UUID, and printing it is how audit correlates the row")
         void shouldExposeFullUuidWhenSubmissionIdPrinted() {
             // Given & When & Then

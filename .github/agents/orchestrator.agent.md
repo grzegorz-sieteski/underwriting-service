@@ -39,7 +39,21 @@ after stage 6. A non-compiling commit never lands on `main`.
 
 ## Detecting a crossed boundary
 
-Run `scripts/check-write-lock.sh <phase>` — or the equivalent `git diff` — after every stage.
+At every hand-over, once you have verified a stage on a clean, committed tree, run
+`scripts/check-write-lock.sh pin`. The next stage's gate compares against that pinned commit,
+never against `HEAD`: against `HEAD`, an agent that commits its forbidden edit empties the diff
+and passes. The gates refuse to run without a pin.
+
+Run the gate **from the baseline's copy**, never from the working tree, so a stage cannot certify
+itself with a script it edited:
+
+```bash
+git show "$(cat "$(git rev-parse --git-dir)/sdlc-baseline")":scripts/check-write-lock.sh | bash -s <phase>
+```
+
+Run `scripts/check-write-lock.sh <phase>` after every stage, and
+`scripts/check-write-lock.sh trace {feature}` before stage 6: every `BR-xx` has a scenario and
+every scenario has a test.
 The separation of duties exists because an agent that can edit both the test and the code will,
 under pressure, change the assertion rather than fix the bug. That failure is silent and it is
 the whole reason this process exists.

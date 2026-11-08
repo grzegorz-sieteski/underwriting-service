@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * The database, not the application, is the last line of defence for approval (design section 19.8,
@@ -53,7 +54,7 @@ class SubmissionApprovalSchemaIT {
     class ApprovalRowConstraints {
 
         @Test
-        @DisplayName("an approval cannot name a submission that belongs to another organisation (BR-17, D9)")
+        @DisplayName("SC-88: an approval cannot name a submission that belongs to another organisation (BR-17, D9)")
         void anApprovalCannotReferenceASubmissionOfAnotherTenant() {
             var submission = insertSubmission(TENANT_A, "REF-1");
 
@@ -62,17 +63,36 @@ class SubmissionApprovalSchemaIT {
         }
 
         @Test
-        @DisplayName("deleting an approved submission is refused, not cascaded into its approval (D9)")
-        void deletingAnApprovedSubmissionIsRefusedNotCascaded() {
+        @DisplayName("SC-89: deleting an approved submission is refused by the append-only trigger, as "
+                + "insufficient privilege (BR-44)")
+        void deletingAnApprovedSubmissionIsRefusedByTheAppendOnlyTrigger() {
             var submission = insertSubmission(TENANT_A, "REF-2");
             insertApproval(submission, TENANT_A, "uw-02");
 
-            assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM submissions WHERE id = ?", submission))
-                    .isInstanceOf(DataIntegrityViolationException.class);
+            var thrown = catchThrowable(() ->
+                    jdbcTemplate.update("DELETE FROM submissions WHERE id = ?", submission));
+
+            assertThat(sqlStateOf(thrown)).isEqualTo("42501");
         }
 
         @Test
-        @DisplayName("guard: a second approval of one submission is refused by the primary key (BR-36)")
+        @DisplayName("SC-89: with the append-only trigger out of the way, the foreign key still refuses "
+                + "the delete rather than cascading it into the approval (D9)")
+        void theForeignKeyRefusesTheDeleteAndDoesNotCascade() {
+            var submission = insertSubmission(TENANT_A, "REF-4");
+            insertApproval(submission, TENANT_A, "uw-02");
+            // Inside this test's transaction, rolled back afterwards. USER triggers only: the
+            // foreign key's own internal triggers stay active, which is what is being tested.
+            jdbcTemplate.execute("ALTER TABLE submissions DISABLE TRIGGER USER");
+
+            var thrown = catchThrowable(() ->
+                    jdbcTemplate.update("DELETE FROM submissions WHERE id = ?", submission));
+
+            assertThat(sqlStateOf(thrown)).isEqualTo("23503");
+        }
+
+        @Test
+        @DisplayName("SC-88: guard: a second approval of one submission is refused by the primary key (BR-36)")
         void aSecondApprovalOfOneSubmissionIsRefused() {
             var submission = insertSubmission(TENANT_A, "REF-3");
             insertApproval(submission, TENANT_A, "uw-02");
@@ -92,6 +112,15 @@ class SubmissionApprovalSchemaIT {
                 """, id, tenantId, submissionNumber, new BigDecimal("100.00"), "uw-01",
                 Timestamp.from(REGISTERED_AT));
         return id;
+    }
+
+    private static String sqlStateOf(Throwable thrown) {
+        for (var cause = thrown; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.sql.SQLException sql) {
+                return sql.getSQLState();
+            }
+        }
+        return null;
     }
 
     private void insertApproval(UUID submissionId, UUID tenantId, String approvedBy) {

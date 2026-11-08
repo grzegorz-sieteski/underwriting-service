@@ -91,7 +91,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("a reference held ONLY by another organisation gives byte-for-byte the same "
+        @DisplayName("SC-35: a reference held ONLY by another organisation gives byte-for-byte the same "
                 + "answer as a reference nobody holds anywhere")
         void shouldReturnByteExactSameEmptyResultWhenQueryingForeignReferenceVersusNonexistent() {
             // Given
@@ -107,7 +107,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("the TOTAL MATCH COUNT does not leak the other organisation either: a count "
+        @DisplayName("SC-35: the TOTAL MATCH COUNT does not leak the other organisation either: a count "
                 + "of 2 would disclose two submissions exist without returning a single row")
         void shouldReturnZeroCountWhenQueryingTenantWithNoSubmissions() {
             // Given
@@ -121,7 +121,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("a cross-tenant probe is a SUCCESS with an empty page, never a refusal: a "
+        @DisplayName("SC-35: a cross-tenant probe is a SUCCESS with an empty page, never a refusal: a "
                 + "403-shaped answer would confirm the record exists")
         void shouldReturnEmptySuccessWithoutRefusalWhenCrossTenantProbed() {
             // Given
@@ -136,7 +136,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("no filter combination reaches across the organisation boundary, including "
+        @DisplayName("SC-34: no filter combination reaches across the organisation boundary, including "
                 + "one aimed exactly at the other organisation's amount and moment")
         void shouldNeverReturnOtherTenantRowsWhenFilterMatchesExactPropertiesOfForeignSubmission() {
             // Given
@@ -155,7 +155,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("paging past the end of an empty own matching set never spills into the "
+        @DisplayName("SC-34: paging past the end of an empty own matching set never spills into the "
                 + "other organisation's rows")
         void shouldNeverSpillIntoOtherTenantRowsWhenPagingPastEmptyOwnSet() {
             // Given
@@ -169,7 +169,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("the caller cannot name an organisation: the only tenant the useCase can use "
+        @DisplayName("SC-34: the caller cannot name an organisation: the only tenant the useCase can use "
                 + "is the actor's own, because the query record has no tenant component at all")
         void shouldEnsureQueryRecordHasNoTenantFieldWhenInspectingRecordStructure() {
             // Given & When
@@ -190,7 +190,7 @@ class SubmissionSearchAdversarialTest {
     class PagingArithmetic {
 
         @Test
-        @DisplayName("page = Integer.MAX_VALUE produces a POSITIVE offset: (long) page * size, "
+        @DisplayName("SC-42: page = Integer.MAX_VALUE produces a POSITIVE offset: (long) page * size, "
                 + "not an int multiplication that silently goes negative")
         void shouldComputePositiveLongOffsetWhenPageNumberIsMaxInt() {
             // Given
@@ -207,7 +207,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("the largest page request the clamp allows still fits a long offset")
+        @DisplayName("SC-42: the largest page request the clamp allows still fits a long offset")
         void shouldFitWithinLongLimitsWhenOffsetCalculatedAtMaxPageAndClamp() {
             // Given
             var recorder = new RecordingQueryRepository();
@@ -224,7 +224,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("the clamp CANNOT be bypassed by building the query record directly instead "
+        @DisplayName("SC-42: the clamp CANNOT be bypassed by building the query record directly instead "
                 + "of going through the controller")
         void shouldEnforceClampingWhenConstructingRecordDirectly() {
             // Given & When
@@ -237,7 +237,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("a client that asks for size 500, receives 100, and then pages on the SIZE "
+        @DisplayName("SC-42: a client that asks for size 500, receives 100, and then pages on the SIZE "
                 + "IT WAS GIVEN skips nothing: the echoed size is what makes clamping safe")
         void shouldSkipNoRowsWhenClientPagesUsingEchoedClampedSize() {
             // Given
@@ -267,7 +267,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("a client that ignores the echoed size and keeps paging on 500 skips rows — "
+        @DisplayName("SC-42: a client that ignores the echoed size and keeps paging on 500 skips rows — "
                 + "which is why the echo exists, and is the caller's bug, not the service's")
         void shouldDemonstrateRowSkippingWhenClientIgnoresEchoedSize() {
             // Given
@@ -294,9 +294,9 @@ class SubmissionSearchAdversarialTest {
     @DisplayName("Every role gets the identical answer, exhaustively over ActorRole (BR-16)")
     class EveryRole {
 
-        @ParameterizedTest(name = "[{index}] role={0}")
+        @ParameterizedTest(name = "SC-33: [{index}] role={0}")
         @EnumSource(ActorRole.class)
-        @DisplayName("every role, including one added to the enum after this was written, gets "
+        @DisplayName("SC-33: every role, including one added to the enum after this was written, gets "
                 + "the identical page and count")
         void shouldReturnIdenticalResultsWhenSearchedByAnyRole(ActorRole role) {
             // Given
@@ -313,7 +313,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("the read side never reads the role at all: ActorRole is not referenced "
+        @DisplayName("SC-33: the read side never reads the role at all: ActorRole is not referenced "
                 + "anywhere in the query package's own vocabulary")
         void shouldNotReferenceActorRoleInQueryPackageVocabularyWhenInspected() {
             // Given
@@ -340,7 +340,7 @@ class SubmissionSearchAdversarialTest {
     class Concurrency {
 
         @Test
-        @DisplayName("64 concurrent searches from two organisations never see each other's rows, "
+        @DisplayName("SC-34: 64 concurrent searches from two organisations never see each other's rows, "
                 + "and no answer is a refusal")
         void shouldMaintainStrictTenantIsolationWhenManySearchesRaceConcurrently() {
             // Given
@@ -383,7 +383,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("a search running while rows are being added returns a self-consistent page: "
+        @DisplayName("SC-45: a search running while rows are being added returns a self-consistent page: "
                 + "its page never holds more rows than its own count reports")
         void shouldReturnSelfConsistentPageWhenSearchRacesWithInsertions() {
             // Given
@@ -425,7 +425,7 @@ class SubmissionSearchAdversarialTest {
         private static final BigDecimal UPPER = new BigDecimal("9876543.21");
 
         @Test
-        @DisplayName("FINDING QA-01 — SubmissionSearchCriteria masks both insured limit bounds "
+        @DisplayName("SC-49: FINDING QA-01 — SubmissionSearchCriteria masks both insured limit bounds "
                 + "when logged")
         void shouldMaskBothInsuredLimitBoundsWhenSubmissionSearchCriteriaPrinted() {
             // Given
@@ -442,7 +442,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("the query record itself masks both bounds (regression guard on the one "
+        @DisplayName("SC-49: the query record itself masks both bounds (regression guard on the one "
                 + "that is right)")
         void shouldMaskBothAmountBoundsWhenSearchSubmissionsQueryPrinted() {
             // Given
@@ -459,7 +459,7 @@ class SubmissionSearchAdversarialTest {
         }
 
         @Test
-        @DisplayName("a page view discloses neither amount nor registering caller — it has no "
+        @DisplayName("SC-49: a page view discloses neither amount nor registering caller — it has no "
                 + "masking toString() of its own and is safe only because every row it holds has "
                 + "one, so this test is the guard on that transitive property")
         void shouldDiscloseNeitherAmountNorCallerWhenSubmissionPageViewPrinted() {

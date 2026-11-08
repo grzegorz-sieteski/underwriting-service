@@ -105,7 +105,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("a viewer naming any number is refused by role as 403, before the number is parsed (BR-33)")
+    @DisplayName("SC-57: a viewer naming any number is refused by role as 403, before the number is parsed (BR-33)")
     void aViewerNamingAnyNumberIsRefusedByRoleFirst() throws Exception {
         var result = approveAs(VIEWER, "bad\tnumber");
 
@@ -114,7 +114,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("a text that cannot be a number names no submission and approves nothing (BR-35, BR-48)")
+    @DisplayName("SC-56: a text that cannot be a number names no submission and approves nothing (BR-35, BR-48)")
     void aTextThatIsNotANumberNamesNoSubmission() throws Exception {
         var result = approveAs(OTHER_UNDERWRITER, "bad\tnumber");
 
@@ -124,7 +124,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("a text that is not a number and an unknown number produce the same refusal, byte for byte, with no echo (BR-35, BR-47)")
+    @DisplayName("SC-56: a text that is not a number and an unknown number produce the same refusal, byte for byte, with no echo (BR-35, BR-47)")
     void aMalformedAndAnUnknownNumberProduceTheSameBody() throws Exception {
         var malformed = approveAs(OTHER_UNDERWRITER, "bad\tnumber");
         var unknown = approveAs(OTHER_UNDERWRITER, "UNKNOWN-1");
@@ -137,7 +137,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("another organisation's submission is refused with the same body as an unknown one (BR-35, BR-47)")
+    @DisplayName("SC-55: another organisation's submission is refused with the same body as an unknown one (BR-35, BR-47)")
     void anotherOrganisationsSubmissionIsIndistinguishableFromAnUnknownOne() throws Exception {
         store.seed("OTHER-1", TENANT_B, "uw-09");
 
@@ -150,7 +150,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("an approver who registered the submission is refused as approver-registered-submission, and nothing is recorded (BR-41)")
+    @DisplayName("SC-58: an approver who registered the submission is refused as approver-registered-submission, and nothing is recorded (BR-41)")
     void anApproverWhoRegisteredTheSubmissionIsRefusedAndNothingIsRecorded() throws Exception {
         store.seed("MINE-1", TENANT_A, "uw-02");
 
@@ -163,7 +163,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("the registrant is refused before already-approved, so an earlier approval does not change the answer (BR-41)")
+    @DisplayName("SC-59: the registrant is refused before already-approved, so an earlier approval does not change the answer (BR-41)")
     void theRegistrantIsRefusedBeforeAlreadyApproved() throws Exception {
         store.seed("MINE-1", TENANT_A, "uw-02");
         store.approve(TENANT_A, store.idOf("MINE-1"), SENIOR_UNDERWRITER, APPROVED_AT);
@@ -175,7 +175,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("guard: an underwriter who did not register the submission may approve it, once, and the response names it by its number only (BR-33, BR-40, BR-47)")
+    @DisplayName("SC-53: guard: an underwriter who did not register the submission may approve it, once, and the response names it by its number only (BR-33, BR-40, BR-47)")
     void aNonRegistrantUnderwriterMayApprove() throws Exception {
         var result = approveAs(OTHER_UNDERWRITER, "REF-1");
 
@@ -186,7 +186,7 @@ class SubmissionApprovalResourceTest {
     }
 
     @Test
-    @DisplayName("guard: a viewer naming a well-formed number is refused by role and records nothing (BR-33)")
+    @DisplayName("SC-57: guard: a viewer naming a well-formed number is refused by role and records nothing (BR-33)")
     void aViewerIsRefusedByRoleForAWellFormedNumber() throws Exception {
         var result = approveAs(VIEWER, "REF-1");
 
@@ -195,12 +195,102 @@ class SubmissionApprovalResourceTest {
         assertThat(store.approvalCount()).isZero();
     }
 
+    @Test
+    @DisplayName("SC-64: a path segment REF-1;x names no submission: the edge must not strip ';x' and "
+            + "approve REF-1 instead, and nothing is recorded (BR-07, BR-35, BR-36, BR-48)")
+    void aSemicolonInThePathDoesNotApproveAnotherSubmission() throws Exception {
+        var result = approveAs(OTHER_UNDERWRITER, "REF-1;x");
+        var unknown = approveAs(OTHER_UNDERWRITER, "UNKNOWN-1");
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(404);
+        assertThat(result.getResponse().getContentAsString())
+                .isEqualTo(unknown.getResponse().getContentAsString());
+        assertThat(store.approvalCount()).isZero();
+        assertThat(store.publishedEvents()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("SC-64: a path segment ending in a bare ';' names no submission either")
+    void aTrailingSemicolonInThePathDoesNotApproveAnotherSubmission() throws Exception {
+        var result = approveAs(OTHER_UNDERWRITER, "REF-1;");
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(404);
+        assertThat(store.approvalCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("SC-65: a number carrying an encoded '/' names no submission and approves nothing")
+    void anEncodedSlashInThePathNamesNoSubmission() throws Exception {
+        var result = approveRawAs(OTHER_UNDERWRITER, "/api/submissions/REF-1%2Fx/approve");
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(404);
+        assertThat(store.approvalCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("SC-69: a second approval of the same submission is refused as 409 and records "
+            + "nothing more (BR-36)")
+    void aSecondApprovalIsRefusedAsAlreadyApproved() throws Exception {
+        approveAs(OTHER_UNDERWRITER, "REF-1");
+
+        var second = approveAs(SENIOR_UNDERWRITER, "REF-1");
+
+        assertThat(second.getResponse().getStatus()).isEqualTo(409);
+        assertThat(problemType(second)).isEqualTo(PROBLEM_TYPE_PREFIX + "submission-already-approved");
+        assertThat(store.approvalCount()).isEqualTo(1);
+        assertThat(store.publishedEvents()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("SC-68: an unidentified caller is refused as 401 and records nothing (BR-01)")
+    void anUnidentifiedCallerIsRefused() throws Exception {
+        resolver.caller = Optional.empty();
+
+        var result = mvc.perform(post("/api/submissions/{number}/approve", "REF-1")).andReturn();
+
+        assertThat(result.getResponse().getStatus()).isEqualTo(401);
+        assertThat(store.approvalCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("SC-96: the announced approval names the submission by number, the organisation, the "
+            + "approver and the clock's moment, with the generated event id (BR-37, BR-40, BR-47)")
+    void theAnnouncedApprovalCarriesExactlyWhatHappened() throws Exception {
+        approveAs(OTHER_UNDERWRITER, "REF-1");
+
+        assertThat(store.publishedEvents()).containsExactly(
+                new SubmissionDomainEvent.SubmissionApproved(
+                        new FixedSubmissionIdGenerator().nextEventId(),
+                        SubmissionNumber.parse("REF-1").orElse(null),
+                        TENANT_A,
+                        OTHER_UNDERWRITER.actorId(),
+                        APPROVED_AT));
+    }
+
+    @Test
+    @DisplayName("SC-97: the announced approval, printed, does not disclose the approver (BR-42)")
+    void theAnnouncedApprovalDoesNotPrintTheApprover() throws Exception {
+        approveAs(OTHER_UNDERWRITER, "REF-1");
+
+        assertThat(store.publishedEvents()).singleElement()
+                .satisfies(event -> assertThat(event.toString())
+                        .doesNotContain(OTHER_UNDERWRITER.actorId())
+                        .contains("REF-1"));
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private MvcResult approveAs(ActorContext actor, String pathNumber) throws Exception {
         resolver.caller = Optional.of(AuthenticatedCaller.parse(
                 actor.tenantId().toString(), actor.actorId(), actor.role().name()).orElseThrow());
         return mvc.perform(post("/api/submissions/{number}/approve", pathNumber)).andReturn();
+    }
+
+    /** The path exactly as written, for a test whose point is an encoding the template would add. */
+    private MvcResult approveRawAs(ActorContext actor, String rawPath) throws Exception {
+        resolver.caller = Optional.of(AuthenticatedCaller.parse(
+                actor.tenantId().toString(), actor.actorId(), actor.role().name()).orElseThrow());
+        return mvc.perform(post(java.net.URI.create(rawPath))).andReturn();
     }
 
     private static String problemType(MvcResult result) throws Exception {
@@ -214,7 +304,7 @@ class SubmissionApprovalResourceTest {
         private Optional<AuthenticatedCaller> caller = Optional.empty();
 
         @Override
-        Optional<AuthenticatedCaller> resolve() {
+        public Optional<AuthenticatedCaller> resolve() {
             return caller;
         }
     }

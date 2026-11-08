@@ -13,7 +13,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Component
-class SubmissionApprovalSqlAdapter implements SubmissionApprovalRepository {
+public class SubmissionApprovalSqlAdapter implements SubmissionApprovalRepository {
 
     private final SubmissionApprovalJdbcRepository repository;
 

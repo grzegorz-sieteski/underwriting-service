@@ -129,7 +129,7 @@ class OperationGateTest {
     }
 
     @Test
-    @DisplayName("a Viewer is refused for registration before its amount is looked at (BR-02)")
+    @DisplayName("SC-73: a Viewer is refused for registration before its amount is looked at (BR-02)")
     void shouldRefuseViewerBeforeTouchingAmountWhenRegistering() {
         var amount = new PoisonedAmount("1200.00");
 
@@ -145,7 +145,7 @@ class OperationGateTest {
     }
 
     @Test
-    @DisplayName("a Viewer sending a malformed amount is refused for the role, not the amount, and "
+    @DisplayName("SC-73: a Viewer sending a malformed amount is refused for the role, not the amount, and "
             + "the amount is untouched")
     void shouldRefuseViewerForRoleNotAmountWhenAmountIsMalformed() {
         var amount = new PoisonedAmount("-0.00");
@@ -160,7 +160,7 @@ class OperationGateTest {
     }
 
     @Test
-    @DisplayName("an absent caller is refused as not identified before its amount is looked at")
+    @DisplayName("SC-70: an absent caller is refused as not identified before its amount is looked at")
     void shouldRefuseAbsentCallerBeforeTouchingAmountWhenRegistering() {
         var amount = new PoisonedAmount("1200.00");
 
@@ -174,7 +174,7 @@ class OperationGateTest {
     }
 
     @Test
-    @DisplayName("control: an Underwriter's amount is touched, so the Viewer's zero is meaningful")
+    @DisplayName("SC-73: control: an Underwriter's amount is touched, so the Viewer's zero is meaningful")
     void shouldTouchAmountWhenUnderwriterRegisters() {
         var amount = new PoisonedAmount("1200.00");
 
@@ -191,9 +191,9 @@ class OperationGateTest {
      * {@code PermissionDenied} arm. That arm must be unreachable, and with two type parameters only a
      * test can say so.
      */
-    @ParameterizedTest(name = "search never refuses {0} on role, and runs the search for it")
+    @ParameterizedTest(name = "SC-76: search never refuses {0} on role, and runs the search for it")
     @EnumSource(ActorRole.class)
-    @DisplayName("the search gate never produces PermissionDenied for any role: its second switch arm "
+    @DisplayName("SC-76: the search gate never produces PermissionDenied for any role: its second switch arm "
             + "is unreachable (BR-16)")
     void shouldNeverRefuseOnRoleWhenSearchGateAdmitsAnyRole(ActorRole role) {
         // Given
@@ -217,7 +217,7 @@ class OperationGateTest {
     }
 
     @Test
-    @DisplayName("the search gate's only refusal is caller not identified, and the search never runs")
+    @DisplayName("SC-71: the search gate's only refusal is caller not identified, and the search never runs")
     void shouldRefuseOnlyAsNotIdentifiedWhenSearchCallerIsAbsent() {
         var calls = new AtomicInteger();
         var searchGate = new OperationGate<String, String>(
@@ -235,7 +235,7 @@ class OperationGateTest {
     }
 
     @Test
-    @DisplayName("a refused caller never reaches the operation")
+    @DisplayName("SC-70: a refused caller never reaches the operation")
     void shouldNotRunOperationWhenCallerIsRefused() {
         var calls = new AtomicInteger();
         var gate = new OperationGate<String, String>(
@@ -255,7 +255,7 @@ class OperationGateTest {
     }
 
     @Test
-    @DisplayName("an admitted caller reaches the operation exactly once, with the admitted actor and "
+    @DisplayName("SC-74: an admitted caller reaches the operation exactly once, with the admitted actor and "
             + "the input it was given")
     void shouldRunOperationOnceWithAdmittedActorWhenCallerIsAdmitted() {
         var calls = new AtomicInteger();

@@ -47,8 +47,10 @@ flowchart TD
 | `@qa-explorer` | `requests/`, nowe testy | `src/main/` |
 | `@code-reviewer`, `@sec-reviewer` | nic | wszystko |
 
-Blokady sprawdza `scripts/check-write-lock.sh red|skeleton|green|qa`. Porównuje z ostatnim zatwierdzonym
-punktem odniesienia, nie z dowolnym `HEAD`.
+Blokady sprawdza `scripts/check-write-lock.sh red|skeleton|green|qa`. Porównuje z punktem
+odniesienia, który orkiestrator przypina poleceniem `pin` przy każdym przekazaniu pracy, nie z
+`HEAD`. Bez przypiętego punktu bramki odmawiają działania. `trace <feature>` sprawdza w dowolnej
+chwili, że każda reguła BR ma scenariusz, a każdy scenariusz test.
 
 ## Zasada powrotu
 

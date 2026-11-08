@@ -9,7 +9,7 @@ package com.gs5.underwriting.submission.domain;
  * three {@link RegisterSubmissionError} number refusals, and a search filter maps them onto
  * "not supplied" or "matches nothing", never a refusal.
  *
- * <p>No variant carries the number itself. {@link ControlCharacter} carries the code point as a
+ * <p>No variant carries the number itself. {@link CharacterNotAllowed} carries the code point as a
  * number, so an error record cannot forge a log line.
  */
 public sealed interface SubmissionNumberError {
@@ -22,7 +22,10 @@ public sealed interface SubmissionNumberError {
     record TooLong(int maxLength, int actualLength) implements SubmissionNumberError {
     }
 
-    /** BR-29 — contains a character of category Cc; its index is counted in code points. */
-    record ControlCharacter(int codePoint, int index) implements SubmissionNumberError {
+    /**
+     * BR-29 (revision of 2026-11-08) — contains a character other than an ASCII letter, a digit or
+     * the hyphen. Names the first such code point and its index, counted in code points.
+     */
+    record CharacterNotAllowed(int codePoint, int index) implements SubmissionNumberError {
     }
 }

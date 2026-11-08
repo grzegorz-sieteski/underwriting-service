@@ -23,7 +23,7 @@ import java.util.UUID;
  * deferred adapter decision, not something to improvise here.
  */
 @Component
-class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
+public class SubmissionCommandSqlAdapter implements SubmissionCommandRepository {
 
     private final SubmissionCommandJdbcRepository repository;
 

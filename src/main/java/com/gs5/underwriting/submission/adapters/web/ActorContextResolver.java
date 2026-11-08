@@ -33,10 +33,10 @@ import org.springframework.stereotype.Component;
  * call only means no checked exception ever crosses the scope.
  */
 @Component
-class ActorContextResolver {
+public class ActorContextResolver {
 
     /** The caller, when an identity source can name one. Empty is the configured answer today. */
-    Optional<AuthenticatedCaller> resolve() {
+    public Optional<AuthenticatedCaller> resolve() {
         return Optional.empty();
     }
 }

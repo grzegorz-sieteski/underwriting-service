@@ -128,7 +128,7 @@ class SubmissionQuerySqlAdapterIT {
     class TheStatementsBind {
 
         @Test
-        @DisplayName("every filter left null binds, which is what the CAST(... AS type) wrappers "
+        @DisplayName("SC-86: every filter left null binds, which is what the CAST(... AS type) wrappers "
                 + "are for: PostgreSQL cannot infer the type of a bare parameter in IS NULL")
         void shouldBindSuccessfullyWhenAllFiltersAreNull() {
             // Given
@@ -144,7 +144,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("every filter supplied at once binds, so each cast is correct for its own "
+        @DisplayName("SC-86: every filter supplied at once binds, so each cast is correct for its own "
                 + "column type: VARCHAR, NUMERIC and TIMESTAMPTZ")
         void shouldBindSuccessfullyWhenAllFiltersAreSupplied() {
             // Given
@@ -161,7 +161,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("a filter bound of a different scale than the column still compares "
+        @DisplayName("SC-86: a filter bound of a different scale than the column still compares "
                 + "numerically, because the cast is to unconstrained NUMERIC")
         void shouldCompareNumericallyWhenFilterBoundHasDifferentScale() {
             // Given
@@ -182,7 +182,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("id AS submission_id binds the projection record, so the identity comes back "
+        @DisplayName("SC-86: id AS submission_id binds the projection record, so the identity comes back "
                 + "populated rather than null")
         void shouldBindProjectionRecordWithAliasWhenQuerying() {
             // Given
@@ -204,7 +204,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("every other projected column binds too, with the amount's scale intact")
+        @DisplayName("SC-86: every other projected column binds too, with the amount's scale intact")
         void shouldBindEveryProjectedColumnWhenQuerying() {
             // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, "S-3",
@@ -225,7 +225,7 @@ class SubmissionQuerySqlAdapterIT {
     class TenantIsolation {
 
         @Test
-        @DisplayName("another organisation's row is absent from the page, although it is the "
+        @DisplayName("SC-85: another organisation's row is absent from the page, although it is the "
                 + "newest row in the table")
         void shouldExcludeOtherOrganisationsRowFromPage() {
             // Given
@@ -240,7 +240,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("another organisation's row is absent from the total count too: the two "
+        @DisplayName("SC-85: another organisation's row is absent from the total count too: the two "
                 + "statements carry the tenant predicate independently, so both are tested")
         void shouldExcludeOtherOrganisationsRowFromTotalCount() {
             // Given
@@ -259,7 +259,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("a reference only another organisation holds returns nothing and counts zero, "
+        @DisplayName("SC-85: a reference only another organisation holds returns nothing and counts zero, "
                 + "never anything that distinguishes it from a reference nobody holds")
         void shouldReturnEmptyAndZeroCountWhenReferenceBelongsToAnotherOrganisation() {
             // Given
@@ -286,7 +286,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("each organisation resolves a shared reference to its own row only")
+        @DisplayName("SC-85: each organisation resolves a shared reference to its own row only")
         void shouldResolveSharedReferenceToOwnOrganisationRowOnly() {
             // Given
             var ownS1 = new SubmissionSearchCriteria(TENANT_A, "S-1", null, null, null, null);
@@ -306,7 +306,7 @@ class SubmissionQuerySqlAdapterIT {
     class InclusiveBounds {
 
         @Test
-        @DisplayName("the insured limit range includes both of its bounds")
+        @DisplayName("SC-86: the insured limit range includes both of its bounds")
         void shouldIncludeAmountBoundsWhenFilteringByInsuredLimitRange() {
             // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, null,
@@ -322,7 +322,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("an insured limit range of one exact amount returns that one submission")
+        @DisplayName("SC-86: an insured limit range of one exact amount returns that one submission")
         void shouldIncludeSingleAmountWhenInsuredLimitBoundsAreEqual() {
             // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, null,
@@ -336,7 +336,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("the registration moment range includes both of its bounds")
+        @DisplayName("SC-86: the registration moment range includes both of its bounds")
         void shouldIncludeMomentBoundsWhenFilteringByRegisteredAtRange() {
             // Given
             var criteria = new SubmissionSearchCriteria(TENANT_A, null, null, null,
@@ -352,7 +352,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("a registration moment range of one exact instant returns that submission, "
+        @DisplayName("SC-86: a registration moment range of one exact instant returns that submission, "
                 + "which is also the sharpest test that TIMESTAMPTZ round-trips the value")
         void shouldIncludeSingleMomentWhenRegisteredAtBoundsAreEqual() {
             // Given
@@ -367,7 +367,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("a contradictory range matches nothing and is not an error at the SQL level "
+        @DisplayName("SC-86: a contradictory range matches nothing and is not an error at the SQL level "
                 + "either: the predicate is simply unsatisfiable (BR-21)")
         void shouldReturnEmptyPageAndZeroCountWhenRangeBoundsAreContradictory() {
             // Given
@@ -394,7 +394,7 @@ class SubmissionQuerySqlAdapterIT {
     class Paging {
 
         @Test
-        @DisplayName("rows come back newest first")
+        @DisplayName("SC-87: rows come back newest first")
         void shouldReturnRowsInNewestFirstOrder() {
             // Given
             var criteria = ownSubmissions();
@@ -408,7 +408,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("LIMIT and OFFSET are bound parameters that actually page")
+        @DisplayName("SC-87: LIMIT and OFFSET are bound parameters that actually page")
         void shouldPageResultsWhenLimitAndOffsetAreProvided() {
             // Given
             var criteria = ownSubmissions();
@@ -425,7 +425,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("an offset past the end returns no rows while the count stays true (BR-27)")
+        @DisplayName("SC-87: an offset past the end returns no rows while the count stays true (BR-27)")
         void shouldReturnEmptyPageWhilePreservingTotalCountWhenOffsetIsPastTheEnd() {
             // Given
             var criteria = ownSubmissions();
@@ -440,7 +440,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("the count ignores limit and offset entirely (BR-26)")
+        @DisplayName("SC-87: the count ignores limit and offset entirely (BR-26)")
         void shouldIgnoreLimitAndOffsetWhenCountingTotalMatches() {
             // Given
             // countMatching takes no limit or offset at all, which is the point: BR-26 counts the
@@ -459,7 +459,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("rows sharing a registration moment page with no row skipped and none "
+        @DisplayName("SC-87: rows sharing a registration moment page with no row skipped and none "
                 + "repeated, which registered_at DESC alone cannot guarantee (BR-28)")
         void shouldPageDeterministicWithoutSkipOrRepeatWhenRegistrationMomentsAreTied() {
             // Given
@@ -483,7 +483,7 @@ class SubmissionQuerySqlAdapterIT {
         }
 
         @Test
-        @DisplayName("the tie-break is id DESC, so the order of tied rows is defined rather than "
+        @DisplayName("SC-87: the tie-break is id DESC, so the order of tied rows is defined rather than "
                 + "merely stable by luck")
         void shouldOrderTiedRowsByIdDescending() {
             // Given

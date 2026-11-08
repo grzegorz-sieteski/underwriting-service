@@ -12,12 +12,12 @@ import com.gs5.underwriting.submission.domain.ApproveSubmissionCommand;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionError;
 import com.gs5.underwriting.submission.domain.ApproveSubmissionUseCase;
 import com.gs5.underwriting.submission.domain.SubmissionNumber;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,7 +26,7 @@ import java.net.URI;
 
 @RestController
 @RequestMapping("/api/submissions")
-class SubmissionApprovalResource {
+public class SubmissionApprovalResource {
 
     private static final String PROBLEM_TYPE_PREFIX = "urn:problem-type:submission:";
     /** A constant instance, so no problem detail copies the request path (BR-47). */
@@ -37,7 +37,19 @@ class SubmissionApprovalResource {
     private final OperationGate<ApproveSubmissionCommand,
             Result<SubmissionNumber, ApproveSubmissionError>> gate;
 
-    SubmissionApprovalResource(ApproveSubmissionUseCase useCase,
+    /**
+     * The number as the caller wrote it in the path: the segment between {@code /api/submissions/}
+     * and {@code /approve} of the raw request URI, not decoded.
+     *
+     * <p>Design section 21.2, review finding R-01. Spring binds {@code {number}} with
+     * {@code ;...} path parameters stripped, so {@code REF-1;x} reached this resource as
+     * {@code REF-1} and approved it. Read raw, {@code REF-1;x} is parsed whole and refused by BR-29.
+     * Nothing is percent-decoded: no allowed character ever needs encoding, so a {@code %} is
+     * itself a character that is not allowed, and an invalid escape cannot fail as a 500.
+     */
+    private static final Pattern RAW_NUMBER = Pattern.compile("/api/submissions/([^/]*)/approve$");
+
+    public SubmissionApprovalResource(ApproveSubmissionUseCase useCase,
                                ActorContextResolver actorContextResolver,
                                @Qualifier("approvalPermission") Permission approvalPermission) {
         this.useCase = useCase;
@@ -51,10 +63,17 @@ class SubmissionApprovalResource {
      * refused exactly as an unknown one is (BR-35, BR-48).
      */
     @PostMapping("/{number}/approve")
-    ResponseEntity<Object> approve(@PathVariable String number) {
+    ResponseEntity<Object> approve(HttpServletRequest request) {
+        var number = rawNumber(request.getRequestURI());
         return gate.admit(actorContextResolver.resolve())
                 .fold(admission -> approveAdmitted(admission, number),
                         access -> refused(new ApproveRefusal.Access(access)));
+    }
+
+    /** The raw segment, or an empty text, which BR-04 refuses and BR-48 answers as not found. */
+    private static String rawNumber(String requestUri) {
+        var matcher = RAW_NUMBER.matcher(requestUri);
+        return matcher.find() ? matcher.group(1) : "";
     }
 
     private Result<SubmissionNumber, ApproveSubmissionError> approveForActor(

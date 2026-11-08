@@ -26,7 +26,7 @@ class LogSafeTextTest {
         "133, \\u0085",   // NEXT LINE — what isWhitespace() and \\s get wrong
         "159, \\u009F",   // last of the upper range
     })
-    @DisplayName("every control character (category Cc) is escaped as \\uXXXX, uppercase hex")
+    @DisplayName("SC-26: every control character (category Cc) is escaped as \\uXXXX, uppercase hex")
     void every_control_character_is_escaped(int codePoint, String escaped) {
         var text = "A" + Character.toString(codePoint) + "B";
 
@@ -35,7 +35,7 @@ class LogSafeTextTest {
 
     @ParameterizedTest
     @ValueSource(ints = {32, 126, 160, 8232})
-    @DisplayName("characters outside category Cc pass through unchanged: SPACE, TILDE, "
+    @DisplayName("SC-26: characters outside category Cc pass through unchanged: SPACE, TILDE, "
             + "NO-BREAK SPACE, and LINE SEPARATOR (U+2028, category Zl, not Cc)")
     void characters_outside_the_category_are_unchanged(int codePoint) {
         var text = "A" + Character.toString(codePoint) + "B";
@@ -44,7 +44,7 @@ class LogSafeTextTest {
     }
 
     @Test
-    @DisplayName("a supplementary character survives intact as one code point, not as two "
+    @DisplayName("SC-26: a supplementary character survives intact as one code point, not as two "
             + "escaped surrogates")
     void a_supplementary_character_survives_intact() {
         var text = "A😀B";
@@ -53,13 +53,13 @@ class LogSafeTextTest {
     }
 
     @Test
-    @DisplayName("null passes through as null, so a toString() may interpolate it directly")
+    @DisplayName("SC-26: null passes through as null, so a toString() may interpolate it directly")
     void null_passes_through() {
         assertThat(LogSafeText.escapeControlCharacters(null)).isNull();
     }
 
     @Test
-    @DisplayName("the hostile log-forging reference becomes one inert line")
+    @DisplayName("SC-26: the hostile log-forging reference becomes one inert line")
     void a_forged_log_line_is_rendered_inert() {
         assertThat(LogSafeText.escapeControlCharacters("S-1\n2026-11-02 INFO admin login ok"))
                 .isEqualTo("S-1\\u000A2026-11-02 INFO admin login ok")

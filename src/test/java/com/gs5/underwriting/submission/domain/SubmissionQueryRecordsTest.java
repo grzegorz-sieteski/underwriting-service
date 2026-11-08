@@ -44,9 +44,9 @@ class SubmissionQueryRecordsTest {
     @DisplayName("The page request normalises itself (BR-27, page-size bound)")
     class PageRequestNormalisation {
 
-        @ParameterizedTest(name = "[{index}] requested={0}, applied={1}")
+        @ParameterizedTest(name = "SC-42: [{index}] requested={0}, applied={1}")
         @CsvSource({"500, 100", "101, 100", "100, 100", "1, 1", "0, 1", "-1, 1", "-2147483648, 1"})
-        @DisplayName("the page size is clamped into [1, 100] rather than refused")
+        @DisplayName("SC-42: the page size is clamped into [1, 100] rather than refused")
         void shouldClampPageSizeWhenInstantiated(int requested, int applied) {
             // Given & When
             var query = SearchSubmissionsQuery.parse(null, null, null, null, null, 0, requested);
@@ -55,9 +55,9 @@ class SubmissionQueryRecordsTest {
             assertThat(query.size()).isEqualTo(applied);
         }
 
-        @ParameterizedTest(name = "[{index}] requested={0}, applied={1}")
+        @ParameterizedTest(name = "SC-42: [{index}] requested={0}, applied={1}")
         @CsvSource({"0, 0", "1, 1", "7, 7", "-1, 0", "-99, 0", "-2147483648, 0"})
-        @DisplayName("the page number is clamped to zero or above, and zero is the first page")
+        @DisplayName("SC-42: the page number is clamped to zero or above, and zero is the first page")
         void shouldClampPageNumberWhenNegativeProvided(int requested, int applied) {
             // Given & When
             var query = SearchSubmissionsQuery.parse(null, null, null, null, null, requested, 10);
@@ -67,7 +67,7 @@ class SubmissionQueryRecordsTest {
         }
 
         @Test
-        @DisplayName("the bound is 100 and the floor is 1, as the design records them")
+        @DisplayName("SC-42: the bound is 100 and the floor is 1, as the design records them")
         void shouldDeclarePageBoundConstantsWhenInspected() {
             // Given & When & Then
             assertThat(SearchSubmissionsQuery.MIN_PAGE_SIZE).isEqualTo(1);
@@ -75,7 +75,7 @@ class SubmissionQueryRecordsTest {
         }
 
         @Test
-        @DisplayName("the filters themselves are untouched by normalisation")
+        @DisplayName("SC-42: the filters themselves are untouched by normalisation")
         void shouldPreserveFiltersUntouchedWhenNormalisingPageParameters() {
             // Given & When
             var query = SearchSubmissionsQuery.parse("S-1", new BigDecimal("-1"),
@@ -102,7 +102,7 @@ class SubmissionQueryRecordsTest {
     class AmountIsMasked {
 
         @Test
-        @DisplayName("a result row does not disclose the insured limit when logged, although it "
+        @DisplayName("SC-49: a result row does not disclose the insured limit when logged, although it "
                 + "still carries it for the caller")
         void shouldMaskInsuredLimitInToStringWhenSummaryViewPrinted() {
             // Given
@@ -117,7 +117,7 @@ class SubmissionQueryRecordsTest {
         }
 
         @Test
-        @DisplayName("a result row does not disclose the registering caller when logged (OPEN-01)")
+        @DisplayName("SC-49: a result row does not disclose the registering caller when logged (OPEN-01)")
         void shouldMaskRegisteringCallerInToStringWhenSummaryViewPrinted() {
             // Given
             var view = new SubmissionSummaryView("S-1", AMOUNT, "uw-01", MOMENT, SubmissionState.REGISTERED);
@@ -131,7 +131,7 @@ class SubmissionQueryRecordsTest {
         }
 
         @Test
-        @DisplayName("a result row prints the reference in full, because audit needs it (BR-23)")
+        @DisplayName("SC-49: a result row prints the reference in full, because audit needs it (BR-23)")
         void shouldPrintReferenceInFullWhenSummaryViewPrinted() {
             // Given
             var view = new SubmissionSummaryView("S-1", AMOUNT, "uw-01", MOMENT, SubmissionState.REGISTERED);
@@ -141,7 +141,7 @@ class SubmissionQueryRecordsTest {
         }
 
         @Test
-        @DisplayName("a logged search does not disclose its insured limit bounds: a logged search "
+        @DisplayName("SC-49: a logged search does not disclose its insured limit bounds: a logged search "
                 + "for one exact amount that returns one row would disclose that row's amount")
         void shouldMaskAmountBoundsWhenSearchSubmissionsQueryPrinted() {
             // Given
@@ -159,7 +159,7 @@ class SubmissionQueryRecordsTest {
     class PageIsImmutable {
 
         @Test
-        @DisplayName("a page copies the rows it is given, so a later change to the caller's list "
+        @DisplayName("SC-42: a page copies the rows it is given, so a later change to the caller's list "
                 + "cannot alter what was returned")
         void shouldDefensivelyCopyRowsWhenSubmissionPageViewConstructed() {
             // Given
@@ -175,7 +175,7 @@ class SubmissionQueryRecordsTest {
         }
 
         @Test
-        @DisplayName("an empty page still reports the total match count of the whole matching set")
+        @DisplayName("SC-43: an empty page still reports the total match count of the whole matching set")
         void shouldReportTotalMatchCountWhenPageIsEmpty() {
             // Given & When
             var pageView = new SubmissionPageView(List.of(), 42L, 9, 10);

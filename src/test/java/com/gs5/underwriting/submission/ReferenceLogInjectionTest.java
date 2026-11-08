@@ -27,7 +27,7 @@ class ReferenceLogInjectionTest {
     private static final String ESCAPED_NEWLINE = "\\u000A";
 
     @Test
-    @DisplayName("a refused register input is not retained or rendered as raw text")
+    @DisplayName("SC-26: a refused register input is not retained or rendered as raw text")
     void register_command_escapes_the_reference() {
         var printed = RegisterSubmissionCommand.parse(HOSTILE, new BigDecimal("1.00"))
                 .errorToOptional()
@@ -38,7 +38,7 @@ class ReferenceLogInjectionTest {
     }
 
     @Test
-    @DisplayName("the search query prints a hostile reference filter escaped, never raw")
+    @DisplayName("SC-49: the search query prints a hostile reference filter escaped, never raw")
     void search_query_escapes_the_reference() {
         var printed = SearchSubmissionsQuery.parse(HOSTILE, null, null, null, null, 0, 10)
                 .toString();
@@ -47,7 +47,7 @@ class ReferenceLogInjectionTest {
     }
 
     @Test
-    @DisplayName("the search criteria prints a hostile reference filter escaped, never raw "
+    @DisplayName("SC-49: the search criteria prints a hostile reference filter escaped, never raw "
             + "(already fixed by QA-01; pinned so it stays fixed)")
     void search_criteria_escapes_the_reference() {
         var printed = new SubmissionSearchCriteria(UUID.randomUUID(), HOSTILE,
@@ -57,7 +57,7 @@ class ReferenceLogInjectionTest {
     }
 
     @Test
-    @DisplayName("SEC-02: ActorContext does not print the actor id — it is the first and "
+    @DisplayName("SC-78: SEC-02: ActorContext does not print the actor id — it is the first and "
             + "upstream holder of it, so masking everything downstream was not enough (OPEN-01)")
     void actor_context_masks_the_actor_id() {
         var actor = new ActorContext(UUID.randomUUID(), "uw-secret-identity",

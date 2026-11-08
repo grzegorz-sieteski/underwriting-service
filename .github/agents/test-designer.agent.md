@@ -30,7 +30,9 @@ names:
 - for `*IT`, the database tables and the outbox, as the design describes them.
 
 A test never references the aggregate, a value object's internals, a mapper, a persistence entity,
-a helper, or any type the Test contract does not list. Put flow tests in a package of their own,
+a helper, or any type the Test contract does not list. `TestBoundaryRulesTest` fails the build
+when a test depends on a package-private production class; violations from before that rule are
+frozen in `src/test/resources/archunit_store` and may only be removed, never added. Put flow tests in a package of their own,
 for example `com.gs5.underwriting.submission.flows`, so the compiler refuses package-private
 internals. If a scenario cannot be expressed through the contract, the contract is missing
 something: report it to `@orchestrator` for `@architect`. Do not reach inside instead.
@@ -58,7 +60,9 @@ Before writing any test, write every scenario:
 - `Level`: `unit` (use case entry point with fakes), `web` (HTTP endpoint), `it` (real
   PostgreSQL). Choose the level at which the business would observe the behaviour.
 - `State` is `NEW` for a scenario you write a test for now, `EXISTING` when an existing test
-  already covers it. No class or method names appear in the catalogue.
+  already covers it (that test's display name carries the id), `GAP` for a known scenario that
+  has no test yet. A `GAP` fails `check-write-lock.sh trace` until it is closed. No class or
+  method names appear in the catalogue.
 - A rule you cannot turn into a concrete Given/When/Then is a gap in the specification: stop and
   report it for `@business-analyst`. Do not guess the missing value.
 
