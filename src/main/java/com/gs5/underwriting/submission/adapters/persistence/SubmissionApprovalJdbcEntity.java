@@ -18,4 +18,12 @@ record SubmissionApprovalJdbcEntity(
         @Column("tenant_id") UUID tenantId,
         @Column("approved_by") String approvedBy,
         @Column("approved_at") Instant approvedAt,
-        @Version @Nullable Long version) { }
+        @Version @Nullable Long version) {
+
+    /** Names the approval, never the approving caller (BR-42). */
+    @Override
+    public String toString() {
+        return "SubmissionApprovalJdbcEntity[submissionId=" + submissionId + ", tenantId=" + tenantId
+                + ", approvedAt=" + approvedAt + ", version=" + version + "]";
+    }
+}

@@ -71,17 +71,4 @@ interface SubmissionCommandJdbcRepository extends Repository<SubmissionJdbcEntit
             """)
     Optional<SubmissionJdbcEntity> findOwnByNumber(@Param("tenantId") UUID tenantId,
                                                   @Param("submissionNumber") String submissionNumber);
-
-    /**
-     * The same row, read back by its internal identity. Used only by the snapshot round-trip
-     * checks, never by an operation and never exposed: the identity does not leave the service
-     * (BR-47).
-     */
-    @Query("""
-            SELECT id, tenant_id, submission_number, insured_limit, registered_by, registered_at, version
-            FROM submissions
-            WHERE tenant_id = :tenantId
-              AND id = :id
-            """)
-    Optional<SubmissionJdbcEntity> findOwn(@Param("tenantId") UUID tenantId, @Param("id") UUID id);
 }
