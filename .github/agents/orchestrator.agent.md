@@ -44,6 +44,13 @@ At every hand-over, once you have verified a stage on a clean, committed tree, r
 never against `HEAD`: against `HEAD`, an agent that commits its forbidden edit empties the diff
 and passes. The gates refuse to run without a pin.
 
+Run the gate **from the baseline's copy**, never from the working tree, so a stage cannot certify
+itself with a script it edited:
+
+```bash
+git show "$(cat "$(git rev-parse --git-dir)/sdlc-baseline")":scripts/check-write-lock.sh | bash -s <phase>
+```
+
 Run `scripts/check-write-lock.sh <phase>` after every stage, and
 `scripts/check-write-lock.sh trace {feature}` before stage 6: every `BR-xx` has a scenario and
 every scenario has a test.

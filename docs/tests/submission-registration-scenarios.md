@@ -1,9 +1,10 @@
 # Submission registration — scenario catalogue
 
-Tracing pass over the **existing** `submission` module. No behaviour is built in this pass, so there
-is no `NEW` scenario. Sources: `docs/specs/submission-registration-spec.md` (`BR-01` to `BR-48`) and
+Scenarios of the `submission` module. The first pass traced the existing module; revision 7
+(2026-11-08: allowed number characters, V4, the approval path) added the `NEW` rows. Sources: `docs/specs/submission-registration-spec.md` (`BR-01` to `BR-48`) and
 the `## Test contract` section of `docs/adr/submission-registration-design.md` (TC1 to TC8).
 
+- `NEW`: written in revision 7 and shown to fail before the implementation (pinned RED commit).
 - `EXISTING`: an existing test covers the scenario; that test's display name starts with the id.
 - `GAP`: the specification or the Test contract requires it, and no test covers it yet.
   `./scripts/check-write-lock.sh trace submission-registration` fails on every `GAP` until it is
@@ -47,7 +48,7 @@ underwriter of A; `V` a viewer of A. A valid amount is `1200.00`.
 | SC-27 | BR-15, BR-47 | register submission | a successful registration answers 201 with the number only | U1 identified at the edge | `POST /api/submissions` `{"submissionNumber":"ABC-1","insuredLimit":1200.00}` | 201; `Location: /api/submissions/ABC-1`; body `{"submissionNumber":"ABC-1"}` with no internal id | web | GAP |
 | SC-28 | BR-01 | register submission | registration without an identified caller answers 401 | no caller at the edge | `POST /api/submissions` with a valid body | 401, type `caller-not-identified`; nothing stored, nothing announced | web | GAP |
 | SC-29 | BR-02 | register submission | a viewer is refused at the edge whatever the body | V identified at the edge, in the wired application | `POST /api/submissions` with a valid body, and with `""` and `0.00` | 403, type `permission-denied`, for every body; nothing stored | web | GAP |
-| SC-30 | BR-04, BR-05, BR-29 | register submission | each number refusal answers 400 with its own problem type | U1 identified | `POST` with number `""`, `"A"`×65, `"AB\tCD"` | 400, types `number-missing`, `number-too-long`, `number-contains-control-character` | web | GAP |
+| SC-30 | BR-04, BR-05, BR-29 | register submission | each number refusal answers 400 with its own problem type | U1 identified | `POST` with number `""`, `"A"`×65, `"AB;CD"` | 400, types `number-missing`, `number-too-long`, `number-contains-character-not-allowed` | web | GAP |
 | SC-31 | BR-10, BR-11, BR-12, BR-22 | register submission | each amount refusal answers 400, and no body shows the amount | U1 identified | `POST` with insuredLimit `null`, `-5.00`, `1200.5` | 400, types `insured-limit-missing`, `insured-limit-not-positive`, `insured-limit-precision-invalid`; no body contains the amount | web | GAP |
 | SC-32 | BR-06, BR-23 | register submission | a duplicate number answers 409 | U1 registered `ABC-1` | U2 posts `ABC-1` | 409, type `number-already-used`; detail names the number with Cc escaped | web | GAP |
 
@@ -149,24 +150,27 @@ underwriter of A; `V` a viewer of A. A valid amount is `1200.00`.
 
 ## Notes
 
-**Counts.** 99 scenarios: 79 `EXISTING`, 20 `GAP`, no `NEW`. Every `BR-01` to `BR-48` appears in at
-least one row. `BR-37` has no `EXISTING` row at all: nothing tests what an approval records.
+**Counts.** 98 scenarios: 77 `EXISTING`, 11 `NEW`, 10 `GAP`. Every `BR-01` to `BR-48` appears in at
+least one row. The remaining `GAP` rows are the register and search HTTP edge (SC-27 to SC-32,
+SC-51, SC-52) and two approval facts (SC-66, SC-67); `check-write-lock.sh trace` fails until they
+have tests.
 
 **How the ids were attached.** Only display-name strings changed: `@DisplayName` and the `name` of
 `@ParameterizedTest`. ArchUnit rules are fields, which `@DisplayName` cannot annotate, so `SC-98`
 sits on the class `ArchitectureRulesTest` as a class-level `@DisplayName` (with its import). That one
-id therefore covers the whole class; `SC-99` is the rule in it that is known to be vacuous.
+id therefore covers the whole class. The former `SC-99` (rule C vacuous) is folded into `SC-98`:
+rule C now matches any constructor call or reference of `SubmissionApproved`, shown by a
+deliberate break.
 `TestBoundaryRulesTest`, `ResultTest` and the binding tests of `ActorContextTest` (`callWith`,
 `runWith`, `current`, `belongsToTenant`) are kernel or test-hygiene checks with no business scenario,
 and carry no id.
 
 **Tests that reach outside the Test contract** (left unchanged; recorded so they can be moved later):
 
-- The persistence `*IT`s drive or `@Import` the package-private SQL adapters
-  `SubmissionCommandSqlAdapter`, `SubmissionQuerySqlAdapter` and `SubmissionApprovalSqlAdapter`
-  (TC7): `SubmissionCommandSqlAdapterIT`, `SubmissionQuerySqlAdapterIT`,
-  `SubmissionAdversarialPersistenceIT`, `SubmissionSearchStateIT`, `SubmissionApprovalConcurrencyIT`.
-  These are the violations frozen in `src/test/resources/archunit_store`.
+- The persistence `*IT`s drive or `@Import` the SQL adapters, which are public since revision 7
+  (G1), so this is no longer a boundary violation. The two entries still frozen in
+  `src/test/resources/archunit_store` are `SubmissionRoundTrip` reaching the package-private
+  aggregate.
 - `SubmissionCommandSqlAdapterIT` and `SubmissionAdversarialPersistenceIT` read rows back through
   `SubmissionCommandSqlAdapter.findOwn(UUID, UUID)`, which TC7 says exists only for round-trip
   checks; an IT should read `submissions` instead.
@@ -176,9 +180,8 @@ and carry no id.
 - `SubmissionQuerySqlAdapterIT` (SC-86) has a display name about binding `id AS submission_id` into
   the projection: it describes the divergence D16 that SC-92 asks to remove, although its body only
   asserts the numbers.
-- `SubmissionApprovalResourceTest` lives in `submission.adapters.web` and subclasses the
-  package-private `ActorContextResolver` and calls the package-private resource constructor. TC5
-  allows this as the only seam today (gap G1).
+- `SubmissionApprovalResourceTest` subclasses `ActorContextResolver` and calls the resource
+  constructor, both public since revision 7 (G1 closed).
 - `SubmissionApprovalSchemaIT` and `SubmissionSearchStateIT` insert approval rows with SQL; TC6
   allows a direct insert only to test the database's own constraints, which holds for the first and
   not for the second.

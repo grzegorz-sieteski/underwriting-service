@@ -471,9 +471,10 @@ class ArchitectureRulesTest {
                     .that().doNotHaveSimpleName("ApproveSubmissionUseCase")
                     .and().doNotHaveFullyQualifiedName(
                             SubmissionDomainEvent.SubmissionApproved.class.getName())
-                    .should().callConstructorWhere(DescribedPredicate.describe(
-                            "any constructor of SubmissionApproved",
-                            call -> call.getTarget().getOwner()
+                    .should().accessTargetWhere(DescribedPredicate.describe(
+                            "any constructor of SubmissionApproved, called or referenced",
+                            access -> access.getTarget().getName().equals("<init>")
+                                    && access.getTarget().getOwner()
                                     .isEquivalentTo(SubmissionDomainEvent.SubmissionApproved.class)))
                     .because("BR-40: an approval is announced exactly when an approval succeeds, and the single place "
                             + "that knows it succeeded is the use case, after the insert");
@@ -493,6 +494,12 @@ class ArchitectureRulesTest {
      * Design section 20.5 / 21.4, BR-44. The database refuses UPDATE, DELETE and TRUNCATE on the
      * fact tables (V4 triggers); this rule keeps the service from even trying, so a statement that
      * rewrites a fact fails the build rather than a request.
+     *
+     * Narrower than its name, on purpose and on record: it reads @Query text only. It does not see
+     * JdbcTemplate or JdbcClient, CrudRepository's inherited save/delete, or derived deleteBy
+     * methods. Today none of those exists in the persistence package (repositories extend
+     * Repository). The trigger is the safeguard; this rule is the early warning. SELECT ... FOR
+     * UPDATE is a lock, not a rewrite, and is not flagged.
      */
     @ArchTest
     static final ArchRule submission_repositories_issue_only_inserts_and_selects =
@@ -505,7 +512,7 @@ class ArchitectureRulesTest {
                             var sql = method.getAnnotationOfType(
                                     org.springframework.data.jdbc.repository.query.Query.class).value();
                             var rewrites = java.util.regex.Pattern
-                                    .compile("(?i)\\b(UPDATE|DELETE|TRUNCATE|MERGE)\\b")
+                                    .compile("(?i)(?<!\\bFOR\\s)\\b(UPDATE|DELETE|TRUNCATE|MERGE)\\b")
                                     .matcher(sql).find();
                             if (rewrites) {
                                 events.add(SimpleConditionEvent.violated(method,

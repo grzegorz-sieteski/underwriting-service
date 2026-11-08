@@ -8,7 +8,6 @@ import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureDataSourceInitialization;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.junit.jupiter.Container;
@@ -22,6 +21,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * The database, not the application, is the last line of defence for approval (design section 19.8,
@@ -63,15 +63,32 @@ class SubmissionApprovalSchemaIT {
         }
 
         @Test
-        @DisplayName("SC-89: deleting an approved submission is refused, not cascaded into its approval (D9)")
-        void deletingAnApprovedSubmissionIsRefusedNotCascaded() {
+        @DisplayName("SC-89: deleting an approved submission is refused by the append-only trigger, as "
+                + "insufficient privilege (BR-44)")
+        void deletingAnApprovedSubmissionIsRefusedByTheAppendOnlyTrigger() {
             var submission = insertSubmission(TENANT_A, "REF-2");
             insertApproval(submission, TENANT_A, "uw-02");
 
-            // Since V4 the append-only trigger refuses the DELETE before the foreign key is even
-            // consulted (BR-44), so the refusal is no longer necessarily an integrity violation.
-            assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM submissions WHERE id = ?", submission))
-                    .isInstanceOf(DataAccessException.class);
+            var thrown = catchThrowable(() ->
+                    jdbcTemplate.update("DELETE FROM submissions WHERE id = ?", submission));
+
+            assertThat(sqlStateOf(thrown)).isEqualTo("42501");
+        }
+
+        @Test
+        @DisplayName("SC-89: with the append-only trigger out of the way, the foreign key still refuses "
+                + "the delete rather than cascading it into the approval (D9)")
+        void theForeignKeyRefusesTheDeleteAndDoesNotCascade() {
+            var submission = insertSubmission(TENANT_A, "REF-4");
+            insertApproval(submission, TENANT_A, "uw-02");
+            // Inside this test's transaction, rolled back afterwards. USER triggers only: the
+            // foreign key's own internal triggers stay active, which is what is being tested.
+            jdbcTemplate.execute("ALTER TABLE submissions DISABLE TRIGGER USER");
+
+            var thrown = catchThrowable(() ->
+                    jdbcTemplate.update("DELETE FROM submissions WHERE id = ?", submission));
+
+            assertThat(sqlStateOf(thrown)).isEqualTo("23503");
         }
 
         @Test
@@ -95,6 +112,15 @@ class SubmissionApprovalSchemaIT {
                 """, id, tenantId, submissionNumber, new BigDecimal("100.00"), "uw-01",
                 Timestamp.from(REGISTERED_AT));
         return id;
+    }
+
+    private static String sqlStateOf(Throwable thrown) {
+        for (var cause = thrown; cause != null; cause = cause.getCause()) {
+            if (cause instanceof java.sql.SQLException sql) {
+                return sql.getSQLState();
+            }
+        }
+        return null;
     }
 
     private void insertApproval(UUID submissionId, UUID tenantId, String approvedBy) {

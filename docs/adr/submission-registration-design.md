@@ -3601,7 +3601,9 @@ same thing; BR-05 does not change. `ControlCharacters` stays in the kernel for a
 With the allow list, no registrable number contains `;`, `/`, `%` or `.`. That alone does not fix
 R-01: Spring strips `;...` from `{number}` before the resource sees it, so `REF;1` would still
 arrive as `REF`. The approval resource therefore reads the number from the raw request URI, the
-segment between `/api/submissions/` and `/approve`, percent-decoded, and parses that. `REF;1`
+segment between `/api/submissions/` and `/approve`, **not** decoded, and parses that. No
+allowed character ever needs percent-encoding, so a `%` is itself refused by `BR-29`, and an invalid
+escape cannot fail as a 500. `REF;1`
 then fails `BR-29` and is refused as not found (`BR-48`), with the one constant 404 body. A path
 with an extra `/` matches no mapping and gets the framework's 404; no registrable number can
 produce it.

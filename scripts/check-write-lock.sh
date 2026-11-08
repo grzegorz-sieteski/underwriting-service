@@ -321,6 +321,10 @@ case "$PHASE" in
             [ "$rc" -eq 0 ] && green "OK: src/test/ changes are mechanical and confined to the allowlist"
         fi
         assert_untouched "docs/" docs || rc=1
+        # The gates themselves are frozen too: a stage that edits the script judging it certifies
+        # itself (review of revision 7, finding 1). The orchestrator also runs this gate from the
+        # baseline's copy, so the version doing the judging is the one that was reviewed.
+        assert_untouched "scripts/ and the CI gates" scripts .github/workflows || rc=1
         [ "$rc" -eq 0 ] || {
             red ""
             red "Changing a test to make the build pass is always the shortest path to green,"

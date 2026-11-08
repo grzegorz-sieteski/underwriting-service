@@ -144,7 +144,8 @@ Be honest about this, because the distinction matters:
   in `.git/sdlc-baseline`; without a pin (or an explicit `BASE=<ref>`) the phase gates refuse to
   run. Against `HEAD`, a committed forbidden edit made the diff empty and the gate passed.
 - **`TestBoundaryRulesTest`** fails the build when a test depends on a package-private production
-  class. It is a frozen ArchUnit rule: 91 violations from tests written before it (mostly the
-  persistence `*IT`s, which drive the SQL adapters directly) are recorded in
-  `src/test/resources/archunit_store`. The store may only shrink; store creation is disabled.
+  class. It is a frozen ArchUnit rule. It started with 91 violations; since the adapters became
+  public (revision 7) two remain, both `SubmissionRoundTrip` reaching the package-private aggregate.
+  They are recorded in `src/test/resources/archunit_store`. The store may only shrink; store
+  creation is disabled, and the green gate fails if the store gains a line.
 - `openapi/` is empty: there is no contract to publish until there is an endpoint.
