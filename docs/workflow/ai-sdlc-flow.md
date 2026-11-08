@@ -8,8 +8,9 @@ flowchart TD
     E0["Etap 0 · @orchestrator<br/>tablica stanu docs/workflow/"]
     E1["Etap 1 · @business-analyst<br/>docs/specs/"]
     E2["Etap 2 · @architect<br/>docs/adr/"]
-    E3["Etap 3 · @test-designer · RED<br/>src/test/ + kontrakty"]
-    E4["Etap 4 · @developer · GREEN<br/>src/main/"]
+    E3["Etap 3 · @test-designer · RED<br/>docs/tests/ scenariusze + src/test/"]
+    E4A["Etap 4a · @developer · SZKIELET<br/>typy z projektu, return null"]
+    E4["Etap 4b · @developer · GREEN<br/>src/main/"]
     E5["Etap 5 · @qa-explorer<br/>requests/ + testy adversarial"]
     E6A["Etap 6 · @code-reviewer<br/>tylko odczyt"]
     E6B["Etap 6 · @sec-reviewer<br/>tylko odczyt"]
@@ -18,7 +19,9 @@ flowchart TD
     E0 --> E1
     E1 -- "BRAMKA: brak ASSUMPTION" --> E2
     E2 -- "BRAMKA: projekt pokrywa każdą komendę" --> E3
-    E3 -- "BRAMKA: test-compile OK<br/>ale test FAIL" --> E4
+    E3 -- "BRAMKA: każda BR ma scenariusz<br/>src/main nietknięte" --> E4A
+    E4A -- "BRAMKA: każdy NOWY test FAIL" --> E4
+    E4A -. "test przechodzi na szkielecie" .-> E3
     E4 -- "BRAMKA: verify OK<br/>src/test nietknięte" --> E5
     E5 -- "BRAMKA: src/main nietknięte" --> E6A
     E5 --> E6B
@@ -29,7 +32,7 @@ flowchart TD
 
     classDef gate fill:#fff3cd,stroke:#856404,color:#000
     classDef review fill:#f8d7da,stroke:#721c24,color:#000
-    class E3 gate
+    class E4A gate
     class E6A,E6B review
 ```
 
@@ -39,12 +42,12 @@ flowchart TD
 |---|---|---|
 | `@business-analyst` | `docs/specs/` | kod, projekt |
 | `@architect` | `docs/adr/` | kod, testy |
-| `@test-designer` | `src/test/`, kontrakty w `src/main/` | logika biznesowa w `src/main/` |
-| `@developer` | `src/main/` | `src/test/` (wyjątek: lista z `scripts/green-signature-allowlist.txt`) |
+| `@test-designer` | `docs/tests/`, `src/test/` (testy, fake'i portów) | cały `src/main/` |
+| `@developer` | `src/main/` (4a: tylko deklaracje, 4b: logika) | `src/test/`, `docs/` (wyjątek: lista z `scripts/green-signature-allowlist.txt`) |
 | `@qa-explorer` | `requests/`, nowe testy | `src/main/` |
 | `@code-reviewer`, `@sec-reviewer` | nic | wszystko |
 
-Blokady sprawdza `scripts/check-write-lock.sh red|green|qa`. Porównuje z ostatnim zatwierdzonym
+Blokady sprawdza `scripts/check-write-lock.sh red|skeleton|green|qa`. Porównuje z ostatnim zatwierdzonym
 punktem odniesienia, nie z dowolnym `HEAD`.
 
 ## Zasada powrotu

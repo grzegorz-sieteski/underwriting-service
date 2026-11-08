@@ -23,6 +23,13 @@ Produce: module name, use case method signatures (`execute` for commands, `ask` 
 standalone `*Command` and `*Query` records, one `sealed interface *Error` **per operation**,
 projections/views and their SQL shape, the Flyway migration, and domain events with their partition keys.
 
+End the design with a **Test contract** section: the only surface tests may use. It lists, per
+operation, the use case entry point (class, method, command or query in, `Result` and error
+variants out), the HTTP endpoint (method, path, request and response bodies, status per outcome),
+the outbound ports a test may replace with a fake, and the tables and outbox an `*IT` may read.
+Everything not listed — aggregate, value-object internals, mappers, entities, helpers — is the
+developer's to shape and rename; no test may depend on it.
+
 ## Audit mode
 
 Scope: `git diff` on the branch, or the module the user names.

@@ -40,15 +40,20 @@ com.gs5.underwriting.<module>/
     └── config/     <M>Configuration — registers the use cases as beans
 ```
 
-## Step 1 (RED): contracts and failing tests
+## Step 1 (RED, `@test-designer`): scenarios and tests, nothing in `src/main`
 
-Write the public records and interfaces, plus use case methods whose bodies `return null`. Then
-write the tests that prove the behaviour, which fail because the bodies are empty.
+Write `docs/tests/{feature}-scenarios.md` (one row per business behaviour, each traced to a
+`BR-xx`, no class names), then tests that drive each flow through the design's Test contract
+only, each display name starting with its scenario id (`"SC-07: ..."`). In-memory fakes for the
+ports live in the test tree, backed by `ConcurrentHashMap`. No Mockito here. The tests do not
+compile yet. Gate: `./scripts/check-write-lock.sh red {feature}`.
 
-`./mvnw test-compile` must succeed. `./mvnw test` must fail. If the tests pass at this point,
-they are not testing anything.
+## Step 1a (SKELETON, `@developer`): the Test contract, no logic
 
-In-memory fakes for the ports, in the test tree, backed by `ConcurrentHashMap`. No Mockito here.
+Write the entry points, commands, queries, errors, port interfaces and resources the design's
+Test contract lists.
+Bodies are `return null;`. Never committed. Gate: `./scripts/check-write-lock.sh skeleton {feature}`
+— every `NEW` test must fail. If one passes, it is not testing anything.
 
 ## Step 2 (GREEN): the aggregate and the use case
 

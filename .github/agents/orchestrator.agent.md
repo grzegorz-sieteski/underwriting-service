@@ -24,13 +24,18 @@ No stage may start until the previous one's artefact exists on disk and its gate
 |---|---|---|
 | 1 | `@business-analyst` | `docs/specs/{feature}-spec.md` exists, with no unresolved `ASSUMPTION` marker |
 | 2 | `@architect` | `docs/adr/{feature}-design.md` exists and covers every command in the spec |
-| 3 | `@test-designer` | `./mvnw test-compile` **succeeds** and `./mvnw test` **fails** |
-| 4 | `@developer` | `./mvnw verify` succeeds **and** `git diff --stat HEAD -- src/test/ docs/` is empty |
+| 3 | `@test-designer` | `scripts/check-write-lock.sh red {feature}`: catalogue covers every `BR-xx`, every `NEW` test exists, `src/main/` untouched |
+| 4a | `@developer` | `scripts/check-write-lock.sh skeleton {feature}`: declarations only, **every `NEW` test fails** |
+| 4b | `@developer` | `scripts/check-write-lock.sh green`: `verify` succeeds **and** `src/test/`, `docs/` untouched |
 | 5 | `@qa-explorer` | `requests/{feature}.http` exists, `./mvnw verify` green, `git diff --stat HEAD -- src/main/` empty |
 | 6 | `@code-reviewer` + `@sec-reviewer` | both return `[APPROVED]` |
 
-Stage 3 is the one people get wrong: a green build there means the tests are not testing anything.
-Failing is the pass condition.
+Stage 4a is the one people get wrong: a `NEW` test that passes against a skeleton returning `null`
+is not testing anything. Failing is the pass condition, and such a test goes back to stage 3, not
+forward to 4b. The RED tests do not compile until the skeleton exists, so stages 3–4b run on a
+feature branch: commit the RED stage there (the skeleton and green gates compare against that
+commit, so `BASE` defaults to it as `HEAD`), never commit the skeleton, and merge into `main` only
+after stage 6. A non-compiling commit never lands on `main`.
 
 ## Detecting a crossed boundary
 

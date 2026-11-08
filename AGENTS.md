@@ -63,8 +63,9 @@ can produce. There are no `*Service` classes and no `throw` statements in `src/m
 | 0 | `@orchestrator` | state board | `docs/workflow/` | verifies every other gate |
 | 1 | `@business-analyst` | specification | `docs/specs/` | no unresolved `ASSUMPTION` marker |
 | 2 | `@architect` | technical design | `docs/adr/` | covers every command in the spec |
-| 3 | `@test-designer` | contracts + failing tests | `src/test/`, stubs in `domain/` | `test-compile` passes, `test` **fails** |
-| 4 | `@developer` | production code | `src/main/` | `verify` passes, `src/test/` untouched |
+| 3 | `@test-designer` | scenario catalogue + tests + test doubles | `docs/tests/`, `src/test/` | every `BR-xx` has a scenario, `src/main/` untouched |
+| 4a | `@developer` | skeleton: the design's Test contract, bodies `return null;` (never committed) | `src/main/` | every `NEW` test **fails** |
+| 4b | `@developer` | production code | `src/main/` | `verify` passes, `src/test/` untouched |
 | 5 | `@qa-explorer` | exploratory findings | `requests/`, `src/test/` | `src/main/` untouched |
 | 6 | `@code-reviewer` | review report | nothing | `[APPROVED]` |
 | 7 | `@sec-reviewer` | security report | nothing | `[APPROVED]` |
@@ -72,7 +73,11 @@ can produce. There are no `*Service` classes and no `throw` statements in `src/m
 Call each in a **fresh chat**. The separation is the point: an agent that can see the previous
 agent's reasoning starts agreeing with it.
 
-Stage 3 passing its build is a failure, not a success — green tests there assert nothing.
+The test designer never writes `src/main` and never dictates its structure. Tests drive business
+flows through the design's Test contract (use case entry point, HTTP endpoint, replaceable ports)
+and are traced by scenario id in their display name, not by class or method. The developer
+writes the contract from the design and shapes everything behind it freely. Red is proven at stage 4a: against a skeleton whose
+bodies return `null`, a `NEW` test that passes asserts nothing and goes back to stage 3.
 
 When a reviewer rejects, work goes back to **stage 3**, not stage 4: a failing test is written
 for each defect before anything is fixed.
@@ -109,9 +114,10 @@ Be honest about this, because the distinction matters:
   there may differ from VS Code. Verify rather than assume.
 
 ```bash
-./scripts/check-write-lock.sh green    # developer must not have touched src/test or docs
-./scripts/check-write-lock.sh qa       # qa must not have touched src/main
-./scripts/check-write-lock.sh red      # test-compile passes AND test fails
+./scripts/check-write-lock.sh red <feature>        # catalogue covers every BR, src/main untouched
+./scripts/check-write-lock.sh skeleton <feature>   # skeleton declares only, every NEW test fails
+./scripts/check-write-lock.sh green                # developer must not have touched src/test or docs
+./scripts/check-write-lock.sh qa                   # qa must not have touched src/main
 ```
 
 ## Known state of this repository

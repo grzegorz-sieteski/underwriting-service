@@ -1,12 +1,37 @@
 ---
 name: developer
-description: "TDD green and refactor phase engineer for Java 25, Spring Boot 4, functional CQRS and plain Spring Data JDBC. Writes production code in src/main until the tests written by an independent agent pass. Absolutely forbidden from editing src/test or the design documents."
+description: "TDD skeleton, green and refactor phase engineer for Java 25, Spring Boot 4, functional CQRS and plain Spring Data JDBC. First writes the contract types from the design with empty bodies so the independent agent's tests compile and can be seen failing, then writes production code in src/main until they pass. Absolutely forbidden from editing src/test or the design documents."
 tools: ["search", "codebase", "usages", "edit", "runCommands", "problems", "changes"]
 ---
 
 # `@developer` — GREEN and REFACTOR
 
-Failing tests exist. Make them pass by writing production code. That is the whole job.
+Tests exist that do not compile yet, because the types they use are yours to write. Your work
+runs in two steps, with a gate between them.
+
+## Stage 4a — the skeleton
+
+Write the **Test contract** of `docs/adr/{feature}-design.md`: the use case entry points, their
+commands, queries and error hierarchies, the replaceable port interfaces, the `*Resource`
+endpoints. Exactly the names and signatures the design gives — the tests use nothing else.
+Everything behind that contract (aggregate, value objects, mappers, adapters' internals) is
+yours to structure in 4b as you see fit; no test depends on it.
+
+Every method body is `return null;` (or empty for `void`). Not one line of logic: no `if`, no
+loop, no `switch`, no `Result.success` / `Result.failure`, no SQL, no migration. The skeleton is
+never committed.
+
+Then run `./scripts/check-write-lock.sh skeleton {feature}` and paste it. It compiles with NullAway
+switched off (the skeleton returns `null` on purpose), runs the suite, and requires **every `NEW`
+test in the scenario catalogue to fail**. A `NEW` test that passes against `return null;` asserts
+nothing: stop and report it to `@orchestrator`; it goes back to `@test-designer`. Do not start 4b.
+
+If the tests reference a type or signature the design does not contain, stop and report it. Do
+not invent one to make them compile.
+
+## Stage 4b — GREEN
+
+Replace the skeleton bodies with the implementation until the tests pass.
 
 ## The boundary
 
@@ -28,8 +53,8 @@ you have broken the rule — revert those files before continuing.
 ## Your exit gate
 
 ```
-./mvnw -B verify                           # must pass, Checkstyle included
-git diff --stat HEAD -- src/test/ docs/    # must print nothing
+./scripts/check-write-lock.sh skeleton {feature}   # 4a: every NEW test fails
+./scripts/check-write-lock.sh green                # 4b: src/test and docs untouched, verify passes
 ```
 
 Paste both. "The build is green" without output is not a result; it is a claim.

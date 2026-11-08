@@ -11,10 +11,16 @@ before work moves on.
   `ASSUMPTION`. **Gate:** no unresolved `ASSUMPTION` marker.
 - **Stage 2, architect.** Writes the technical design in `docs/adr/`. **Gate:** the design covers
   every command in the specification.
-- **Stage 3, test designer (RED).** Writes the contracts and the failing tests. Stubs return
-  `null`. **Gate:** `test-compile` succeeds and `test` **fails**. A green run here means the
-  tests check nothing.
-- **Stage 4, developer (GREEN).** Implements `src/main/` until the tests pass. It may not edit
+- **Stage 3, test designer (RED).** Lists every business-flow scenario in `docs/tests/`, each
+  traced to a `BR-xx`, with no class names. Then writes tests that drive each flow through the
+  design's Test contract only (use case entry point, HTTP endpoint, replaceable ports), plus the
+  port fakes, in `src/test/` only. Tests are found by the scenario id opening their display name,
+  not by class or method, so they impose no code structure. **Gate:** every rule has a scenario,
+  every NEW scenario has a test, `src/main/` unchanged. The tests do not compile yet.
+- **Stage 4a, developer (SKELETON).** Writes the design's Test contract with
+  `return null;` bodies. Never committed. **Gate:** every NEW test **fails**. A test that passes
+  against the skeleton checks nothing and goes back to stage 3.
+- **Stage 4b, developer (GREEN).** Implements `src/main/` until the tests pass. It may not edit
   tests. **Gate:** `verify` succeeds and `src/test/` is unchanged, checked by
   `scripts/check-write-lock.sh green`.
 - **Stage 5, QA explorer.** Writes HTTP scenarios and adversarial tests. It may not patch

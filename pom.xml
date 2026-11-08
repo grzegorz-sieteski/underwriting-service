@@ -40,6 +40,12 @@
         <errorprone.version>2.52.0</errorprone.version>
         <nullaway.version>0.14.3</nullaway.version>
         <!--
+          ERROR everywhere that matters. Only scripts/check-write-lock.sh skeleton overrides it to
+          OFF, because an uncommitted skeleton body is `return null;` and must still run so the
+          new tests can be seen failing. The green gate and CI run with the default.
+        -->
+        <nullaway.severity>ERROR</nullaway.severity>
+        <!--
           Must be new enough to parse Java 25 syntax. Checkstyle 10.x fails on
           `import module java.base;` (JEP 511) with "mismatched input 'java'".
         -->
@@ -177,7 +183,7 @@
                             <compilerArgs>
                                 <arg>-XDcompilePolicy=simple</arg>
                                 <arg>--should-stop=ifError=FLOW</arg>
-                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:ERROR -XepOpt:NullAway:AnnotatedPackages=com.gs5.underwriting</arg>
+                                <arg>-Xplugin:ErrorProne -XepDisableAllChecks -Xep:NullAway:${nullaway.severity} -XepOpt:NullAway:AnnotatedPackages=com.gs5.underwriting</arg>
                             </compilerArgs>
                             <annotationProcessorPaths>
                                 <path>
@@ -244,6 +250,14 @@
                         <include>**/*Test.java</include>
                         <include>**/*IT.java</include>
                     </includes>
+                    <!--
+                      Reports name each test by its @DisplayName, not its Java method. A scenario
+                      id ("SC-07: ...") in the display name is how scripts/check-write-lock.sh
+                      finds the test for a catalogue row without knowing any class or method name.
+                    -->
+                    <statelessTestsetReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5Xml30StatelessReporter">
+                        <usePhrasedTestCaseMethodName>true</usePhrasedTestCaseMethodName>
+                    </statelessTestsetReporter>
                 </configuration>
             </plugin>
 

@@ -55,8 +55,11 @@ jobs:
           BASE: origin/${{ github.base_ref }}
         run: bash scripts/check-write-lock.sh qa
 
-      # In the RED phase a passing build is the failure: it means the tests are satisfied
-      # by the null-returning stubs and assert nothing.
-      - name: Red phase — contracts compile, tests fail
+      # RED: scenario catalogue covers every business rule, every NEW scenario has a test,
+      # src/main untouched. The tests need not compile yet; that each one fails is proven at
+      # the skeleton gate, which runs locally and is never committed.
+      - name: Red phase — scenarios traced, src/main untouched
         if: contains(github.event.pull_request.labels.*.name, 'phase:red')
+        env:
+          BASE: origin/${{ github.base_ref }}
         run: bash scripts/check-write-lock.sh red
