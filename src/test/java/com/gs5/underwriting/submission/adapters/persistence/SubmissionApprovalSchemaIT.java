@@ -8,6 +8,7 @@ import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureDataSourceInitialization;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.junit.jupiter.Container;
@@ -53,7 +54,7 @@ class SubmissionApprovalSchemaIT {
     class ApprovalRowConstraints {
 
         @Test
-        @DisplayName("an approval cannot name a submission that belongs to another organisation (BR-17, D9)")
+        @DisplayName("SC-88: an approval cannot name a submission that belongs to another organisation (BR-17, D9)")
         void anApprovalCannotReferenceASubmissionOfAnotherTenant() {
             var submission = insertSubmission(TENANT_A, "REF-1");
 
@@ -62,17 +63,19 @@ class SubmissionApprovalSchemaIT {
         }
 
         @Test
-        @DisplayName("deleting an approved submission is refused, not cascaded into its approval (D9)")
+        @DisplayName("SC-89: deleting an approved submission is refused, not cascaded into its approval (D9)")
         void deletingAnApprovedSubmissionIsRefusedNotCascaded() {
             var submission = insertSubmission(TENANT_A, "REF-2");
             insertApproval(submission, TENANT_A, "uw-02");
 
+            // Since V4 the append-only trigger refuses the DELETE before the foreign key is even
+            // consulted (BR-44), so the refusal is no longer necessarily an integrity violation.
             assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM submissions WHERE id = ?", submission))
-                    .isInstanceOf(DataIntegrityViolationException.class);
+                    .isInstanceOf(DataAccessException.class);
         }
 
         @Test
-        @DisplayName("guard: a second approval of one submission is refused by the primary key (BR-36)")
+        @DisplayName("SC-88: guard: a second approval of one submission is refused by the primary key (BR-36)")
         void aSecondApprovalOfOneSubmissionIsRefused() {
             var submission = insertSubmission(TENANT_A, "REF-3");
             insertApproval(submission, TENANT_A, "uw-02");

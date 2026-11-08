@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ActorRoleTest {
 
     @Test
-    @DisplayName("the roles that may decide are exactly the two approving roles, confirmed by the product owner (BR-02, BR-33)")
+    @DisplayName("SC-75: the roles that may decide are exactly the two approving roles, confirmed by the product owner (BR-02, BR-33)")
     void shouldPinTheDecidingRolesToExactlyUnderwriterAndSeniorUnderwriter() {
         assertThat(Arrays.stream(ActorRole.values()).filter(ActorRole::canDecide))
                 .containsExactlyInAnyOrder(ActorRole.UNDERWRITER, ActorRole.SENIOR_UNDERWRITER);

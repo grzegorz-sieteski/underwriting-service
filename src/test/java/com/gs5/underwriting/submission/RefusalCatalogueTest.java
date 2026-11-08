@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RefusalCatalogueTest {
 
     @Test
-    @DisplayName("the gate's two refusals and the domain's seven are together exactly the nine "
+    @DisplayName("SC-23: the gate's two refusals and the domain's seven are together exactly the nine "
             + "registration refusals the specification lists, each produced once")
     void shouldHaveExactlyNineRegistrationRefusalsAcrossGateAndDomain() {
         var names = Stream.concat(
@@ -43,14 +43,14 @@ class RefusalCatalogueTest {
                 "InsuredLimitNotPositive",
                 "InsuredLimitPrecisionInvalid",
                 "NumberAlreadyUsed",
-                "NumberContainsControlCharacter",
+                "NumberContainsCharacterNotAllowed",
                 "NumberMissing",
                 "NumberTooLong",
                 "PermissionDenied");
     }
 
     @Test
-    @DisplayName("the access gate refuses for exactly two reasons, both decided before any input")
+    @DisplayName("SC-23: the access gate refuses for exactly two reasons, both decided before any input")
     void shouldHaveExactlyTwoAccessRefusals() {
         var names = Arrays.stream(AccessRefusal.class.getPermittedSubclasses())
                 .map(Class::getSimpleName)

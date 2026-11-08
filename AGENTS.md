@@ -114,6 +114,8 @@ Be honest about this, because the distinction matters:
   there may differ from VS Code. Verify rather than assume.
 
 ```bash
+./scripts/check-write-lock.sh pin                  # orchestrator, at each hand-over: pin the verified commit
+./scripts/check-write-lock.sh trace <feature>      # every BR has a scenario, every scenario a test
 ./scripts/check-write-lock.sh red <feature>        # catalogue covers every BR, src/main untouched
 ./scripts/check-write-lock.sh skeleton <feature>   # skeleton declares only, every NEW test fails
 ./scripts/check-write-lock.sh green                # developer must not have touched src/test or docs
@@ -138,4 +140,11 @@ Be honest about this, because the distinction matters:
 - `src/test/resources/archunit.properties` sets `archRule.failOnEmptyShould=true`, and there is no
   per-rule escape hatch left anywhere. Keep it that way: with it false, a typo in a package name
   turns a rule into a green test that checks nothing, and you will trust it.
+- **The gates compare against a pinned commit, not `HEAD`.** `check-write-lock.sh pin` records it
+  in `.git/sdlc-baseline`; without a pin (or an explicit `BASE=<ref>`) the phase gates refuse to
+  run. Against `HEAD`, a committed forbidden edit made the diff empty and the gate passed.
+- **`TestBoundaryRulesTest`** fails the build when a test depends on a package-private production
+  class. It is a frozen ArchUnit rule: 91 violations from tests written before it (mostly the
+  persistence `*IT`s, which drive the SQL adapters directly) are recorded in
+  `src/test/resources/archunit_store`. The store may only shrink; store creation is disabled.
 - `openapi/` is empty: there is no contract to publish until there is an endpoint.

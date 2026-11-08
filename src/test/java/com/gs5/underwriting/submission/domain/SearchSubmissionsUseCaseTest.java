@@ -105,9 +105,9 @@ class SearchSubmissionsUseCaseTest {
     @DisplayName("Every role may search, and the role changes nothing (BR-16)")
     class RoleIsIrrelevant {
 
-        @ParameterizedTest(name = "[{index}] role={0}")
+        @ParameterizedTest(name = "SC-33: [{index}] role={0}")
         @EnumSource(ActorRole.class)
-        @DisplayName("every role — viewer included — gets the identical page and count")
+        @DisplayName("SC-33: every role — viewer included — gets the identical page and count")
         void shouldReturnIdenticalResultsWhenAnyRoleSearches(ActorRole role) {
             // Given
             var actor = new ActorContext(TENANT_A, "actor-" + role, role);
@@ -121,7 +121,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("a viewer, who may not register at all, searches without restriction")
+        @DisplayName("SC-33: a viewer, who may not register at all, searches without restriction")
         void shouldReturnFilteredSubmissionsWhenViewerSearches() {
             // Given
             var query = byAmount("200.00", "400.00");
@@ -141,7 +141,7 @@ class SearchSubmissionsUseCaseTest {
     class TenantIsolation {
 
         @Test
-        @DisplayName("another organisation's submission is absent from the page")
+        @DisplayName("SC-34: another organisation's submission is absent from the page")
         void shouldExcludeOtherTenantSubmissionsFromResultsPageWhenSearching() {
             // Given
             var query = unfiltered(0, 100);
@@ -154,7 +154,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("another organisation's submission is absent from the total match count too, "
+        @DisplayName("SC-34: another organisation's submission is absent from the total match count too, "
                 + "so its existence is not revealed by a number")
         void shouldExcludeOtherTenantSubmissionsFromTotalMatchCountWhenCounting() {
             // Given
@@ -168,7 +168,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("asking by a reference only another organisation holds is an empty success, "
+        @DisplayName("SC-35: asking by a reference only another organisation holds is an empty success, "
                 + "never a refusal: there is no forbidden outcome anywhere")
         void shouldReturnEmptyPageWhenSearchingByReferenceOwnedByOtherTenant() {
             // Given
@@ -183,7 +183,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("each organisation sees only its own submission under a shared reference")
+        @DisplayName("SC-34: each organisation sees only its own submission under a shared reference")
         void shouldReturnOnlyOwnSubmissionWhenSharedReferenceSearched() {
             // Given
             var query = byReference("S-1");
@@ -203,7 +203,7 @@ class SearchSubmissionsUseCaseTest {
     class Filters {
 
         @Test
-        @DisplayName("a search with no criteria returns every submission of the own organisation")
+        @DisplayName("SC-36: a search with no criteria returns every submission of the own organisation")
         void shouldReturnAllOwnSubmissionsWhenNoCriteriaProvided() {
             // Given
             var query = unfiltered(0, 100);
@@ -216,7 +216,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("the reference filter narrows to at most one submission")
+        @DisplayName("SC-37: the reference filter narrows to at most one submission")
         void shouldNarrowToOneSubmissionWhenReferenceFilterProvided() {
             // Given
             var query = byReference("S-3");
@@ -228,9 +228,9 @@ class SearchSubmissionsUseCaseTest {
             assertThat(result).isEqualTo(page(List.of(s3), 1L, 0, 100));
         }
 
-        @ParameterizedTest(name = "[{index}] nearMiss={0}")
+        @ParameterizedTest(name = "SC-37: [{index}] nearMiss={0}")
         @ValueSource(strings = {"s-3", "S-3 ", " S-3", "S3"})
-        @DisplayName("the reference filter compares exactly as supplied: no case folding and no "
+        @DisplayName("SC-37: the reference filter compares exactly as supplied: no case folding and no "
                 + "trimming, so a near-miss is an empty success (BR-07)")
         void shouldReturnEmptyPageWhenReferenceIsNearMiss(String nearMiss) {
             // Given
@@ -244,7 +244,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("both insured limit bounds are inclusive")
+        @DisplayName("SC-38: both insured limit bounds are inclusive")
         void shouldIncludeBothBoundariesWhenFilteringByInsuredLimit() {
             // Given
             var query = byAmount("200.00", "400.00");
@@ -257,7 +257,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("both registration moment bounds are inclusive")
+        @DisplayName("SC-38: both registration moment bounds are inclusive")
         void shouldIncludeBothBoundariesWhenFilteringByRegistrationMoment() {
             // Given
             var query = byMoment(at(1), at(3));
@@ -270,7 +270,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("two criteria narrow together, not separately")
+        @DisplayName("SC-38: two criteria narrow together, not separately")
         void shouldCombineMultipleCriteriaWithAndWhenFiltering() {
             // Given
             var query = SearchSubmissionsQuery.parse(null, new BigDecimal("200.00"), null,
@@ -284,7 +284,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("a filter bound may be negative, zero or carry any scale: BR-11 and BR-12 are "
+        @DisplayName("SC-38: a filter bound may be negative, zero or carry any scale: BR-11 and BR-12 are "
                 + "rules about what may be REGISTERED and are not re-imposed on a comparison value")
         void shouldAllowAnyScaleOrSignWhenFilterBoundsSupplied() {
             // Given
@@ -306,7 +306,7 @@ class SearchSubmissionsUseCaseTest {
     class MatchingNothing {
 
         @Test
-        @DisplayName("a search that matches no submission succeeds with an empty page and a count "
+        @DisplayName("SC-39: a search that matches no submission succeeds with an empty page and a count "
                 + "of zero")
         void shouldReturnEmptySuccessWhenNoSubmissionMatches() {
             // Given
@@ -327,7 +327,7 @@ class SearchSubmissionsUseCaseTest {
     class ContradictoryRanges {
 
         @Test
-        @DisplayName("an insured limit range whose lower bound exceeds its upper bound is a "
+        @DisplayName("SC-40: an insured limit range whose lower bound exceeds its upper bound is a "
                 + "SUCCESSFUL empty page with a total match count of zero — not a refusal")
         void shouldReturnEmptySuccessWhenInsuredLimitRangeIsContradictory() {
             // Given
@@ -341,7 +341,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("a registration moment range whose lower bound is after its upper bound is "
+        @DisplayName("SC-40: a registration moment range whose lower bound is after its upper bound is "
                 + "identically a SUCCESSFUL empty page with a count of zero — not a refusal")
         void shouldReturnEmptySuccessWhenMomentRangeIsContradictory() {
             // Given
@@ -355,7 +355,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("both ranges contradicting at once is still one empty success")
+        @DisplayName("SC-40: both ranges contradicting at once is still one empty success")
         void shouldReturnEmptySuccessWhenBothRangesAreContradictory() {
             // Given
             var query = SearchSubmissionsQuery.parse(null, new BigDecimal("5000.00"),
@@ -376,7 +376,7 @@ class SearchSubmissionsUseCaseTest {
     class Order {
 
         @Test
-        @DisplayName("submissions come back ordered by registration moment, newest first")
+        @DisplayName("SC-41: submissions come back ordered by registration moment, newest first")
         void shouldReturnSubmissionsOrderedByRegistrationMomentNewestFirst() {
             // Given
             var query = unfiltered(0, 100);
@@ -398,7 +398,7 @@ class SearchSubmissionsUseCaseTest {
     class Paging {
 
         @Test
-        @DisplayName("paging is zero-based: page 0 is the FIRST page, not the second")
+        @DisplayName("SC-42: paging is zero-based: page 0 is the FIRST page, not the second")
         void shouldReturnFirstPageWhenPageIsZero() {
             // Given
             var query = unfiltered(0, 2);
@@ -411,7 +411,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("page 1 is the second page")
+        @DisplayName("SC-42: page 1 is the second page")
         void shouldReturnSecondPageWhenPageIsOne() {
             // Given
             var query = unfiltered(1, 2);
@@ -424,7 +424,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("an oversized page request is clamped, never refused, and the answer echoes "
+        @DisplayName("SC-42: an oversized page request is clamped, never refused, and the answer echoes "
                 + "the size that was APPLIED — not the size that was asked for")
         void shouldClampAndEchoAppliedSizeWhenPageSizeIsOversized() {
             // Given
@@ -437,9 +437,9 @@ class SearchSubmissionsUseCaseTest {
             assertThat(result).isEqualTo(page(List.of(s5, s4, s3, s2, s1), 5L, 0, 100));
         }
 
-        @ParameterizedTest(name = "[{index}] requestedSize={0}")
+        @ParameterizedTest(name = "SC-42: [{index}] requestedSize={0}")
         @ValueSource(ints = {0, -1, -500, Integer.MIN_VALUE})
-        @DisplayName("a degenerate page size clamps up to one row and still succeeds: search has "
+        @DisplayName("SC-42: a degenerate page size clamps up to one row and still succeeds: search has "
                 + "exactly one refusal reason, so a malformed page request cannot be refused")
         void shouldClampToOneRowWhenPageSizeIsDegenerate(int requestedSize) {
             // Given
@@ -453,7 +453,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("a negative page clamps to the first page and still succeeds")
+        @DisplayName("SC-42: a negative page clamps to the first page and still succeeds")
         void shouldClampToFirstPageWhenPageNumberIsNegative() {
             // Given
             var query = unfiltered(-3, 2);
@@ -466,7 +466,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("the total match count is the same on every page, and ignores which page was "
+        @DisplayName("SC-43: the total match count is the same on every page, and ignores which page was "
                 + "asked for (BR-26)")
         void shouldMaintainConstantTotalMatchCountAcrossAllPages() {
             // Given
@@ -483,7 +483,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("a page beyond the end of the matching set is a success carrying an empty "
+        @DisplayName("SC-44: a page beyond the end of the matching set is a success carrying an empty "
                 + "page and the TRUE total match count (BR-26, BR-27)")
         void shouldReturnEmptyPageWithTrueTotalCountWhenPageExceedsMatchingSet() {
             // Given
@@ -497,7 +497,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("a page beyond the end of an EMPTY matching set is a success with a total of "
+        @DisplayName("SC-44: a page beyond the end of an EMPTY matching set is a success with a total of "
                 + "zero")
         void shouldReturnEmptyPageWithZeroCountWhenEmptySetPagingExceeded() {
             // Given
@@ -511,7 +511,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("paging reaches the whole matching set once each: nothing skipped, nothing "
+        @DisplayName("SC-45: paging reaches the whole matching set once each: nothing skipped, nothing "
                 + "twice (BR-28)")
         void shouldReachEverySubmissionExactlyOnceWhenPagingThroughAllResults() {
             // Given
@@ -528,7 +528,7 @@ class SearchSubmissionsUseCaseTest {
         }
 
         @Test
-        @DisplayName("submissions registered in the identical moment still page without skipping "
+        @DisplayName("SC-45: submissions registered in the identical moment still page without skipping "
                 + "or repeating one, because the order is total")
         void shouldPageWithoutDuplicatesOrSkipsWhenRegistrationMomentsTie() {
             // Given

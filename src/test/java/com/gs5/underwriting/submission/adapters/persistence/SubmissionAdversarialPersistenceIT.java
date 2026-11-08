@@ -7,6 +7,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
@@ -95,7 +97,7 @@ class SubmissionAdversarialPersistenceIT {
 
     @AfterEach
     void emptyTheTable() {
-        jdbcTemplate.execute("TRUNCATE TABLE submission_approvals, submissions");
+        FactTables.clear(jdbcTemplate);
     }
 
     private static SubmissionSnapshot snapshot(UUID tenantId,
@@ -120,51 +122,24 @@ class SubmissionAdversarialPersistenceIT {
     // ================================================================================
 
     @Nested
-    @DisplayName("Inputs the domain accepts but the column may not")
-    class InputsTheDomainAcceptsButTheColumnMayNot {
-
-        /*
-         * REVERSED 2026-11-02 by BR-29, by @test-designer.
-         *
-         * This slot held a_nul_byte_reference_does_not_escape_as_an_exception, which asserted that
-         * the ADAPTER must turn a NUL-bearing number into a Result rather than let PgJDBC's
-         * "Zero bytes may not occur in string parameters" escape. That requirement no longer
-         * exists: BR-29 refuses every category-Cc character in the domain, so a NUL number is
-         * now rejected before any port is called and cannot reach this adapter through the useCase
-         * at all. Asserting it here would pin a requirement nobody has, and the old test bypassed
-         * the domain to construct a snapshot the domain can no longer produce.
-         *
-         * The refusal is owned by RegisterSubmissionUseCaseTest$ControlCharactersInTheReference and
-         * SubmissionRegistrationAdversarialTest$ReferenceCharacterSet. What is still worth
-         * asserting HERE is the integration-level half of the same promise, below.
-         */
+    @DisplayName("Inputs at the column")
+    class InputsAtTheColumn {
 
         @Test
-        @DisplayName("every reference the domain now accepts is storable, which is the property "
-                + "BR-29 was decided to guarantee (QA-02, closed)")
+        @DisplayName("SC-79: every number the domain accepts is storable and read back exactly, so "
+                + "valid and recordable cannot disagree (QA-02, closed)")
         void shouldStoreEveryReferenceAcceptedByDomainWhenInserting() {
             // Given
-            // The business point of BR-29 is that "valid" and "recordable" can no longer
-            // disagree. These are the awkward numbers that remain valid after it — spaces
-            // only, leading and trailing spaces, a format character, an emoji at the 64-code-
-            // point limit — and every one of them must reach the column without a driver refusal.
-            var stillValid = List.of(
-                    "   ",                       // spaces only: BR-29 does not touch U+0020
-                    " ABC-1",                    // leading space, preserved by BR-07
-                    "ABC-1 ",                    // trailing space, preserved by BR-07
-                    "‮exe.txt",             // U+202E is category Cf, not Cc
-                    " ",                    // U+00A0 NO-BREAK SPACE is category Zs
-                    "😀".repeat(64));  // 64 code points, 128 UTF-16 chars
+            var valid = List.of("ABC-1", "abc-1", "-", "0123456789", "A1-".repeat(21) + "Z");
 
             // When & Then
-            assertThat(stillValid).allSatisfy(reference -> {
+            assertThat(valid).allSatisfy(reference -> {
                 var id = UUID.randomUUID();
                 var inserted = commandAdapter.insert(
                         snapshot(id, TENANT_A, reference, "1200.00"));
 
                 assertThat(inserted.isSuccess())
-                        .describedAs("reference %s is valid under BR-29 and must be storable",
-                                reference.codePoints().boxed().toList())
+                        .describedAs("number %s is valid under BR-29 and must be storable", reference)
                         .isTrue();
                 assertThat(commandAdapter.findOwn(TENANT_A, id))
                         .hasValueSatisfying(stored ->
@@ -173,7 +148,7 @@ class SubmissionAdversarialPersistenceIT {
         }
 
         @Test
-        @DisplayName("an amount with 400 significant digits round-trips exactly: BR-13 says there "
+        @DisplayName("SC-80: an amount with 400 significant digits round-trips exactly: BR-13 says there "
                 + "is no upper bound, and the unconstrained NUMERIC column is what honours it")
         void shouldRoundTripEnormousAmountExactlyWhenInserting() {
             // Given
@@ -192,45 +167,10 @@ class SubmissionAdversarialPersistenceIT {
         }
 
         @Test
-        @DisplayName("64 supplementary code points occupy 128 UTF-16 chars and still fit "
-                + "VARCHAR(64), which is the claim the domain's length check rests on")
-        void shouldFitSixtyFourSupplementaryCodePointsInColumnWhenInserting() {
-            // Given
-            var reference = "😀".repeat(64);
-            assertThat(reference.length()).isEqualTo(128);
-
-            // When
-            // If VARCHAR(64) counted UTF-16 units or bytes this would be a 22001 string-data
-            // right-truncation error, and BR-05 would be enforced in two places that disagree.
-            var result = commandAdapter.insert(snapshot(TENANT_A, reference, "1200.00"));
-
-            // Then
-            assertThat(result.isSuccess()).isTrue();
-            assertThat(rowCount()).isEqualTo(1);
-        }
-
-        @Test
-        @DisplayName("64 code points of base letters plus combining marks fit the column too, "
-                + "although they render as only 32 graphemes")
-        void shouldFitSixtyFourCombiningCodePointsInColumnWhenInserting() {
-            // Given
-            var snapshot = snapshot(TENANT_A, "é".repeat(32), "1200.00");
-
-            // When
-            var result = commandAdapter.insert(snapshot);
-
-            // Then
-            assertThat(result.isSuccess()).isTrue();
-        }
-
-        @Test
-        @DisplayName("the scale CHECK is live: an amount that bypasses the aggregate is still "
+        @DisplayName("SC-81: the scale CHECK is live: an amount that bypasses the aggregate is still "
                 + "rejected by the column, so defence in depth is not decoration")
         void shouldFailScaleCheckWhenAmountExceedsAllowedScale() {
             // Given
-            // Going through the adapter directly is the only way to skip BR-12. A green run with
-            // no rejection would mean the CHECK was never created — the shape of failure this
-            // repository's own notes warn about: a gate that inspects nothing and reports green.
             var badSnapshot = snapshot(TENANT_A, "BAD-SCALE", "1200.005");
 
             // When
@@ -243,7 +183,7 @@ class SubmissionAdversarialPersistenceIT {
         }
 
         @Test
-        @DisplayName("the positivity CHECK is live as well")
+        @DisplayName("SC-81: the positivity CHECK is live as well")
         void shouldFailPositivityCheckWhenAmountIsNegative() {
             // Given
             var badSnapshot = snapshot(TENANT_A, "BAD-SIGN", "-1200.00");
@@ -257,11 +197,13 @@ class SubmissionAdversarialPersistenceIT {
             assertThat(rowCount()).isZero();
         }
 
-        @Test
-        @DisplayName("the control-character CHECK is live as well (BR-29 defence in depth)")
-        void shouldFailControlCharacterCheckWhenReferenceContainsControlCharacter() {
+        @ParameterizedTest(name = "SC-81: the column refuses number {0}")
+        @ValueSource(strings = {"BAD\tREF", "A B", "   ", "REF;1", "A/B", "A.1", "A_B", "ŁÓDŹ", "A😀"})
+        @DisplayName("SC-81: the allowed-characters CHECK is live: a number the domain refuses is also "
+                + "refused by the column (BR-29 defence in depth, V4)")
+        void shouldFailAllowedCharactersCheckWhenNumberHasCharacterNotAllowed(String number) {
             // Given
-            var badSnapshot = snapshot(TENANT_A, "BAD\tREF", "1200.00");
+            var badSnapshot = snapshot(TENANT_A, number, "1200.00");
 
             // When
             var thrown = catchThrowable(() ->
@@ -270,22 +212,6 @@ class SubmissionAdversarialPersistenceIT {
             // Then
             assertThat(thrown).isNotNull();
             assertThat(rowCount()).isZero();
-        }
-
-        @Test
-        @DisplayName("a whitespace-only reference is stored untouched and does not trip the "
-                + "non-empty CHECK: BR-04 refuses no characters, and a space is a character")
-        void shouldStoreWhitespaceOnlyReferenceAndPassNonEmptyCheckWhenInserting() {
-            // Given
-            var whitespaceSnapshot = snapshot(TENANT_A, "   ", "1200.00");
-
-            // When
-            var result = commandAdapter.insert(whitespaceSnapshot);
-
-            // Then
-            assertThat(result.isSuccess()).isTrue();
-            assertThat(jdbcTemplate.queryForObject(
-                    "SELECT submission_number FROM submissions", String.class)).isEqualTo("   ");
         }
     }
 
@@ -296,7 +222,7 @@ class SubmissionAdversarialPersistenceIT {
     class TheRaceAgainstTheRealIndex {
 
         @Test
-        @DisplayName("32 inserts racing for one reference in one organisation leave exactly one "
+        @DisplayName("SC-83: 32 inserts racing for one reference in one organisation leave exactly one "
                 + "row: the unique index, not the application, is what settles it")
         void shouldLeaveExactlyOneRowWhenRacingInsertsForSameReferenceWithinTenant() {
             // Given
@@ -325,7 +251,7 @@ class SubmissionAdversarialPersistenceIT {
         }
 
         @Test
-        @DisplayName("the same reference racing across two organisations leaves one row EACH: "
+        @DisplayName("SC-84: the same reference racing across two organisations leaves one row EACH: "
                 + "uniqueness never crosses an organisation, not even under contention (BR-08)")
         void shouldLeaveOneRowPerTenantWhenSameReferenceRacesAcrossTwoOrganisations() {
             // Given & When
@@ -350,7 +276,7 @@ class SubmissionAdversarialPersistenceIT {
         }
 
         @Test
-        @DisplayName("32 searches running while 32 registrations race never return a torn row and "
+        @DisplayName("SC-85: 32 searches running while 32 registrations race never return a torn row and "
                 + "never return the other organisation's row")
         void shouldKeepSearchesIsolatedWithoutTornOrCrossTenantRowsWhenRacingUnderContention() {
             // Given & When
@@ -396,7 +322,7 @@ class SubmissionAdversarialPersistenceIT {
     class PagingArithmetic {
 
         @Test
-        @DisplayName("the offset page = Integer.MAX_VALUE produces (214 748 364 700) binds as a "
+        @DisplayName("SC-87: the offset page = Integer.MAX_VALUE produces (214 748 364 700) binds as a "
                 + "bigint and returns nothing, while the count stays true (BR-26, BR-27)")
         void shouldBindAsBigintAndReturnEmptyPageWhilePreservingCountWhenOffsetIsEnormous() {
             // Given
@@ -416,7 +342,7 @@ class SubmissionAdversarialPersistenceIT {
         }
 
         @Test
-        @DisplayName("a reference held only by another organisation is indistinguishable at the "
+        @DisplayName("SC-85: a reference held only by another organisation is indistinguishable at the "
                 + "SQL level from one nobody holds: both statements answer empty and zero (BR-17)")
         void shouldBeIndistinguishableFromNonexistentWhenReferenceBelongsToForeignTenant() {
             // Given

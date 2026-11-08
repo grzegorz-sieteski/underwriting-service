@@ -14,6 +14,14 @@ out of scope rather than filling the gap. **Every business fact in this specific
 two open questions its first draft carried — the search filter set and the result order — were
 answered by the product owner on 2026-11-01 and are recorded below as confirmed facts.
 
+**Revision of 2026-11-08 (product owner).** A submission number has no special characters: it
+consists only of ASCII letters, digits and the hyphen (`BR-29`, rewritten). This replaces the
+earlier rule that refused only control characters, so a number containing a space, `;`, `/` or a
+letter outside ASCII, which was valid before, is now refused. The reason recorded: a number names a
+submission in the request path (`BR-48`), and characters with a meaning in a path made one number
+approve another. Passages below that still describe spaces or other characters as valid are
+superseded by `BR-29` and kept only as the history of the 2026-11-02 decision.
+
 **Revision of 2026-11-04 (product owner).** The submission number is the only identifier of a submission that leaves this service, and it is the name a caller uses for every operation (`BR-47`, `BR-48`). The internal identity is never shown outside the service. Approval names the submission by its submission number. Events carry the submission number. The term *submission reference* is renamed *submission number* throughout, and the rules it governs keep their meaning. `BR-35` no longer speaks of a malformed identity: a text that cannot be a submission number is covered by `BR-48`.
 
 ## Scope
@@ -34,10 +42,9 @@ nothing about, or — in the last case — something it has deliberately left to
 - amending, withdrawing, cancelling or deleting a registered submission, and un-approving one (an approval is final, `BR-36`)
 - any authority limit attached to a role
 - any currency other than the single confirmed one
-- further restrictions on which characters a submission number may contain. Control characters
-  are refused (`BR-29`) and that is the **only** character restriction; beyond it, no restriction
-  is confirmed and none is imposed. Letters of any script, digits, punctuation, symbols, emoji and
-  spaces are all acceptable characters
+- any character in a submission number beyond the allowed set of `BR-29` (revision of
+  2026-11-08): ASCII letters, digits and the hyphen. Spaces, punctuation, symbols, letters of other
+  scripts, emoji and control characters are all refused
 - how long a submission is kept
 - the **maximum permitted page size**. Paging itself is in scope and specified below, but the
   upper bound on how large a single page may be is a resource-protection parameter, not a
@@ -88,7 +95,7 @@ Every row is testable exactly as written.
 | `BR-04` | A submission number must be supplied | Number is absent, or contains no characters at all | Registration refused: **number missing** |
 | `BR-05` | A submission number is at most 64 characters long | Number is 65 characters or longer | Registration refused: **number too long**. A number of exactly 64 characters is accepted |
 | `BR-06` | A submission number is unique within one organisation | The caller's organisation already has a successfully registered submission carrying the identical number | Registration refused: **number already used**. The earlier submission is unchanged |
-| `BR-07` | An accepted number is stored and compared exactly as supplied, never normalised | Two numbers differ in any character, including in letter case or in surrounding spaces | They are different numbers. No trimming, case folding, padding, re-encoding or other normalisation is ever applied, because none is confirmed. This rule governs **how** an accepted number is treated, and says nothing about which characters are acceptable — that is `BR-04`, `BR-05` and `BR-29`. A number that `BR-29` refuses is refused whole: no character is ever stripped or replaced to make it acceptable |
+| `BR-07` | An accepted number is stored and compared exactly as supplied, never normalised | Two numbers differ in any character, including in letter case | They are different numbers. No trimming, case folding, padding, re-encoding or other normalisation is ever applied, because none is confirmed. This rule governs **how** an accepted number is treated, and says nothing about which characters are acceptable — that is `BR-04`, `BR-05` and `BR-29`. A number that `BR-29` refuses is refused whole: no character is ever stripped or replaced to make it acceptable |
 | `BR-08` | The same number may be used by different organisations | Another organisation has already registered a submission with the identical number, and the caller's own organisation has not | Registration succeeds. Uniqueness never crosses organisations |
 | `BR-09` | Where two registrations race for the same number in the same organisation, the first to be recorded wins | Two registrations with the identical number and organisation are attempted and neither has completed yet | Exactly one is recorded; the other is refused: **number already used**. Both are never recorded |
 | `BR-10` | An insured limit must be supplied | Insured limit is absent | Registration refused: **insured limit missing** |
@@ -110,9 +117,9 @@ Every row is testable exactly as written.
 | `BR-26` | Every search reports how large the whole matching set is | A search succeeds, including when the page returned is empty | The total match count of the whole matching set is returned alongside the page, so the caller can tell how many pages exist. The count ignores which page was asked for |
 | `BR-27` | Asking for a page beyond the end of the matching set is a success | The first submission of the requested page lies past the end of the matching set, including when the matching set is empty | A success carrying an empty page and the true total match count. It is **not** a refusal |
 | `BR-28` | Paging reaches the whole matching set, once each | Every page of a matching set is requested in turn while the matching set is unchanged | Each matching submission appears on exactly one page, no submission is skipped, none appears twice, and the sequence of pages follows the order of `BR-24` |
-| `BR-29` | A submission number may not contain a control character | The number contains, at any position, at least one character of Unicode general category **Cc** — that is, any character in U+0000–U+001F or in U+007F–U+009F. NUL (U+0000), TAB (U+0009) and NEWLINE (U+000A) are all such characters | Registration refused: **number contains a control character**. The number is refused whole; nothing is stripped or replaced (`BR-07`). **SPACE (U+0020) is not a control character**: a number containing spaces, including one consisting only of spaces, is unaffected by this rule and stays valid |
-| `BR-30` | A search whose number filter contains a control character matches nothing, and is still a success | A search supplies a submission number filter containing at least one control character (any character in U+0000–U+001F or U+007F–U+009F). No such number can have been registered, because `BR-29` refuses every one at registration | A success carrying an empty page and a total match count of zero. It is **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). The filter is never stripped or altered to make it match. A filter made only of spaces is **not** affected, since SPACE is not a control character: it is compared exactly (`BR-07`) and matches a submission registered with that very number. This extends `BR-20` and `BR-21` |
-| `BR-31` | A number filter that is empty is treated as not supplied, and narrows nothing | A search supplies a submission number filter that is present but empty, containing no characters at all (for example a blank field left untouched by the client) | The filter is treated exactly as if it had been omitted (`BR-19`): the search is not narrowed by number, and the other criteria apply as usual. With no other criteria, every submission of the caller's own organisation is in the matching set. It is a success, **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). This is consistent with `BR-19`, which already says an omitted criterion narrows nothing; `BR-31` states that an empty number filter counts as omitted. It is **not** extended to spaces: a filter made only of spaces is not empty (see `BR-30`, `BR-07`) |
+| `BR-29` | A submission number contains only ASCII letters, digits and the hyphen (revision of 2026-11-08, product owner: "no special characters") | The number contains, at any position, at least one character other than `A`–`Z`, `a`–`z`, `0`–`9` and `-` (U+002D). Space, `;`, `/`, `\`, `.`, `%`, any other punctuation or symbol, any letter outside ASCII, any emoji and any control character (NUL, TAB, NEWLINE among them) are such characters | Registration refused: **number contains a character that is not allowed**. The number is refused whole; nothing is stripped or replaced (`BR-07`). The refusal names the first such character by its code point and its position, never the number itself |
+| `BR-30` | A search whose number filter contains a character that is not allowed matches nothing, and is still a success | A search supplies a submission number filter containing at least one character that `BR-29` does not allow. No such number can have been registered, because `BR-29` refuses every one at registration | A success carrying an empty page and a total match count of zero. It is **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). The filter is never stripped or altered to make it match. A filter made only of spaces matches nothing too, since a space is not allowed. This extends `BR-20` and `BR-21` |
+| `BR-31` | A number filter that is empty is treated as not supplied, and narrows nothing | A search supplies a submission number filter that is present but empty, containing no characters at all (for example a blank field left untouched by the client) | The filter is treated exactly as if it had been omitted (`BR-19`): the search is not narrowed by number, and the other criteria apply as usual. With no other criteria, every submission of the caller's own organisation is in the matching set. It is a success, **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). This is consistent with `BR-19`, which already says an omitted criterion narrows nothing; `BR-31` states that an empty number filter counts as omitted. A filter made only of spaces is not empty: it is a value that matches nothing (`BR-30`) |
 | `BR-32` | A search whose number filter is longer than 64 characters matches nothing, and is still a success | A search supplies a submission number filter of 65 characters or more, counted the same way `BR-05` counts the length of a number. No such number can have been registered, because `BR-05` refuses every one at registration | A success carrying an empty page and a total match count of zero. It is **not** a refusal and **not** an error, and no refusal reason exists for it: search keeps exactly one, **caller not identified** (`BR-01`). The filter is never shortened or altered to make it match. A filter of **exactly 64 characters** is not affected: it is compared exactly as supplied (`BR-07`) and matches a submission registered with that very number. This extends `BR-30`, and through it `BR-20` and `BR-21` |
 | `BR-33` | Only an Underwriter or a Senior Underwriter may approve a submission | Caller's role is Viewer | Approval refused: **role may not approve**. The role is decided before the submission is looked at, so a Viewer learns nothing about whether the submission exists. The caller may still search (`BR-16`) |
 | `BR-34` | An approval is judged in a fixed order, and the first failure found is the one refusal the caller receives | Any approval is attempted | The order is: caller identified (`BR-01`); role permits approving (`BR-33`); submission found in the caller's own organisation (`BR-35`); approver did not register the submission (`BR-41`); submission not already approved (`BR-36`). Nothing later in the order is considered once an earlier check fails. The self-approval check comes before the already-approved check because it depends only on who the caller is and who registered the submission, not on the approval history; this mirrors the role being decided before the number history at registration, and means a caller who may not approve their own submission learns nothing about its approval state |
@@ -146,7 +153,7 @@ Inputs and their hard constraints:
 
 | Input | Required | Constraint |
 |---|---|---|
-| Submission number | Yes | Present and non-empty (`BR-04`); at most 64 characters (`BR-05`); contains no control character (`BR-29`); not already used by the caller's organisation, compared exactly as supplied (`BR-06`, `BR-07`) |
+| Submission number | Yes | Present and non-empty (`BR-04`); at most 64 characters (`BR-05`); contains only ASCII letters, digits and the hyphen (`BR-29`); not already used by the caller's organisation, compared exactly as supplied (`BR-06`, `BR-07`) |
 | Insured limit | Yes | Present (`BR-10`); strictly greater than zero (`BR-11`); exactly two decimal places (`BR-12`); no maximum (`BR-13`); euro, with no currency supplied (`BR-14`) |
 
 Everything else about the submission — the organisation, the registering caller, the registration
@@ -162,7 +169,7 @@ The numbering below is the order in which refusals are decided (see the next sub
 | 2 | **Role may not register** | The caller's role is Viewer | `BR-02` |
 | 3 | **Number missing** | No number supplied, or it contains no characters | `BR-04` |
 | 4 | **Number too long** | Number is longer than 64 characters | `BR-05` |
-| 5 | **Number contains a control character** | The number contains any character in U+0000–U+001F or U+007F–U+009F, NUL, TAB and NEWLINE among them | `BR-29` |
+| 5 | **Number contains a character that is not allowed** | The number contains any character other than an ASCII letter, a digit or the hyphen: a space, `;`, `/`, punctuation, a non-ASCII letter, an emoji or a control character | `BR-29` |
 | 6 | **Insured limit missing** | No insured limit supplied | `BR-10` |
 | 7 | **Insured limit not positive** | Insured limit is zero or negative | `BR-11` |
 | 8 | **Insured limit precision invalid** | Insured limit does not have exactly two decimal places | `BR-12` |
@@ -184,7 +191,7 @@ caller receives; nothing later in the sequence is considered.**
 |---|---|---|---|
 | 1 | The caller is identified | caller not identified | `BR-01` |
 | 2 | The caller's role permits registering | role may not register | `BR-02`, `BR-03` |
-| 3 | The number | number missing, then number too long, then number contains a control character | `BR-04`, `BR-05`, `BR-29` |
+| 3 | The number | number missing, then number too long, then number contains a character that is not allowed | `BR-04`, `BR-05`, `BR-29` |
 | 4 | The insured limit | insured limit missing, then insured limit not positive, then insured limit precision invalid | `BR-10`, `BR-11`, `BR-12` |
 | 5 | The number against what is already registered | number already used | `BR-06`, `BR-09` |
 
@@ -218,11 +225,11 @@ Which refusal the caller receives when more than one thing is wrong:
 | A Viewer sends a malformed insured limit (for example `0.00`) | **Role may not register**, not the insured limit refusal |
 | A Viewer sends a valid request whose number the organisation has already used | **Role may not register** |
 | An Underwriter sends a number of 65 characters containing a TAB | **Number too long** (the earlier of the two faults in the number) |
-| An Underwriter sends a number containing a TAB and no insured limit | **Number contains a control character** (the number is judged before the insured limit) |
+| An Underwriter sends a number containing a TAB and no insured limit | **Number contains a character that is not allowed** (the number is judged before the insured limit) |
 | An Underwriter sends a number of 65 characters and an insured limit of `1200.5` | **Number too long** |
 | An Underwriter sends a valid request whose number the organisation has already used | **Number already used** |
 
-#### Why numbers with control characters are refused
+#### Why numbers with control characters are refused (history; superseded by the 2026-11-08 revision of `BR-29`)
 
 This restriction was added on 2026-11-02, after the first eight refusal reasons were already
 agreed and tested. It is recorded here so that a reader a year from now does not have to
@@ -356,12 +363,11 @@ A range whose lower bound exceeds its upper bound simply matches nothing: the se
 returns an empty page with a total match count of zero. This holds for the insured limit range and
 for the registration moment range alike, and it is **not** a refusal (`BR-21`).
 
-A number filter containing a control character likewise matches nothing, because `BR-29`
-refuses every such number at registration, so none can ever have been stored. The search
-succeeds and returns an empty page with a total match count of zero. It is **not** a refusal and
-**not** an error (`BR-30`). The filter is not cleaned up: no character is stripped or replaced to
-make it match something. A filter of spaces only is unaffected, since SPACE is not a control
-character.
+A number filter containing a character that `BR-29` does not allow likewise matches nothing,
+because `BR-29` refuses every such number at registration, so none can ever have been stored. The
+search succeeds and returns an empty page with a total match count of zero. It is **not** a refusal
+and **not** an error (`BR-30`). The filter is not cleaned up: no character is stripped or replaced
+to make it match something. A filter of spaces only matches nothing for the same reason.
 
 **A filter that is not set is simply not applied** (`BR-19`), and for the number filter an
 **empty** value counts as not set (`BR-31`). The product owner's answer, recorded: a filter that is
@@ -373,20 +379,22 @@ Number filters that look alike and are treated differently:
 | Number filter sent | What it is | Treatment | Result of the search |
 |---|---|---|---|
 | Present but empty (no characters) | Not set | Not applied (`BR-31`, `BR-19`) | Success. Narrows nothing: with no other criteria, every submission of the caller's own organisation matches, newest first, one page at a time |
-| Contains a control character, for example a TAB, a NEWLINE or NUL | A value no stored number can equal | Applied as given, never altered (`BR-30`) | Success with an empty page and a total match count of zero |
+| Contains a character that is not allowed, for example a space, `;`, `/`, a TAB or NUL | A value no stored number can equal | Applied as given, never altered (`BR-30`) | Success with an empty page and a total match count of zero |
 | Longer than 64 characters (65 or more, counted as `BR-05` counts) | A value no stored number can equal | Applied as given, never shortened (`BR-32`) | Success with an empty page and a total match count of zero |
 | Exactly 64 characters | A value within the registrable length | Applied, compared exactly as supplied (`BR-07`) | Success. Returns the submission registered with exactly that number, if the caller's organisation has one; otherwise an empty page and a total of zero (`BR-20`) |
-| Made only of spaces, for example `"   "` | A value: not empty, and SPACE is not a control character | Applied, compared exactly as supplied (`BR-07`) | Success. Returns the submission registered with exactly that number, if the caller's organisation has one; otherwise an empty page and a total of zero (`BR-20`) |
+| Made only of spaces, for example `"   "` | Not empty, but a space is not allowed (`BR-29`) | Applied as given, never altered (`BR-30`) | Success with an empty page and a total match count of zero |
 
 Worked examples, for an organisation holding three submissions with numbers `A-1`, `A-2` and
-`"   "` (three spaces):
+`B7`:
 
 - Number filter empty, no other criteria: all three submissions, total three.
 - Number filter empty, insured limit at least some amount: only the submissions at or above
   that amount, as if the number filter had not been sent.
 - Number filter `"A\tB"` (containing a TAB): empty page, total zero.
-- Number filter `"   "` (three spaces): the one submission registered with three spaces, total
-  one. A filter of two spaces matches nothing, because it is compared exactly.
+- Number filter `"   "` (three spaces): empty page, total zero, because a space is not allowed
+  (`BR-30`).
+- Number filter `a-1`: empty page, total zero, because numbers are compared exactly, letter case
+  included (`BR-07`).
 - Number filter `A-1`: the one submission `A-1`, total one.
 - Number filter of 65 characters, made of the 64 characters of a number the organisation
   holds followed by one more: empty page, total zero (`BR-32`). It is not shortened to 64 to find

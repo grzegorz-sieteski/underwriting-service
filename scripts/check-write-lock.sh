@@ -6,22 +6,45 @@
 # stops an agent with edit access from touching src/test/ when it was told not to. This script
 # is what turns those rules into something checkable. Run it after every stage.
 #
+#   ./scripts/check-write-lock.sh pin                 # orchestrator: record the verified commit
 #   ./scripts/check-write-lock.sh red [<feature>]     # test-designer: catalogue + tests, src/main untouched
 #   ./scripts/check-write-lock.sh skeleton <feature>  # developer 4a: declarations only, every NEW test fails
 #   ./scripts/check-write-lock.sh green               # developer 4b: src/test/ and docs/ untouched
-#   ./scripts/check-write-lock.sh qa      # qa-explorer: src/main/ untouched
+#   ./scripts/check-write-lock.sh qa                  # qa-explorer: src/main/ untouched
+#   ./scripts/check-write-lock.sh trace <feature>     # any time: every BR -> scenario -> test
 #
-# BASE may be set to compare against something other than HEAD, e.g. BASE=origin/main.
+# What a phase may not change is measured against a BASELINE, never against HEAD. Against HEAD,
+# an agent that commits its forbidden edit makes the diff empty and the gate passes. The
+# orchestrator runs `pin` at every hand-over, on the commit it has just verified; the pin lives in
+# .git/, outside the tree any agent commits. BASE=<ref> overrides it (CI uses origin/<base>).
 
 set -uo pipefail
 
 PHASE="${1:-}"
-BASE="${BASE:-HEAD}"
+PIN_FILE="$(git rev-parse --git-dir 2>/dev/null)/sdlc-baseline"
 MVNW="./mvnw"
 [ -x "$MVNW" ] || MVNW="mvn"
 
 red()   { printf '\033[31m%s\033[0m\n' "$1"; }
 green() { printf '\033[32m%s\033[0m\n' "$1"; }
+
+# Resolve BASE for the phases that compare against it. Fail closed: no pin, no gate.
+resolve_base() {
+    if [ -z "${BASE:-}" ]; then
+        if [ ! -s "$PIN_FILE" ]; then
+            red "FAIL: no baseline pinned. The orchestrator runs '$0 pin' on the verified commit"
+            red "      before this stage starts. Comparing against HEAD would let a committed"
+            red "      forbidden edit pass unseen."
+            exit 1
+        fi
+        BASE="$(cat "$PIN_FILE")"
+    fi
+    git rev-parse --verify -q "${BASE}^{commit}" > /dev/null \
+        || { red "FAIL: baseline $BASE is not a commit"; exit 1; }
+    git merge-base --is-ancestor "$BASE" HEAD \
+        || { red "FAIL: baseline $BASE is not an ancestor of HEAD; history was rewritten"; exit 1; }
+    echo "baseline: $(git log -1 --format='%h %s' "$BASE")"
+}
 
 changed_under() {
     git diff --name-only "$BASE" -- "$@" 2>/dev/null
@@ -54,9 +77,17 @@ test_tree_ids() {
         | grep -oE 'SC-[0-9]+' | sort -u
 }
 
-red_one() {
+# All scenario ids of the catalogue, and their state column.
+catalog_rows() {
+    grep -E '^\|\s*SC-[0-9]+\s*\|' "$CATALOG" \
+        | sed -E 's/^\|\s*(SC-[0-9]+)\s*\|.*\|\s*([A-Za-z]+)\s*\|\s*$/\1 \2/'
+}
+
+# Traceability of one feature: spec -> catalogue -> tests. With "require_new", at least one NEW
+# scenario must exist (the RED phase); without it, this is the standing check for a module.
+trace_one() {
     set_feature "$1"
-    local rc=0
+    local need_new="${2:-}" rc=0
     echo "-- feature: $FEATURE"
     [ -f "$SPEC" ] || { red "FAIL: specification $SPEC not found"; return 1; }
     [ -f "$CATALOG" ] || { red "FAIL: scenario catalogue $CATALOG not found"; return 1; }
@@ -64,7 +95,7 @@ red_one() {
     # Every business rule of the specification is in the catalogue.
     local missing="" br
     for br in $(grep -oE 'BR-[0-9]+' "$SPEC" | sort -u); do
-        grep -qE "\\b${br}\\b" "$CATALOG" || missing="$missing $br"
+        grep -qE "\b${br}\b" "$CATALOG" || missing="$missing $br"
     done
     if [ -n "$missing" ]; then
         red "FAIL: business rules with no scenario:$missing"
@@ -73,21 +104,45 @@ red_one() {
         green "OK: every business rule of the specification has a scenario"
     fi
 
-    # Every NEW scenario opens the display name of at least one test.
-    local ids id in_tree
-    ids="$(catalog_new_ids)"
+    # Every NEW or EXISTING scenario opens the display name of at least one test. A GAP row is
+    # a scenario nobody has tested yet: it is listed, and it fails the check until it has a test.
+    local in_tree id state rows
     in_tree="$(test_tree_ids)"
-    if [ -z "$ids" ]; then
+    rows="$(catalog_rows)"
+    if [ -n "$need_new" ] && ! printf '%s\n' "$rows" | grep -q ' NEW$'; then
         red "FAIL: the catalogue has no NEW scenario. RED without a new test proves nothing."
         rc=1
     fi
-    for id in $ids; do
-        printf '%s\n' "$in_tree" | grep -qxF "$id" || {
-            red "FAIL: $id is NEW in the catalogue, but no test display name starts with \"$id:\""
+    while read -r id state; do
+        [ -n "$id" ] || continue
+        case "$state" in
+            NEW|EXISTING)
+                printf '%s\n' "$in_tree" | grep -qxF "$id" || {
+                    red "FAIL: $id is $state in the catalogue, but no test display name starts with \"$id:\""
+                    rc=1
+                } ;;
+            GAP)
+                red "FAIL: $id is a GAP: a scenario with no test yet"
+                rc=1 ;;
+            *)
+                red "FAIL: $id has state '$state'; expected NEW, EXISTING or GAP"
+                rc=1 ;;
+        esac
+    done <<< "$rows"
+    [ "$rc" -eq 0 ] && green "OK: every scenario has a test, found by its id"
+    return "$rc"
+}
+
+# Every scenario id used in a test exists in some catalogue: no untraced test.
+no_orphan_ids() {
+    local rc=0 id all_ids
+    all_ids="$(cat docs/tests/*-scenarios.md 2>/dev/null | grep -oE '^\|\s*SC-[0-9]+' | grep -oE 'SC-[0-9]+' | sort -u)"
+    for id in $(test_tree_ids); do
+        printf '%s\n' "$all_ids" | grep -qxF "$id" || {
+            red "FAIL: a test is labelled $id, but no catalogue has that scenario"
             rc=1
         }
     done
-    [ "$rc" -eq 0 ] && green "OK: every NEW scenario has a test, found by its id"
     return "$rc"
 }
 
@@ -105,6 +160,19 @@ assert_untouched() {
 }
 
 case "$PHASE" in
+    red|skeleton|green|qa) resolve_base ;;
+esac
+
+case "$PHASE" in
+    pin)
+        if [ -n "$(git status --porcelain)" ]; then
+            red "FAIL: the working tree is not clean. Pin a commit, not an uncommitted state."
+            exit 1
+        fi
+        git rev-parse HEAD > "$PIN_FILE"
+        green "OK: baseline pinned at $(git log -1 --format='%h %s' HEAD)"
+        ;;
+
     red)
         echo "== RED phase: scenarios and tests only, src/main untouched =="
         rc=0
@@ -118,18 +186,20 @@ case "$PHASE" in
                         | sed -E 's#^docs/tests/(.*)-scenarios\.md$#\1#' | sort -u)"
             [ -n "$features" ] || { red "FAIL: no scenario catalogue changed under docs/tests/"; exit 1; }
         fi
-        for f in $features; do red_one "$f" || rc=1; done
-
-        # Every scenario id used in a test exists in some catalogue: no untraced test.
-        all_ids="$(cat docs/tests/*-scenarios.md 2>/dev/null | grep -oE '^\|\s*SC-[0-9]+' | grep -oE 'SC-[0-9]+' | sort -u)"
-        for id in $(test_tree_ids); do
-            printf '%s\n' "$all_ids" | grep -qxF "$id" || {
-                red "FAIL: a test is labelled $id, but no catalogue has that scenario"
-                rc=1
-            }
-        done
+        for f in $features; do trace_one "$f" require_new || rc=1; done
+        no_orphan_ids || rc=1
         [ "$rc" -eq 0 ] || exit 1
         green "OK: RED phase gate passed. Compilation is not required here; next gate: skeleton"
+        ;;
+
+    trace)
+        echo "== TRACE: specification -> scenario catalogue -> tests =="
+        require_feature
+        rc=0
+        trace_one "$FEATURE" || rc=1
+        no_orphan_ids || rc=1
+        [ "$rc" -eq 0 ] || exit 1
+        green "OK: every business rule is traced to a scenario and every scenario to a test"
         ;;
 
     skeleton)
@@ -264,7 +334,7 @@ case "$PHASE" in
         ;;
 
     *)
-        echo "usage: $0 {red <feature>|skeleton <feature>|green|qa}   (optionally with BASE=origin/main)" >&2
+        echo "usage: $0 {pin|red [<feature>]|skeleton <feature>|green|qa|trace <feature>}   (BASE=<ref> overrides the pin)" >&2
         exit 2
         ;;
 esac

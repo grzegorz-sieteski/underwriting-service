@@ -35,7 +35,7 @@ class SubmissionViewContractTest {
     }
 
     @Test
-    @DisplayName("a summary row carries the submission number and the stored amount, caller and "
+    @DisplayName("SC-48: a summary row carries the submission number and the stored amount, caller and "
             + "moment, and no internal identity (BR-47)")
     void shouldCarryNumberAndStoredPrimitivesButNoIdentityWhenSummaryViewIsRead() {
         assertThat(componentsOf(SubmissionSummaryView.class)).containsExactly(
@@ -47,7 +47,7 @@ class SubmissionViewContractTest {
     }
 
     @Test
-    @DisplayName("a summary row does not carry the reference or the amount as a value object, because "
+    @DisplayName("SC-48: a summary row does not carry the reference or the amount as a value object, because "
             + "re-parsing stored output would need a failure branch the schema rules out")
     void shouldNotCarryValueObjectsWhenSummaryViewIsRead() {
         assertThat(componentsOf(SubmissionSummaryView.class).values())

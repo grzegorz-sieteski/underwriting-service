@@ -51,7 +51,7 @@ class ApproveSubmissionUseCaseTest {
     }
 
     @Test
-    @DisplayName("approval is refused when no submission of the caller's organisation has the number (BR-35)")
+    @DisplayName("SC-54: approval is refused when no submission of the caller's organisation has the number (BR-35)")
     void shouldRefuseApprovalWhenSubmissionIsNotFound() {
         // Given
         var command = new ApproveSubmissionCommand(number("OTHER-1"));
@@ -64,7 +64,7 @@ class ApproveSubmissionUseCaseTest {
     }
 
     @Test
-    @DisplayName("an underwriter who did not register the submission can approve it, and the result names it by its number")
+    @DisplayName("SC-53: an underwriter who did not register the submission can approve it, and the result names it by its number")
     void shouldApproveSubmissionWhenCallerIsAllowed() {
         // Given
         var command = new ApproveSubmissionCommand(NUMBER);
@@ -80,7 +80,7 @@ class ApproveSubmissionUseCaseTest {
     }
 
     @Test
-    @DisplayName("approval is refused when the submission is already approved")
+    @DisplayName("SC-60: approval is refused when the submission is already approved")
     void shouldRefuseApprovalWhenSubmissionAlreadyApproved() {
         // Given
         approvalRepository.approve(TENANT_A, registeredId(), OTHER_UNDERWRITER, APPROVED_AT);
@@ -94,7 +94,7 @@ class ApproveSubmissionUseCaseTest {
     }
 
     @Test
-    @DisplayName("the registrant of a submission may not approve it, and nothing is recorded or announced (BR-41)")
+    @DisplayName("SC-58: the registrant of a submission may not approve it, and nothing is recorded or announced (BR-41)")
     void shouldRefuseSelfApprovalAndRecordNothing() {
         // Given
         var command = new ApproveSubmissionCommand(NUMBER);
@@ -109,7 +109,7 @@ class ApproveSubmissionUseCaseTest {
     }
 
     @Test
-    @DisplayName("self-approval is refused before already-approved, so an earlier approval does not change the answer (BR-41, BR-34)")
+    @DisplayName("SC-59: self-approval is refused before already-approved, so an earlier approval does not change the answer (BR-41, BR-34)")
     void shouldRefuseSelfApprovalBeforeAlreadyApproved() {
         // Given
         approvalRepository.approve(TENANT_A, registeredId(), SENIOR_UNDERWRITER, APPROVED_AT);
@@ -123,7 +123,7 @@ class ApproveSubmissionUseCaseTest {
     }
 
     @Test
-    @DisplayName("a stored row whose amount no longer parses is reported as not found, never approved (design 19.4, D12)")
+    @DisplayName("SC-63: a stored row whose amount no longer parses is reported as not found, never approved (design 19.4, D12)")
     void shouldReportAStoredRowThatFailsToParseAsNotFound() {
         // Given: a row the schema would not admit today (three decimal places, BR-12)
         commandRepository.insert(new SubmissionSnapshot(UUID.randomUUID(), TENANT_A,

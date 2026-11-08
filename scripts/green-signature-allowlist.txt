@@ -8,13 +8,6 @@
 # these files touches an assertion, a test annotation or a display name.
 #
 # Empty this file when the migration is committed. A permanent allowlist is a permanent hole.
-src/test/java/com/gs5/underwriting/submission/domain/RegisterSubmissionUseCaseTest.java
-src/test/java/com/gs5/underwriting/submission/domain/SearchSubmissionsUseCaseTest.java
-src/test/java/com/gs5/underwriting/submission/domain/SubmissionRegistrationAdversarialTest.java
-src/test/java/com/gs5/underwriting/submission/domain/SubmissionSearchAdversarialTest.java
-src/test/java/com/gs5/underwriting/submission/ReferenceLogInjectionTest.java
-src/test/java/com/gs5/underwriting/shared/kernel/ActorContextTest.java
-src/test/java/com/gs5/underwriting/submission/domain/SubmissionDomainRecordsTest.java
-src/test/java/com/gs5/underwriting/submission/domain/SubmissionQueryRecordsTest.java
-src/test/java/com/gs5/underwriting/submission/domain/InMemorySubmissionQueryRepository.java
-src/test/java/com/gs5/underwriting/submission/adapters/persistence/SubmissionQuerySqlAdapterIT.java
+#
+# Emptied 2026-11-08: the design revision 4 migration was committed in b0319f7 and later.
+# No file is listed, so the green gate requires src/test/ to be untouched entirely.

@@ -20,9 +20,9 @@ class AuthenticatedCallerParseTest {
     private static final String TENANT = "0a000000-0000-0000-0000-00000000000a";
     private static final String ACTOR = "uw-01";
 
-    @ParameterizedTest(name = "role {0} is matched by its exact constant name")
+    @ParameterizedTest(name = "SC-77: role {0} is matched by its exact constant name")
     @EnumSource(ActorRole.class)
-    @DisplayName("every role is recognised by its exact constant name and carried as that role")
+    @DisplayName("SC-77: every role is recognised by its exact constant name and carried as that role")
     void shouldYieldCallerWhenRoleIsExactConstantName(ActorRole role) {
         var caller = AuthenticatedCaller.parse(TENANT, ACTOR, role.name());
 
@@ -30,32 +30,32 @@ class AuthenticatedCallerParseTest {
         assertThat(caller.orElseThrow().role()).isEqualTo(role);
     }
 
-    @ParameterizedTest(name = "role {0} is not an exact constant name, so nothing is parsed")
+    @ParameterizedTest(name = "SC-77: role {0} is not an exact constant name, so nothing is parsed")
     @NullSource
     @ValueSource(strings = {"viewer", "Underwriter", "SUPERUSER", " UNDERWRITER", "UNDERWRITER ", ""})
-    @DisplayName("a role spelled in any other way, or unknown, yields no caller: never case-folded, "
+    @DisplayName("SC-77: a role spelled in any other way, or unknown, yields no caller: never case-folded, "
             + "never trimmed, and never an exception")
     void shouldReturnEmptyWhenRoleIsNotExactConstantName(String role) {
         assertThat(AuthenticatedCaller.parse(TENANT, ACTOR, role)).isEmpty();
     }
 
-    @ParameterizedTest(name = "tenant {0} is malformed, so nothing is parsed")
+    @ParameterizedTest(name = "SC-77: tenant {0} is malformed, so nothing is parsed")
     @NullSource
     @ValueSource(strings = {"", "1-1-1-1-1", "not-a-uuid-at-all-not-a-uuid-at-all-0000"})
-    @DisplayName("a malformed tenant yields no caller, whatever the role says")
+    @DisplayName("SC-77: a malformed tenant yields no caller, whatever the role says")
     void shouldReturnEmptyWhenTenantIsMalformed(String tenant) {
         assertThat(AuthenticatedCaller.parse(tenant, ACTOR, ActorRole.UNDERWRITER.name())).isEmpty();
     }
 
     @Test
-    @DisplayName("an actor id containing a control character yields no caller")
+    @DisplayName("SC-77: an actor id containing a control character yields no caller")
     void shouldReturnEmptyWhenActorIdContainsControlCharacter() {
         assertThat(AuthenticatedCaller.parse(TENANT, "uw\t01", ActorRole.UNDERWRITER.name()))
                 .isEmpty();
     }
 
     @Test
-    @DisplayName("a parsed caller's actor does not print the actor id")
+    @DisplayName("SC-78: a parsed caller's actor does not print the actor id")
     void shouldNotPrintActorIdWhenCallerActorIsPrinted() {
         var caller = AuthenticatedCaller.parse(TENANT, ACTOR, ActorRole.UNDERWRITER.name());
 

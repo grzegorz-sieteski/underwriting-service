@@ -24,24 +24,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SubmissionFilterTest {
 
-    private static final String EMOJI = "😀";
-
     @Test
-    @DisplayName("a reference filter of 65 characters matches nothing, because no reference that long "
+    @DisplayName("SC-47: a number filter of 65 characters matches nothing, because no number that long "
             + "can have been registered, and it is never shortened to make it match (BR-32)")
     void shouldMatchNothingWhenReferenceIsLongerThanMaximum() {
         assertThat(parseReference("A".repeat(65))).isEqualTo(new MatchesNothing());
     }
 
     @Test
-    @DisplayName("65 emoji is 65 characters long, so it also matches nothing (BR-32, counted as BR-05 "
-            + "counts)")
-    void shouldMatchNothingWhenReferenceIsLongerThanMaximumInCodePoints() {
-        assertThat(parseReference(EMOJI.repeat(65))).isEqualTo(new MatchesNothing());
-    }
-
-    @Test
-    @DisplayName("a reference filter of exactly 64 characters is compared normally, not matched to "
+    @DisplayName("SC-47: a number filter of exactly 64 characters is compared normally, not matched to "
             + "nothing")
     void shouldCompareNormallyWhenReferenceIsExactlyMaximum() {
         var filter = parseReference("A".repeat(64));
@@ -51,18 +42,9 @@ class SubmissionFilterTest {
     }
 
     @Test
-    @DisplayName("64 emoji, which is 128 UTF-16 units, is compared normally")
-    void shouldCompareNormallyWhenReferenceIsExactlyMaximumInCodePoints() {
-        var filter = parseReference(EMOJI.repeat(64));
-
-        assertThat(filter).isInstanceOf(Narrowing.class);
-        assertThat(((Narrowing) filter).reference().value()).isEqualTo(EMOJI.repeat(64));
-    }
-
-    @Test
-    @DisplayName("a too-long filter that also holds a control character still matches nothing")
-    void shouldMatchNothingWhenReferenceIsTooLongAndHasControlCharacter() {
-        assertThat(parseReference("A".repeat(64) + "\t")).isEqualTo(new MatchesNothing());
+    @DisplayName("SC-47: a too-long filter that also holds a space still matches nothing")
+    void shouldMatchNothingWhenReferenceIsTooLongAndHasCharacterNotAllowed() {
+        assertThat(parseReference("A".repeat(64) + " ")).isEqualTo(new MatchesNothing());
     }
 
     private static final BigDecimal ONE_HUNDRED = new BigDecimal("100");
@@ -75,26 +57,28 @@ class SubmissionFilterTest {
         return SubmissionFilter.parse(reference, null, null, null, null);
     }
 
-    @ParameterizedTest(name = "a reference containing a control character {0} matches nothing")
-    @ValueSource(strings = {"AB\tCD", "\n", "A\u0000B", "A\u0085", "\u009F", "\t"})
-    @DisplayName("a reference filter containing a control character is an empty success, never an "
-            + "error, and is never stripped to make it match (BR-30)")
-    void shouldMatchNothingWhenReferenceContainsControlCharacter(String reference) {
+    @ParameterizedTest(name = "SC-46: a number filter containing {0} matches nothing")
+    @ValueSource(strings = {"AB\tCD", "\n", "A\u0000B", "A\u0085", "REF;1", "A/B", "A.B", "A%2F",
+            "   ", " ABC-1", "A B", "ŁÓDŹ", "A😀"})
+    @DisplayName("SC-46: a number filter containing a character that is not allowed is an empty "
+            + "success, never an error, and is never stripped to make it match (BR-30)")
+    void shouldMatchNothingWhenReferenceContainsCharacterNotAllowed(String reference) {
         assertThat(parseReference(reference)).isEqualTo(new MatchesNothing());
     }
 
     @Test
-    @DisplayName("a control character matches nothing even when the other criteria are present")
-    void shouldMatchNothingWhenControlCharacterAccompaniesOtherCriteria() {
-        var filter = SubmissionFilter.parse("AB\tCD", ONE_HUNDRED, null, null, null);
+    @DisplayName("SC-46: a character that is not allowed matches nothing even when the other criteria "
+            + "are present")
+    void shouldMatchNothingWhenCharacterNotAllowedAccompaniesOtherCriteria() {
+        var filter = SubmissionFilter.parse("AB;CD", ONE_HUNDRED, null, null, null);
 
         assertThat(filter).isEqualTo(new MatchesNothing());
     }
 
-    @ParameterizedTest(name = "an empty reference filter, {0}, narrows nothing")
+    @ParameterizedTest(name = "SC-36: an empty number filter, {0}, narrows nothing")
     @NullSource
     @ValueSource(strings = {""})
-    @DisplayName("an absent or empty reference filter is not applied, so it narrows nothing "
+    @DisplayName("SC-36: an absent or empty number filter is not applied, so it narrows nothing "
             + "(BR-31, BR-19)")
     void shouldNarrowNothingWhenReferenceIsAbsentOrEmpty(String reference) {
         assertThat(parseReference(reference))
@@ -102,28 +86,18 @@ class SubmissionFilterTest {
     }
 
     @Test
-    @DisplayName("an empty reference does not suppress the other criteria, which apply as usual")
+    @DisplayName("SC-36: an empty number does not suppress the other criteria, which apply as usual")
     void shouldApplyOtherCriteriaWhenReferenceIsEmpty() {
         var filter = SubmissionFilter.parse("", ONE_HUNDRED, null, null, null);
 
         assertThat(filter).isEqualTo(new Narrowing(null, ONE_HUNDRED, null, null, null));
     }
 
-    @Test
-    @DisplayName("a filter of spaces is NOT empty: it is compared exactly and matches a submission "
-            + "registered with those spaces (BR-07)")
-    void shouldKeepSpacesOnlyReferenceWhenFilteringBySpaces() {
-        var filter = parseReference("   ");
-
-        assertThat(filter).isInstanceOf(Narrowing.class);
-        assertThat(((Narrowing) filter).reference().value()).isEqualTo("   ");
-    }
-
-    @ParameterizedTest(name = "reference filter {0} is kept exactly")
-    @ValueSource(strings = {" ABC-1 ", " ABC-1", "ABC-1 ", "A B"})
-    @DisplayName("a reference filter with surrounding or internal spaces is compared exactly, never "
-            + "trimmed (BR-07)")
-    void shouldKeepReferenceExactlyWhenSpacesSurroundIt(String reference) {
+    @ParameterizedTest(name = "SC-37: number filter {0} is kept exactly")
+    @ValueSource(strings = {"ABC-1", "abc-1", "Q-2026-001"})
+    @DisplayName("SC-37: a number filter of allowed characters is compared exactly, letter case "
+            + "included (BR-07)")
+    void shouldKeepReferenceExactlyWhenAllowed(String reference) {
         var filter = parseReference(reference);
 
         assertThat(filter).isInstanceOf(Narrowing.class);
@@ -131,7 +105,7 @@ class SubmissionFilterTest {
     }
 
     @Test
-    @DisplayName("a contradictory amount range is still a narrowing, not a refusal (BR-21)")
+    @DisplayName("SC-40: a contradictory amount range is still a narrowing, not a refusal (BR-21)")
     void shouldKeepContradictoryAmountRangeAsNarrowing() {
         var filter = SubmissionFilter.parse(null, FIVE_THOUSAND, ONE_THOUSAND, null, null);
 
@@ -140,7 +114,7 @@ class SubmissionFilterTest {
     }
 
     @Test
-    @DisplayName("a contradictory registration moment range is still a narrowing, not a refusal "
+    @DisplayName("SC-40: a contradictory registration moment range is still a narrowing, not a refusal "
             + "(BR-21)")
     void shouldKeepContradictoryMomentRangeAsNarrowing() {
         var filter = SubmissionFilter.parse(null, null, null, T4, T0);
@@ -149,7 +123,7 @@ class SubmissionFilterTest {
     }
 
     @Test
-    @DisplayName("a filter bound is not revalidated: a negative bound is a comparison value, "
+    @DisplayName("SC-38: a filter bound is not revalidated: a negative bound is a comparison value, "
             + "not a registered amount (BR-11 applies only to registration)")
     void shouldNotRevalidateNegativeBound() {
         var negative = new BigDecimal("-1");
@@ -160,7 +134,7 @@ class SubmissionFilterTest {
     }
 
     @Test
-    @DisplayName("a search with no criteria at all narrows nothing")
+    @DisplayName("SC-36: a search with no criteria at all narrows nothing")
     void shouldNarrowNothingWhenNoCriterionIsSupplied() {
         assertThat(SubmissionFilter.parse(null, null, null, null, null))
                 .isEqualTo(new Narrowing(null, null, null, null, null));

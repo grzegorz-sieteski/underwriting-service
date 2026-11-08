@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ApproveSubmissionErrorHierarchyTest {
 
     @Test
-    @DisplayName("approval refuses for exactly three reasons: not found, approver registered the submission, already approved (BR-35, BR-41, BR-36)")
+    @DisplayName("SC-62: approval refuses for exactly three reasons: not found, approver registered the submission, already approved (BR-35, BR-41, BR-36)")
     void shouldPermitExactlyTheThreeApprovalRefusals() {
         assertThat(ApproveSubmissionError.class.getPermittedSubclasses())
                 .extracting(Class::getSimpleName)

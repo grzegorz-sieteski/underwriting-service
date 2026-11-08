@@ -30,9 +30,9 @@ class PermissionMatrixTest {
                 .orElseThrow();
     }
 
-    @ParameterizedTest(name = "a policy admitting {0} admits a caller of that role")
+    @ParameterizedTest(name = "SC-74: a policy admitting {0} admits a caller of that role")
     @EnumSource(ActorRole.class)
-    @DisplayName("registration admits a caller whose role the policy admits")
+    @DisplayName("SC-74: registration admits a caller whose role the policy admits")
     void shouldAdmitCallerWhenPolicyAdmitsTheirRole(ActorRole role) {
         var permission = Permission.registration(new FixedAccessPolicy(Set.of(role)));
 
@@ -42,9 +42,9 @@ class PermissionMatrixTest {
         assertThat(outcome.orElse(null).role()).isEqualTo(role);
     }
 
-    @ParameterizedTest(name = "a policy admitting only another role refuses a caller of {0}")
+    @ParameterizedTest(name = "SC-74: a policy admitting only another role refuses a caller of {0}")
     @EnumSource(ActorRole.class)
-    @DisplayName("registration refuses a caller whose role the policy does not admit, naming the "
+    @DisplayName("SC-74: registration refuses a caller whose role the policy does not admit, naming the "
             + "role and not the caller")
     void shouldRefuseCallerWhenPolicyAdmitsOnlyAnotherRole(ActorRole role) {
         var permission = Permission.registration(new FixedAccessPolicy(Set.of(otherThan(role))));
@@ -53,9 +53,9 @@ class PermissionMatrixTest {
                 .isEqualTo(Result.failure(new AccessRefusal.PermissionDenied(role)));
     }
 
-    @ParameterizedTest(name = "a policy admitting nobody refuses a caller of {0}")
+    @ParameterizedTest(name = "SC-74: a policy admitting nobody refuses a caller of {0}")
     @EnumSource(ActorRole.class)
-    @DisplayName("an empty policy refuses everyone: the seam fails closed")
+    @DisplayName("SC-74: an empty policy refuses everyone: the seam fails closed")
     void shouldRefuseEveryCallerWhenPolicyAdmitsNobody(ActorRole role) {
         var permission = Permission.registration(new FixedAccessPolicy(Set.of()));
 
@@ -63,9 +63,9 @@ class PermissionMatrixTest {
                 .isEqualTo(Result.failure(new AccessRefusal.PermissionDenied(role)));
     }
 
-    @ParameterizedTest(name = "approval admits {0} when the policy allows it")
+    @ParameterizedTest(name = "SC-74: approval admits {0} when the policy allows it")
     @EnumSource(value = ActorRole.class, names = {"UNDERWRITER", "SENIOR_UNDERWRITER"})
-    @DisplayName("approval admits underwriters allowed by the policy")
+    @DisplayName("SC-74: approval admits underwriters allowed by the policy")
     void shouldAdmitApprovalWhenPolicyAllowsTheRole(ActorRole role) {
         var permission = Permission.approval(new FixedAccessPolicy(Set.of(role)));
 
@@ -75,9 +75,9 @@ class PermissionMatrixTest {
         assertThat(outcome.orElse(null).role()).isEqualTo(role);
     }
 
-    @ParameterizedTest(name = "approval refuses {0} when the policy denies it")
+    @ParameterizedTest(name = "SC-74: approval refuses {0} when the policy denies it")
     @EnumSource(value = ActorRole.class, names = {"VIEWER"})
-    @DisplayName("approval refuses roles outside the configured policy")
+    @DisplayName("SC-74: approval refuses roles outside the configured policy")
     void shouldRefuseApprovalWhenPolicyDeniesTheRole(ActorRole role) {
         var permission = Permission.approval(
                 new FixedAccessPolicy(Set.of(ActorRole.UNDERWRITER, ActorRole.SENIOR_UNDERWRITER)));
@@ -87,7 +87,7 @@ class PermissionMatrixTest {
     }
 
     @Test
-    @DisplayName("approval refuses an absent caller before checking its role")
+    @DisplayName("SC-72: approval refuses an absent caller before checking its role")
     void shouldRefuseApprovalWhenCallerIsAbsent() {
         var permission = Permission.approval(
                 new FixedAccessPolicy(Set.of(ActorRole.UNDERWRITER, ActorRole.SENIOR_UNDERWRITER)));
@@ -97,7 +97,7 @@ class PermissionMatrixTest {
     }
 
     @Test
-    @DisplayName("registration refuses an absent caller as not identified, before any role is "
+    @DisplayName("SC-70: registration refuses an absent caller as not identified, before any role is "
             + "considered")
     void shouldRefuseAsNotIdentifiedWhenCallerIsAbsentForRegistration() {
         var permission = Permission.registration(
@@ -107,9 +107,9 @@ class PermissionMatrixTest {
                 .isEqualTo(Result.failure(new AccessRefusal.CallerNotIdentified()));
     }
 
-    @ParameterizedTest(name = "every identified role, {0}, may search")
+    @ParameterizedTest(name = "SC-76: every identified role, {0}, may search")
     @EnumSource(ActorRole.class)
-    @DisplayName("every identified caller may search, whatever its role (BR-16)")
+    @DisplayName("SC-76: every identified caller may search, whatever its role (BR-16)")
     void shouldAdmitEveryIdentifiedRoleWhenSearching(ActorRole role) {
         var outcome = Permission.anyIdentifiedCaller().check(Callers.optionalOf(role));
 
@@ -121,7 +121,7 @@ class PermissionMatrixTest {
     }
 
     @Test
-    @DisplayName("search refuses an absent caller as not identified, its only refusal (BR-01)")
+    @DisplayName("SC-71: search refuses an absent caller as not identified, its only refusal (BR-01)")
     void shouldRefuseAsNotIdentifiedWhenCallerIsAbsentForSearch() {
         assertThat(Permission.anyIdentifiedCaller().check(Optional.empty()))
                 .isEqualTo(Result.failure(new AccessRefusal.CallerNotIdentified()));

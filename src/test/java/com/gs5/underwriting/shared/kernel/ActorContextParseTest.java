@@ -19,7 +19,7 @@ class ActorContextParseTest {
     private static final String TENANT = "0a000000-0000-0000-0000-00000000000a";
     private static final String ACTOR = "uw-01";
 
-    @ParameterizedTest(name = "tenant {0} is not a canonical UUID, so nothing is parsed")
+    @ParameterizedTest(name = "SC-77: tenant {0} is not a canonical UUID, so nothing is parsed")
     @NullSource
     @ValueSource(strings = {
         "",
@@ -28,7 +28,7 @@ class ActorContextParseTest {
         "zz000000-0000-0000-0000-00000000000a",
         " 0a000000-0000-0000-0000-00000000000a",
     })
-    @DisplayName("a missing or non-canonical tenant yields no caller, never a guessed identity")
+    @DisplayName("SC-77: a missing or non-canonical tenant yields no caller, never a guessed identity")
     void shouldReturnEmptyWhenTenantIsMissingOrNotCanonicalUuid(String tenant) {
         // When
         var actor = ActorContext.parse(tenant, ACTOR, ActorRole.UNDERWRITER);
@@ -37,10 +37,10 @@ class ActorContextParseTest {
         assertThat(actor).isEmpty();
     }
 
-    @ParameterizedTest(name = "actor id {0} is absent or blank, so nothing is parsed")
+    @ParameterizedTest(name = "SC-77: actor id {0} is absent or blank, so nothing is parsed")
     @NullSource
     @ValueSource(strings = {"", "   "})
-    @DisplayName("an absent or blank actor id yields no caller")
+    @DisplayName("SC-77: an absent or blank actor id yields no caller")
     void shouldReturnEmptyWhenActorIdIsMissingOrBlank(String actorId) {
         var actor = ActorContext.parse(TENANT, actorId, ActorRole.UNDERWRITER);
 
@@ -48,7 +48,7 @@ class ActorContextParseTest {
     }
 
     @Test
-    @DisplayName("a missing role yields no caller")
+    @DisplayName("SC-77: a missing role yields no caller")
     void shouldReturnEmptyWhenRoleIsMissing() {
         var actor = ActorContext.parse(TENANT, ACTOR, null);
 
@@ -56,7 +56,7 @@ class ActorContextParseTest {
     }
 
     @Test
-    @DisplayName("an actor id one code point over the column width is refused")
+    @DisplayName("SC-77: an actor id one code point over the column width is refused")
     void shouldReturnEmptyWhenActorIdExceedsMaximumLength() {
         var actor = ActorContext.parse(TENANT, "a".repeat(256), ActorRole.UNDERWRITER);
 
@@ -64,7 +64,7 @@ class ActorContextParseTest {
     }
 
     @Test
-    @DisplayName("an actor id of exactly the column width is accepted")
+    @DisplayName("SC-77: an actor id of exactly the column width is accepted")
     void shouldAcceptActorIdWhenExactlyMaximumLength() {
         var actor = ActorContext.parse(TENANT, "a".repeat(255), ActorRole.UNDERWRITER);
 
@@ -72,7 +72,7 @@ class ActorContextParseTest {
     }
 
     @Test
-    @DisplayName("the actor id length is counted in code points, so 255 emoji are accepted and 256 "
+    @DisplayName("SC-77: the actor id length is counted in code points, so 255 emoji are accepted and 256 "
             + "are not, though they are 510 and 512 UTF-16 units")
     void shouldCountActorIdLengthInCodePointsWhenSupplementaryCharacters() {
         var emoji = "😀";
@@ -83,9 +83,9 @@ class ActorContextParseTest {
                 .isEmpty();
     }
 
-    @ParameterizedTest(name = "actor id with control character {0} is refused")
+    @ParameterizedTest(name = "SC-77: actor id with control character {0} is refused")
     @ValueSource(strings = {"uw\t01", "uw\u000001", "uw\n01", "uw\u0085"})
-    @DisplayName("an actor id containing a control character is refused, because it is written to "
+    @DisplayName("SC-77: an actor id containing a control character is refused, because it is written to "
             + "the audit field and to logs")
     void shouldReturnEmptyWhenActorIdContainsControlCharacter(String actorId) {
         var actor = ActorContext.parse(TENANT, actorId, ActorRole.UNDERWRITER);
@@ -94,7 +94,7 @@ class ActorContextParseTest {
     }
 
     @Test
-    @DisplayName("a well-formed claim set yields a caller with the values as supplied")
+    @DisplayName("SC-77: a well-formed claim set yields a caller with the values as supplied")
     void shouldYieldCallerWhenAllComponentsAreWellFormed() {
         // When
         var parsed = ActorContext.parse(TENANT, ACTOR, ActorRole.UNDERWRITER);
@@ -106,7 +106,7 @@ class ActorContextParseTest {
     }
 
     @Test
-    @DisplayName("an actor id is not trimmed: leading and trailing spaces are kept (BR-07 applies "
+    @DisplayName("SC-77: an actor id is not trimmed: leading and trailing spaces are kept (BR-07 applies "
             + "the same principle to identities)")
     void shouldKeepActorIdExactlyWhenSurroundedBySpaces() {
         var parsed = ActorContext.parse(TENANT, " uw-01 ", ActorRole.UNDERWRITER);
@@ -116,7 +116,7 @@ class ActorContextParseTest {
     }
 
     @Test
-    @DisplayName("the parsed caller does not print the actor id")
+    @DisplayName("SC-78: the parsed caller does not print the actor id")
     void shouldNotPrintActorIdWhenCallerIsPrinted() {
         var parsed = ActorContext.parse(TENANT, ACTOR, ActorRole.UNDERWRITER);
 

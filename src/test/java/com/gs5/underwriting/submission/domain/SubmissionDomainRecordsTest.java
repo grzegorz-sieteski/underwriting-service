@@ -42,7 +42,7 @@ class SubmissionDomainRecordsTest {
     class AmountIsMasked {
 
         @Test
-        @DisplayName("the register command does not disclose the amount, "
+        @DisplayName("SC-25: the register command does not disclose the amount, "
                 + "not in full and not partially")
         void shouldMaskAmountWhenRegisterSubmissionCommandPrinted() {
             // Given
@@ -56,7 +56,7 @@ class SubmissionDomainRecordsTest {
         }
 
         @Test
-        @DisplayName("the persistence snapshot does not disclose the amount")
+        @DisplayName("SC-25: the persistence snapshot does not disclose the amount")
         void shouldMaskAmountWhenSubmissionSnapshotPrinted() {
             // Given
             var snapshot = new SubmissionSnapshot(DIGIT_FREE_ID, TENANT, "ABC-1", AMOUNT,
@@ -70,7 +70,7 @@ class SubmissionDomainRecordsTest {
         }
 
         @Test
-        @DisplayName("the registered event does not disclose the amount when logged, although it "
+        @DisplayName("SC-95: the registered event does not disclose the amount when logged, although it "
                 + "carries it for downstream systems")
         void shouldMaskAmountInToStringWhileRetainingValueInAccessorWhenEventCreated() {
             // Given
@@ -91,7 +91,7 @@ class SubmissionDomainRecordsTest {
     class ReferenceAndCaller {
 
         @Test
-        @DisplayName("the reference is written in full and readable, because audit needs it to "
+        @DisplayName("SC-26: the reference is written in full and readable, because audit needs it to "
                 + "correlate submissions (BR-23)")
         void shouldPreserveSubmissionNumberInToStringWhenAuditReadableRequired() {
             // Given
@@ -105,7 +105,7 @@ class SubmissionDomainRecordsTest {
         }
 
         @Test
-        @DisplayName("the registering caller's identity is masked, which is the strict default "
+        @DisplayName("SC-25: the registering caller's identity is masked, which is the strict default "
                 + "applied while the business has not been asked (OPEN-01)")
         void shouldMaskRegisteringCallerIdentityWhenPrinted() {
             // Given
@@ -120,7 +120,7 @@ class SubmissionDomainRecordsTest {
         }
 
         @Test
-        @DisplayName("the organisation and the registration moment are printed: the organisation "
+        @DisplayName("SC-26: the organisation and the registration moment are printed: the organisation "
                 + "is an isolation boundary, not a secret")
         void shouldPrintTenantAndMomentWhenSnapshotPrinted() {
             // Given

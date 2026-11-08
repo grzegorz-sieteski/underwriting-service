@@ -15,6 +15,7 @@ import com.tngtech.archunit.lang.ArchRule;
 import com.tngtech.archunit.lang.CompositeArchRule;
 import com.tngtech.archunit.lang.ConditionEvents;
 import com.tngtech.archunit.lang.SimpleConditionEvent;
+import org.junit.jupiter.api.DisplayName;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -40,6 +41,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
         packages = "com.gs5.underwriting",
         importOptions = ImportOption.DoNotIncludeTests.class
 )
+@DisplayName("SC-98: the structural rules of the production code hold")
 class ArchitectureRulesTest {
 
     // ---------------------------------------------------------------- purity
@@ -457,12 +459,22 @@ class ArchitectureRulesTest {
                     .because("approval is a write (execute): it decides on the aggregate through its own port, "
                             + "and a read type in its dependencies would mean it decides on loaded projections");
 
+    /*
+     * Rule C, revision 7 (review finding R-05). The previous form named the constructor's parameter
+     * types, and commit 44bc3de changed the second one from SubmissionId to SubmissionNumber. The
+     * rule then matched no constructor at all and stayed green with a violation present. This form
+     * matches ANY constructor of SubmissionApproved, so a signature change cannot silence it again.
+     */
     @ArchTest
     static final ArchRule only_the_approval_use_case_announces_an_approval =
             noClasses()
                     .that().doNotHaveSimpleName("ApproveSubmissionUseCase")
-                    .should().callConstructor(SubmissionDomainEvent.SubmissionApproved.class,
-                            UUID.class, SubmissionId.class, UUID.class, String.class, Instant.class)
+                    .and().doNotHaveFullyQualifiedName(
+                            SubmissionDomainEvent.SubmissionApproved.class.getName())
+                    .should().callConstructorWhere(DescribedPredicate.describe(
+                            "any constructor of SubmissionApproved",
+                            call -> call.getTarget().getOwner()
+                                    .isEquivalentTo(SubmissionDomainEvent.SubmissionApproved.class)))
                     .because("BR-40: an approval is announced exactly when an approval succeeds, and the single place "
                             + "that knows it succeeded is the use case, after the insert");
 
@@ -476,4 +488,31 @@ class ArchitectureRulesTest {
                     .haveFullyQualifiedName("org.springframework.kafka.core.KafkaTemplate")
                     .because("publishing goes through the Transactional Outbox relay; a KafkaTemplate "
                             + "injected into business code is a dual write waiting to lose a message");
+
+    /*
+     * Design section 20.5 / 21.4, BR-44. The database refuses UPDATE, DELETE and TRUNCATE on the
+     * fact tables (V4 triggers); this rule keeps the service from even trying, so a statement that
+     * rewrites a fact fails the build rather than a request.
+     */
+    @ArchTest
+    static final ArchRule submission_repositories_issue_only_inserts_and_selects =
+            methods()
+                    .that().areDeclaredInClassesThat().resideInAPackage("..submission.adapters.persistence..")
+                    .and().areAnnotatedWith(org.springframework.data.jdbc.repository.query.Query.class)
+                    .should(new ArchCondition<JavaMethod>("issue only INSERT and SELECT statements") {
+                        @Override
+                        public void check(JavaMethod method, ConditionEvents events) {
+                            var sql = method.getAnnotationOfType(
+                                    org.springframework.data.jdbc.repository.query.Query.class).value();
+                            var rewrites = java.util.regex.Pattern
+                                    .compile("(?i)\\b(UPDATE|DELETE|TRUNCATE|MERGE)\\b")
+                                    .matcher(sql).find();
+                            if (rewrites) {
+                                events.add(SimpleConditionEvent.violated(method,
+                                        method.getFullName() + " rewrites a recorded fact: " + sql));
+                            }
+                        }
+                    })
+                    .because("recorded facts are never changed or removed (BR-44); a change of state is a "
+                            + "new fact, inserted");
 }

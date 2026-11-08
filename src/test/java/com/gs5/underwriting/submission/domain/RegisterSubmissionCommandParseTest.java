@@ -30,33 +30,33 @@ class RegisterSubmissionCommandParseTest {
         return Result.failure(error);
     }
 
-    @ParameterizedTest(name = "reference {0} maps Missing onto NumberMissing")
+    @ParameterizedTest(name = "SC-03: reference {0} maps Missing onto NumberMissing")
     @NullSource
     @ValueSource(strings = {""})
-    @DisplayName("a missing reference is refused as reference missing (BR-04)")
+    @DisplayName("SC-03: a missing reference is refused as reference missing (BR-04)")
     void shouldMapMissingWhenReferenceIsAbsentOrEmpty(String reference) {
         assertThat(RegisterSubmissionCommand.parse(reference, VALID_LIMIT))
                 .isEqualTo(refused(new RegisterSubmissionError.NumberMissing()));
     }
 
     @Test
-    @DisplayName("a too-long reference is refused as reference too long, keeping both numbers (BR-05)")
+    @DisplayName("SC-08: a too-long reference is refused as reference too long, keeping both numbers (BR-05)")
     void shouldMapTooLongWhenReferenceExceedsMaximum() {
         assertThat(RegisterSubmissionCommand.parse("A".repeat(65), VALID_LIMIT))
                 .isEqualTo(refused(new RegisterSubmissionError.NumberTooLong(64, 65)));
     }
 
     @Test
-    @DisplayName("a reference with a control character is refused, keeping the code point and its "
-            + "index (BR-29)")
+    @DisplayName("SC-09: a number with a character that is not allowed is refused, keeping the code point "
+            + "and its position (BR-29)")
     void shouldMapControlCharacterWhenReferenceContainsOne() {
-        assertThat(RegisterSubmissionCommand.parse("AB\tCD", VALID_LIMIT))
+        assertThat(RegisterSubmissionCommand.parse("AB;CD", VALID_LIMIT))
                 .isEqualTo(refused(
-                        new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 2)));
+                        new RegisterSubmissionError.NumberContainsCharacterNotAllowed(0x003B, 2)));
     }
 
     @Test
-    @DisplayName("the reference is judged before the amount: a bad reference with an absent amount is "
+    @DisplayName("SC-13: the reference is judged before the amount: a bad reference with an absent amount is "
             + "refused for the reference")
     void shouldRefuseReferenceBeforeAmountWhenBothAreInvalid() {
         assertThat(RegisterSubmissionCommand.parse("", null))
@@ -64,29 +64,29 @@ class RegisterSubmissionCommandParseTest {
     }
 
     @Test
-    @DisplayName("a control character in the reference beats a zero amount")
+    @DisplayName("SC-13: a character that is not allowed in the number beats a zero amount")
     void shouldRefuseControlCharacterBeforeNonPositiveAmount() {
-        assertThat(RegisterSubmissionCommand.parse("AB\tCD", BigDecimal.ZERO))
+        assertThat(RegisterSubmissionCommand.parse("AB;CD", BigDecimal.ZERO))
                 .isEqualTo(refused(
-                        new RegisterSubmissionError.NumberContainsControlCharacter(0x0009, 2)));
+                        new RegisterSubmissionError.NumberContainsCharacterNotAllowed(0x003B, 2)));
     }
 
     @Test
-    @DisplayName("with a valid reference, an absent amount is refused as insured limit missing (BR-10)")
+    @DisplayName("SC-14: with a valid reference, an absent amount is refused as insured limit missing (BR-10)")
     void shouldRefuseAmountWhenReferenceIsValidAndAmountIsAbsent() {
         assertThat(RegisterSubmissionCommand.parse("AB-1", null))
                 .isEqualTo(refused(new RegisterSubmissionError.InsuredLimitMissing()));
     }
 
     @Test
-    @DisplayName("with a valid reference, a wrong precision is refused naming the scales only (BR-12)")
+    @DisplayName("SC-17: with a valid reference, a wrong precision is refused naming the scales only (BR-12)")
     void shouldRefusePrecisionWhenReferenceIsValidAndScaleIsWrong() {
         assertThat(RegisterSubmissionCommand.parse("AB-1", new BigDecimal("1200")))
                 .isEqualTo(refused(new RegisterSubmissionError.InsuredLimitPrecisionInvalid(2, 0)));
     }
 
     @Test
-    @DisplayName("a valid reference with a valid amount parses to a command")
+    @DisplayName("SC-01: a valid reference with a valid amount parses to a command")
     void shouldYieldCommandWhenBothInputsAreValid() {
         var parsed = RegisterSubmissionCommand.parse("AB-1", VALID_LIMIT);
 
@@ -94,14 +94,15 @@ class RegisterSubmissionCommandParseTest {
     }
 
     @Test
-    @DisplayName("a reference of spaces is valid for registration too: BR-29 refuses control "
-            + "characters, and SPACE is not one")
-    void shouldYieldCommandWhenReferenceIsOnlySpaces() {
-        assertThat(RegisterSubmissionCommand.parse("   ", VALID_LIMIT).isSuccess()).isTrue();
+    @DisplayName("SC-04: a number of spaces is refused for registration: a space is not allowed (BR-29)")
+    void shouldRefuseWhenNumberIsOnlySpaces() {
+        assertThat(RegisterSubmissionCommand.parse("   ", VALID_LIMIT))
+                .isEqualTo(refused(
+                        new RegisterSubmissionError.NumberContainsCharacterNotAllowed(0x0020, 0)));
     }
 
     @Test
-    @DisplayName("every reference error has a register mapping: the reference has exactly three "
+    @DisplayName("SC-23: every reference error has a register mapping: the reference has exactly three "
             + "failure kinds")
     void shouldHaveExactlyThreeReferenceErrorKinds() {
         var kinds = Arrays.stream(SubmissionNumberError.class.getPermittedSubclasses())
@@ -109,6 +110,6 @@ class RegisterSubmissionCommandParseTest {
                 .sorted()
                 .toList();
 
-        assertThat(kinds).containsExactly("ControlCharacter", "Missing", "TooLong");
+        assertThat(kinds).containsExactly("CharacterNotAllowed", "Missing", "TooLong");
     }
 }

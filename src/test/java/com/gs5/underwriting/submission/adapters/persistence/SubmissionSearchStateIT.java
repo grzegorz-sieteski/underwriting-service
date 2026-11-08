@@ -70,7 +70,7 @@ class SubmissionSearchStateIT {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("a search shows REGISTERED for an unapproved submission and APPROVED for an approved one (BR-17)")
+    @DisplayName("SC-50: a search shows REGISTERED for an unapproved submission and APPROVED for an approved one (BR-17)")
     void aSearchShowsEachSubmissionsStateWithinTheCallersOwnOrganisation() {
         var approved = register(TENANT_A, "REF-APPROVED", REGISTERED_AT);
         register(TENANT_A, "REF-OPEN", REGISTERED_AT.plusSeconds(60));
@@ -83,7 +83,7 @@ class SubmissionSearchStateIT {
     }
 
     @Test
-    @DisplayName("another organisation's approval never reaches the caller, even when the reference is the same (BR-17)")
+    @DisplayName("SC-50: another organisation's approval never reaches the caller, even when the reference is the same (BR-17)")
     void anotherOrganisationsApprovalIsInvisibleEvenForTheSameReference() {
         var approvedInA = register(TENANT_A, "SHARED-REF", REGISTERED_AT);
         approve(approvedInA, TENANT_A, "suw-01");
@@ -96,7 +96,7 @@ class SubmissionSearchStateIT {
     }
 
     @Test
-    @DisplayName("guard: the total match count is the same whatever the state of each submission (BR-26)")
+    @DisplayName("SC-50: guard: the total match count is the same whatever the state of each submission (BR-26)")
     void theTotalMatchCountDoesNotDependOnState() {
         var approved = register(TENANT_A, "REF-1", REGISTERED_AT);
         register(TENANT_A, "REF-2", REGISTERED_AT.plusSeconds(60));
