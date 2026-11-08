@@ -3581,6 +3581,11 @@ in production); adapters are public, so tests may drive them from outside their 
 Q15 is answered by "not in production": no database has to be preserved, V2 and V3 stay as they
 are at `44bc3de`, and V4 is the next migration on top of them.
 
+Q16 and Q17 are answered the same day and change nothing in this design. Q16: retention, removal
+and anonymisation stay out of scope, so the append-only triggers of §21.3 have no exception and no
+job removes a fact. Q17: no history endpoint and no new API. Search reads `submission_current`
+only, and an earlier state is read by audit from the tables directly.
+
 ### 21.1 BR-29: the allowed set
 
 `SubmissionNumber.parse` keeps its order (presence, length, content). Content is now an allow
@@ -3607,6 +3612,14 @@ escape cannot fail as a 500. `REF;1`
 then fails `BR-29` and is refused as not found (`BR-48`), with the one constant 404 body. A path
 with an extra `/` matches no mapping and gets the framework's 404; no registrable number can
 produce it.
+
+**On the real server (checked 2026-11-08, `SubmissionHttpFlowIT`).** `;` reaches the resource and
+gets the constant 404, as above. An encoded `/` (`%2F`) does not: embedded Tomcat's default
+`encodedSolidusHandling=reject` answers `400` with its own HTML page before Spring and before the
+access gate. The product owner accepted this: no registrable number contains `/`, nothing is
+approved, and the answer is the same for an existing and an unknown number, so `BR-35` holds. The
+container default stays; loosening it for every path to obtain a 404 would weaken the server for no
+business gain. `BR-48` records that the server may refuse such an address first.
 
 ### 21.3 V4
 

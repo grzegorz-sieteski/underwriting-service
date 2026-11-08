@@ -22,6 +22,11 @@ submission in the request path (`BR-48`), and characters with a meaning in a pat
 approve another. Passages below that still describe spaces or other characters as valid are
 superseded by `BR-29` and kept only as the history of the 2026-11-02 decision.
 
+Also on 2026-11-08 the product owner closed the two questions append-only (`BR-44` to `BR-46`)
+left open. Retention, removal and anonymisation of recorded facts stay out of scope (Q16). The
+history of a submission is not readable through the service, and no new operation is wanted for it
+(Q17). Both are listed under Scope below; neither changes a rule.
+
 **Revision of 2026-11-04 (product owner).** The submission number is the only identifier of a submission that leaves this service, and it is the name a caller uses for every operation (`BR-47`, `BR-48`). The internal identity is never shown outside the service. Approval names the submission by its submission number. Events carry the submission number. The term *submission reference* is renamed *submission number* throughout, and the rules it governs keep their meaning. `BR-35` no longer speaks of a malformed identity: a text that cannot be a submission number is covered by `BR-48`.
 
 ## Scope
@@ -45,7 +50,13 @@ nothing about, or — in the last case — something it has deliberately left to
 - any character in a submission number beyond the allowed set of `BR-29` (revision of
   2026-11-08): ASCII letters, digits and the hyphen. Spaces, punctuation, symbols, letters of other
   scripts, emoji and control characters are all refused
-- how long a submission is kept
+- how long a submission is kept, and any removal, anonymisation or retention of a recorded fact,
+  including a request to remove an approver's or registering caller's identity. Confirmed by the
+  product owner on 2026-11-08 (Q16): nothing in this feature removes or rewrites a fact (`BR-44`).
+  Retention is a separate future feature with its own rule
+- reading the history of a submission. Confirmed by the product owner on 2026-11-08 (Q17): no
+  caller reads an earlier state through this service, and no operation for it exists or is to be
+  added. An earlier state stays on record (`BR-46`) for audit, which reads it from storage
 - the **maximum permitted page size**. Paging itself is in scope and specified below, but the
   upper bound on how large a single page may be is a resource-protection parameter, not a
   business rule. The page size is bounded; **the bound is set in the technical design**, and this
@@ -136,7 +147,7 @@ Every row is testable exactly as written.
 | `BR-45` | Each submission's view shows its most current state only: registered, or approved once an approval has been recorded. An earlier state is never shown as current | A caller reads a submission, by search or in any other way | The view shows exactly one state: **registered**, or **approved** once an approval has been recorded. An earlier state is never shown as the current one. Search and every other way of reading a submission obey this, and remain within the caller's own organisation (`BR-17`) |
 | `BR-46` | The most current state of a submission is the latest fact recorded for it | A submission has a registration recorded, and then an approval is recorded for it | The approval is the current state, and the registration remains on record as an earlier state. A later fact of the same kind is refused (`BR-36`), so a submission carries at most one registration and at most one approval, and its current state is always one of the two values of **Submission State** |
 | `BR-47` | The internal identity of a submission is never shown outside this service. The submission number alone identifies a submission to any caller | Any response, refusal, search result or event that identifies a submission is produced | Every such identification uses the submission number. No response, refusal, search result or event carries the internal identity (glossary: **Internal Identity**). The submission number is the only identifier of a submission that leaves this service |
-| `BR-48` | A text that cannot be a submission number names no submission | An operation names a submission by text that fails `BR-04`, `BR-05` or `BR-29` | The text names no submission and is refused exactly as a submission that does not exist (`BR-35`). The caller cannot tell the two cases apart |
+| `BR-48` | A text that cannot be a submission number names no submission | An operation names a submission by text that fails `BR-04`, `BR-05` or `BR-29` | The text names no submission and is refused exactly as a submission that does not exist (`BR-35`). The caller cannot tell the two cases apart. A request whose address carries a character that has a meaning in an address may instead be refused by the server before the service examines it (product owner, 2026-11-08). It then changes nothing, and its answer is the same whether or not a submission of that name exists, so it reveals nothing either |
 
 ---
 

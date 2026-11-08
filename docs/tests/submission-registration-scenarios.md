@@ -45,12 +45,12 @@ underwriter of A; `V` a viewer of A. A valid amount is `1200.00`.
 | SC-24 | BR-22 | register submission | no refusal reason carries or prints the insured limit or the caller | every refusal reason, instantiated | it is printed or inspected | no amount and no actor id in any refusal; the control-character refusal holds only numbers | unit | EXISTING |
 | SC-25 | BR-22, BR-42 | register submission | the write side never prints the amount or the registering caller | a command, a snapshot, an insured limit with `1200.00` by `uw-01` | each is printed | neither `1200.00` nor `uw-01` appears, while the accessors still return both | unit | EXISTING |
 | SC-26 | BR-23 | register submission | the number, organisation and moment are printed readably, and control characters are escaped | a snapshot; a hostile number with a forged log line | it is printed | number in full, organisation and moment shown; every Cc character as `\uXXXX`, one inert line; the id prints as a UUID | unit | EXISTING |
-| SC-27 | BR-15, BR-47 | register submission | a successful registration answers 201 with the number only | U1 identified at the edge | `POST /api/submissions` `{"submissionNumber":"ABC-1","insuredLimit":1200.00}` | 201; `Location: /api/submissions/ABC-1`; body `{"submissionNumber":"ABC-1"}` with no internal id | web | GAP |
-| SC-28 | BR-01 | register submission | registration without an identified caller answers 401 | no caller at the edge | `POST /api/submissions` with a valid body | 401, type `caller-not-identified`; nothing stored, nothing announced | web | GAP |
-| SC-29 | BR-02 | register submission | a viewer is refused at the edge whatever the body | V identified at the edge, in the wired application | `POST /api/submissions` with a valid body, and with `""` and `0.00` | 403, type `permission-denied`, for every body; nothing stored | web | GAP |
-| SC-30 | BR-04, BR-05, BR-29 | register submission | each number refusal answers 400 with its own problem type | U1 identified | `POST` with number `""`, `"A"`×65, `"AB;CD"` | 400, types `number-missing`, `number-too-long`, `number-contains-character-not-allowed` | web | GAP |
-| SC-31 | BR-10, BR-11, BR-12, BR-22 | register submission | each amount refusal answers 400, and no body shows the amount | U1 identified | `POST` with insuredLimit `null`, `-5.00`, `1200.5` | 400, types `insured-limit-missing`, `insured-limit-not-positive`, `insured-limit-precision-invalid`; no body contains the amount | web | GAP |
-| SC-32 | BR-06, BR-23 | register submission | a duplicate number answers 409 | U1 registered `ABC-1` | U2 posts `ABC-1` | 409, type `number-already-used`; detail names the number with Cc escaped | web | GAP |
+| SC-27 | BR-15, BR-47 | register submission | a successful registration answers 201 with the number only | U1 identified at the edge | `POST /api/submissions` `{"submissionNumber":"ABC-1","insuredLimit":1200.00}` | 201; `Location: /api/submissions/ABC-1`; body `{"submissionNumber":"ABC-1"}` with no internal id | web | EXISTING |
+| SC-28 | BR-01 | register submission | registration without an identified caller answers 401 | no caller at the edge | `POST /api/submissions` with a valid body | 401, type `caller-not-identified`; nothing stored, nothing announced | web | EXISTING |
+| SC-29 | BR-02 | register submission | a viewer is refused at the edge whatever the body | V identified at the edge, in the wired application | `POST /api/submissions` with a valid body, and with `""` and `0.00` | 403, type `permission-denied`, for every body; nothing stored | web | EXISTING |
+| SC-30 | BR-04, BR-05, BR-29 | register submission | each number refusal answers 400 with its own problem type | U1 identified | `POST` with number `""`, `"A"`×65, `"AB;CD"` | 400, types `number-missing`, `number-too-long`, `number-contains-character-not-allowed` | web | EXISTING |
+| SC-31 | BR-10, BR-11, BR-12, BR-22 | register submission | each amount refusal answers 400, and no body shows the amount | U1 identified | `POST` with insuredLimit `null`, `-5.00`, `1200.5` | 400, types `insured-limit-missing`, `insured-limit-not-positive`, `insured-limit-precision-invalid`; no body contains the amount | web | EXISTING |
+| SC-32 | BR-06, BR-23 | register submission | a duplicate number answers 409 | U1 registered `ABC-1` | U2 posts `ABC-1` | 409, type `number-already-used`; detail names the number with Cc escaped | web | EXISTING |
 
 ## Search submissions
 
@@ -74,8 +74,8 @@ underwriter of A; `V` a viewer of A. A valid amount is `1200.00`.
 | SC-48 | BR-14, BR-47 | search submissions | a result row shows number, amount, registering caller, moment and state, and nothing else | a search result | its row is read | exactly number, insured limit, registered by, registered at, state; no currency, no internal identity | unit | EXISTING |
 | SC-49 | BR-22, BR-23, BR-42 | search submissions | the read side never prints an amount, a bound or a caller, and escapes the number | a row with `1200.00` by `uw-01`; a query and criteria with amount bounds and a hostile number filter; a page | each is printed | no amount, no bound, no caller; the number printed in full with Cc escaped | unit | EXISTING |
 | SC-50 | BR-45, BR-46, BR-17, BR-26 | search submissions | search shows each submission's current state, only within the caller's organisation | A holds `REF-APPROVED` (approved) and `REF-OPEN`; B holds `SHARED-REF` that A approved under the same number | A searches; B searches | A: `APPROVED` and `REGISTERED`, total 2; B: one row `REGISTERED`, total 1 | it | EXISTING |
-| SC-51 | BR-16, BR-24, BR-45 | search submissions | a search answers 200 with the page as JSON, for every role | V identified at the edge; A holds two submissions | `GET /api/submissions` | 200; `submissions[]` each with `submissionNumber`, `insuredLimit`, `registeredBy`, `registeredAt`, `state`; `totalMatchCount`, `page`, `size`; never 403 | web | GAP |
-| SC-52 | BR-01 | search submissions | a search without an identified caller answers 401 | no caller at the edge | `GET /api/submissions` | 401, type `caller-not-identified` | web | GAP |
+| SC-51 | BR-16, BR-24, BR-45 | search submissions | a search answers 200 with the page as JSON, for every role | V identified at the edge; A holds two submissions | `GET /api/submissions` | 200; `submissions[]` each with `submissionNumber`, `insuredLimit`, `registeredBy`, `registeredAt`, `state`; `totalMatchCount`, `page`, `size`; never 403 | web | EXISTING |
+| SC-52 | BR-01 | search submissions | a search without an identified caller answers 401 | no caller at the edge | `GET /api/submissions` | 401, type `caller-not-identified` | web | EXISTING |
 
 ## Approve a submission
 
@@ -92,10 +92,10 @@ underwriter of A; `V` a viewer of A. A valid amount is `1200.00`.
 | SC-61 | BR-39, BR-36, BR-40 | approve submission | two approvals racing for one submission record exactly one | U1 registered `REF-n` | U2 and S1 approve it at once (25 rounds) | each round: one success, one refused as already approved; one approval row; one event | it | EXISTING |
 | SC-62 | BR-34, BR-35, BR-36, BR-41 | approve submission | approval has exactly three domain refusal reasons | the compiled refusal types | they are listed | submission not found, approver registered this submission, submission already approved | unit | EXISTING |
 | SC-63 | BR-35 | approve submission | a stored submission that no longer satisfies the rules is never approved | A holds `REF-2` stored with `100.123` | U2 approves `REF-2` | refused: submission not found; nothing announced | unit | EXISTING |
-| SC-64 | BR-07, BR-35, BR-36, BR-48 | approve submission | a path segment carrying `;` names no submission and approves nothing | A holds `REF-1`, registered by U1 | U2 posts `/api/submissions/REF-1;x/approve` or `/api/submissions/REF-1;/approve` | 404 with the same body as an unknown number; `REF-1` still registered; nothing announced | web | NEW |
-| SC-65 | BR-29, BR-48 | approve submission | a path carrying an encoded `/` names no submission | A holds `REF-1` | U2 posts `/api/submissions/REF-1%2Fx/approve` | 404; nothing recorded. No registrable number contains `/` (BR-29) | web | EXISTING |
-| SC-66 | BR-38 | approve submission | approval changes none of the registered facts | U1 registered `REF-1` with `1200.00` at T0 | U2 approves `REF-1`; V searches | the row still shows `REF-1`, `1200.00`, `U1`, T0, now with state `APPROVED` | it | GAP |
-| SC-67 | BR-37, BR-44 | approve submission | the recorded approval names the approver and the clock's moment | U1 registered `REF-1`; clock fixed at T1 | U2 approves `REF-1` | exactly one approval recorded for `REF-1`: approved by `U2`, at T1, in organisation A; the registration fact unchanged | it | GAP |
+| SC-64 | BR-07, BR-35, BR-36, BR-48 | approve submission | a path segment carrying `;` names no submission and approves nothing | A holds `REF-1`, registered by U1 | U2 posts `/api/submissions/REF-1;x/approve` or `/api/submissions/REF-1;/approve` | 404 with the same body as an unknown number; `REF-1` still registered; nothing announced. Also proven on a real Tomcat (`SubmissionHttpFlowIT`), with `REF-1;jsessionid=1` added | web | NEW |
+| SC-65 | BR-29, BR-48 | approve submission | a path carrying an encoded `/` names no submission | A holds `REF-1` | U2 posts `/api/submissions/REF-1%2Fx/approve` | refused, the same answer for an existing and an unknown number; nothing recorded. No registrable number contains `/` (BR-29). The application answers 404 (MockMvc); on a real Tomcat the container refuses first with 400, accepted 2026-11-08 (see Notes) | web | EXISTING |
+| SC-66 | BR-38 | approve submission | approval changes none of the registered facts | U1 registered `REF-1` with `1200.00` at T0 | U2 approves `REF-1`; V searches | the row still shows `REF-1`, `1200.00`, `U1`, T0, now with state `APPROVED` | it | EXISTING |
+| SC-67 | BR-37, BR-44 | approve submission | the recorded approval names the approver and the clock's moment | U1 registered `REF-1`; clock fixed at T1 | U2 approves `REF-1` | exactly one approval recorded for `REF-1`: approved by `U2`, at T1, in organisation A; the registration fact unchanged | it | EXISTING |
 | SC-68 | BR-01 | approve submission | an approval without an identified caller answers 401 | no caller at the edge | `POST /api/submissions/REF-1/approve` | 401; nothing recorded | web | EXISTING |
 | SC-69 | BR-36 | approve submission | approving an approved submission answers 409 | `REF-1` approved by U2 | S1 posts `/api/submissions/REF-1/approve` | 409, type `submission-already-approved`; still one approval, one event | web | EXISTING |
 
@@ -150,10 +150,20 @@ underwriter of A; `V` a viewer of A. A valid amount is `1200.00`.
 
 ## Notes
 
-**Counts.** 98 scenarios: 77 `EXISTING`, 11 `NEW`, 10 `GAP`. Every `BR-01` to `BR-48` appears in at
-least one row. The remaining `GAP` rows are the register and search HTTP edge (SC-27 to SC-32,
-SC-51, SC-52) and two approval facts (SC-66, SC-67); `check-write-lock.sh trace` fails until they
-have tests.
+**Counts.** 98 scenarios: 87 `EXISTING`, 11 `NEW`, 0 `GAP`. Every `BR-01` to `BR-48` appears in at
+least one row. The ten former `GAP` rows (SC-27 to SC-32, SC-51, SC-52, SC-66, SC-67) are covered by
+`submission.flows.SubmissionHttpFlowIT`: the whole application on an embedded Tomcat at a random
+port, PostgreSQL in a container, plain HTTP. It uses only the Test contract (the endpoints, the
+public `ActorContextResolver`, the `Clock` bean, the published events, the TC6 columns) and gives
+every test an organisation of its own, so it never removes a fact. Each of its assertions was shown
+to fail against a deliberately broken implementation (Location path, viewer permission, search
+order, `;` stripping, approval moment, search state).
+
+**SC-65 on a real Tomcat (decided 2026-11-08).** Tomcat's default `encodedSolidusHandling` is
+`reject`: a path with `%2F` is answered `400` with Tomcat's HTML error page before Spring or the
+access gate runs. The product owner accepted it: such a path is only ever a probe, since no
+registrable number contains `/`. The test asserts the business rule, not the layer: a 4xx, the same
+status and body for an existing and an unknown number, and nothing approved or announced.
 
 **How the ids were attached.** Only display-name strings changed: `@DisplayName` and the `name` of
 `@ParameterizedTest`. ArchUnit rules are fields, which `@DisplayName` cannot annotate, so `SC-98`
@@ -192,5 +202,3 @@ and carry no id.
   read side's vocabulary for `ActorRole` (SC-33).
 - `OperationGateTest` subclasses `BigDecimal` to count touches on the amount; `ControlCharactersTest`
   and `LogSafeTextTest` exercise `shared.kernel` helpers that TC1 does not list.
-- Nothing in `src/test` exercises the register or search HTTP endpoints at all (SC-27 to SC-32,
-  SC-51, SC-52). With gap G1 open, those tests can only be written in `submission.adapters.web`.

@@ -655,6 +655,26 @@ R-01, R-02, R-05, R-06, R-07 confirmed fixed by reading. Findings 1, 2, 4-8 fixe
 | R-03 | accepted | the service owns the tables; an owner can disable the trigger. Separate migration role deferred until production |
 | R-08..R-10 | WARNING/LOW/INFO | unchanged from the first review |
 
-Q15 answered: not in production, so V2/V3 stay as they are and V4 builds on them. Q16, Q17 remain
-open (removal in scope; may a caller read history).
+Q15 answered: not in production, so V2/V3 stay as they are and V4 builds on them. Q16 and Q17
+answered by the product owner on 2026-11-08: retention, removal and anonymisation stay out of
+scope (Q16); history is not readable through the service and no new API is wanted (Q17). Recorded
+in the spec's Scope section and design §21; no rule, test or code changes. No product-owner
+question is open.
+
+### Revision 7 follow-up — 2026-11-08: GAP rows closed, R-01 on a real server
+
+- `submission.flows.SubmissionHttpFlowIT` (24 tests): the whole application on an embedded Tomcat
+  at a random port, PostgreSQL in a container, plain `HttpClient`. It closes the ten `GAP` rows
+  (SC-27 to SC-32, SC-51, SC-52, SC-66, SC-67) and repeats SC-64 and SC-65 on a real servlet
+  container. Only the Test contract is used; each test has an organisation of its own.
+- Deliberate breaks, each caught by the new test: Location path (SC-27), viewer may register
+  (SC-29), search order (SC-51), `;` stripped from the number (SC-64 on Tomcat), approval moment
+  (SC-67), search state (SC-66). `src/main` restored after each.
+- `trace submission-registration` passes: 0 `GAP`.
+- **Finding, decided:** `POST /api/submissions/REF-1%2Fx/approve` on Tomcat answers `400` with
+  Tomcat's HTML error page, before Spring and before the access gate (`encodedSolidusHandling=reject`);
+  MockMvc showed `404`. Product owner, 2026-11-08: accepted, the container default stays. Such a path
+  is never a real request (BR-29), nothing is approved, and the answer is the same for an existing
+  and an unknown number. SC-65 now asserts exactly that; BR-48 and design §21.2 record it.
+- Local branch `rev7-allowed-chars-append-only` deleted (fully merged in `b77c40f`).
 
