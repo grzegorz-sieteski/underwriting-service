@@ -9,7 +9,7 @@ Read this before anything else; `.github/copilot-instructions.md` holds the hard
 ./mvnw -B validate                                   # Checkstyle architecture gate
 ./mvnw -B test                                       # unit tests, ArchUnit AND Testcontainers ITs (needs Docker)
 ./mvnw -B verify                                     # the same gates plus packaging
-./mvnw -B verify -DskipITs                           # skip ITs when Docker is unavailable
+./mvnw -B test -Dtest='!*IT'                          # unit tests and ArchUnit only, no Docker needed
 ./mvnw -B test -Dtest=ArchitectureRulesTest          # architecture rules only
 ./mvnw -B test -Dtest=ResultTest                     # one test class
 ./mvnw -B spring-boot:run                            # run locally (needs Postgres + Kafka)
