@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * {@code Submission} is package-private in another package.
  */
 @Component
-class SubmissionQuerySqlAdapter implements SubmissionQueryRepository {
+public class SubmissionQuerySqlAdapter implements SubmissionQueryRepository {
 
     private final SubmissionQueryJdbcRepository repository;
 

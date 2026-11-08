@@ -36,7 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/api/submissions")
-class SubmissionQueryResource {
+public class SubmissionQueryResource {
 
     private static final String PROBLEM_TYPE_PREFIX = "urn:problem-type:submission:";
 
@@ -44,7 +44,7 @@ class SubmissionQueryResource {
     private final ActorContextResolver actorContextResolver;
     private final OperationGate<RawSearchRequest, SubmissionPageView> gate;
 
-    SubmissionQueryResource(SearchSubmissionsUseCase useCase,
+    public SubmissionQueryResource(SearchSubmissionsUseCase useCase,
                               ActorContextResolver actorContextResolver) {
         this.useCase = useCase;
         this.actorContextResolver = actorContextResolver;

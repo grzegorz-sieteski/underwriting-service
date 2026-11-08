@@ -37,7 +37,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @RestController
 @RequestMapping("/api/submissions")
-class SubmissionCommandResource {
+public class SubmissionCommandResource {
 
     private static final String PROBLEM_TYPE_PREFIX = "urn:problem-type:submission:";
 
@@ -46,7 +46,7 @@ class SubmissionCommandResource {
     private final OperationGate<RegisterSubmissionRequest,
             Result<SubmissionNumber, RegisterSubmissionError>> gate;
 
-    SubmissionCommandResource(RegisterSubmissionUseCase useCase,
+    public SubmissionCommandResource(RegisterSubmissionUseCase useCase,
                                 ActorContextResolver actorContextResolver,
                                 Permission registrationPermission) {
         this.useCase = useCase;
@@ -97,11 +97,12 @@ class SubmissionCommandResource {
                             "submissionNumber must be at most " + maxLength
                                     + " characters, but was " + actualLength + ".");
             // BR-29: 400 like every other malformed-number refusal. The code point is rendered as
-            // a number (U+XXXX) and the position as a code point index, never the raw character.
-            case RegisterSubmissionError.NumberContainsControlCharacter(
+            // a number (U+XXXX) and the position as a code point index, never the raw character,
+            // which may be unprintable or carry meaning in a log line.
+            case RegisterSubmissionError.NumberContainsCharacterNotAllowed(
                     var codePoint, var index) -> problemDetail(
-                            HttpStatus.BAD_REQUEST, "number-contains-control-character",
-                            "submissionNumber must not contain a control character, but "
+                            HttpStatus.BAD_REQUEST, "number-contains-character-not-allowed",
+                            "submissionNumber may contain only ASCII letters, digits and '-', but "
                                     + String.format(Locale.ROOT, "U+%04X", codePoint)
                                     + " was found at code point index " + index + ".");
             case RegisterSubmissionError.InsuredLimitMissing _ -> problemDetail(

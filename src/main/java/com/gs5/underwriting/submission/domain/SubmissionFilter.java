@@ -14,7 +14,7 @@ import java.time.Instant;
  *
  * <ul>
  *   <li>{@code Missing} (empty) is <em>not supplied</em> (BR-31);</li>
- *   <li>{@code ControlCharacter} is {@link MatchesNothing} (BR-30);</li>
+ *   <li>{@code CharacterNotAllowed} is {@link MatchesNothing} (BR-30);</li>
  *   <li>{@code TooLong} is {@link MatchesNothing} (BR-32).</li>
  * </ul>
  *
@@ -75,7 +75,7 @@ public sealed interface SubmissionFilter {
                     case SubmissionNumberError.Missing _ -> new Narrowing(null, insuredLimitFrom,
                             insuredLimitTo, registeredFrom, registeredTo);
                     case SubmissionNumberError.TooLong _ -> new MatchesNothing();
-                    case SubmissionNumberError.ControlCharacter _ -> new MatchesNothing();
+                    case SubmissionNumberError.CharacterNotAllowed _ -> new MatchesNothing();
                 });
     }
 }

@@ -23,14 +23,14 @@ public sealed interface RegisterSubmissionError {
     record NumberTooLong(int maxLength, int actualLength) implements RegisterSubmissionError { }
 
     /**
-     * BR-29 — the number contains a character of Unicode general category {@code Cc}, that is
-     * one in U+0000–U+001F or U+007F–U+009F. NUL, TAB and NEWLINE are all such characters;
-     * <strong>SPACE (U+0020) is not</strong>.
+     * BR-29 (revision of 2026-11-08) — the number contains a character other than an ASCII
+     * letter, a digit or the hyphen: a space, {@code ;}, {@code /}, any punctuation or symbol, a
+     * letter outside ASCII, an emoji or a control character.
      *
      * <p>It carries two <em>numbers</em> and deliberately not the number, although BR-23 makes a
-     * number loggable in full. The offending character is by definition unprintable, and the
-     * whole point of this refusal is that such a character must not travel any further: a raw
-     * NEWLINE in an error record forges a log line, and a raw NUL truncates one. Rendering the
+     * number loggable in full. The offending character may be unprintable, and such a character
+     * must not travel any further: a raw NEWLINE in an error record forges a log line, and a raw
+     * NUL truncates one. Rendering the
      * code point as an integer names the problem exactly while keeping the character itself out of
      * every log and every {@code ProblemDetail}.
      *
@@ -39,7 +39,7 @@ public sealed interface RegisterSubmissionError {
      * @param index     its zero-based <strong>code point</strong> index, counted the same way
      *                  BR-05 counts length, so the two refusals measure positions alike
      */
-    record NumberContainsControlCharacter(int codePoint, int index)
+    record NumberContainsCharacterNotAllowed(int codePoint, int index)
             implements RegisterSubmissionError { }
 
     /** BR-10 — no insured limit supplied. */

@@ -283,8 +283,20 @@ case "$PHASE" in
         rc=0
         ALLOWLIST="scripts/green-signature-allowlist.txt"
         allowed="$( [ -f "$ALLOWLIST" ] && grep -v '^#' "$ALLOWLIST" | grep . || true )"
+        # The frozen ArchUnit store (TestBoundaryRulesTest) rewrites itself when a recorded violation
+        # disappears, so production changes may shrink it. It may never grow: an added line would
+        # be a new violation smuggled into the record of accepted ones.
+        STORE="src/test/resources/archunit_store"
+        store_added="$(git diff "$BASE" -- "$STORE" 2>/dev/null | grep -E '^\+[^+]' || true)"
+        store_new="$(git ls-files --others --exclude-standard -- "$STORE" 2>/dev/null)"
+        if [ -n "$store_added" ] || [ -n "$store_new" ]; then
+            red "FAIL: the frozen ArchUnit store gained entries; it may only shrink"
+            printf '%s\n' "$store_added" $store_new | sed 's/^/    /' | head -10
+            rc=1
+        fi
         if [ -z "$allowed" ]; then
-            assert_untouched "src/test/" src/test || rc=1
+            assert_untouched "src/test/ (except the store shrinking)" \
+                src/test ":(exclude)$STORE" || rc=1
         else
             # A signature migration is in progress: listed test files may change, but only in
             # ways that do not alter WHAT a test checks. Every other test file stays frozen.
