@@ -181,9 +181,6 @@ and carry no id.
   (G1), so this is no longer a boundary violation. The two entries still frozen in
   `src/test/resources/archunit_store` are `SubmissionRoundTrip` reaching the package-private
   aggregate.
-- `SubmissionCommandSqlAdapterIT` and `SubmissionAdversarialPersistenceIT` read rows back through
-  `SubmissionCommandSqlAdapter.findOwn(UUID, UUID)`, which TC7 says exists only for round-trip
-  checks; an IT should read `submissions` instead.
 - `SubmissionCommandSqlAdapterIT` round-trips through the aggregate (`reconstitute`, `toSnapshot`)
   via the helper `SubmissionRoundTrip` in `submission.domain`, which reaches the package-private
   `Submission`.

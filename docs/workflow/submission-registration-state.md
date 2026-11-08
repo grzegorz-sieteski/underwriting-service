@@ -678,3 +678,18 @@ question is open.
   and an unknown number. SC-65 now asserts exactly that; BR-48 and design §21.2 record it.
 - Local branch `rev7-allowed-chars-append-only` deleted (fully merged in `b77c40f`).
 
+Open items above, closed by this follow-up: RR-3 (all ten GAP rows have tests; SC-30 covers
+`number-contains-character-not-allowed` over HTTP) and RR-T (R-01 on a real Tomcat).
+
+### Revision 8 — 2026-11-08: R-08 to R-10 (branch `rev8-adapter-surface-row-masking`)
+
+| Commit | Stage | Content |
+|---|---|---|
+| `0cd8551` | 3 (RED, pinned) | two ArchUnit rules, failing: a `*SqlAdapter` offers only its ports; persistence records declare their own `toString()`. The persistence ITs read back through `findOwnByNumber` |
+| `8537948` | 4b (GREEN) | `findOwn` and its query removed; the three persistence records print no amount and no caller id |
+
+RED shown: exactly the two new rules failed (1 and 3 violations), everything else passed. Green gate
+run from the pinned baseline's copy: `src/test`, docs and scripts untouched, `clean verify` 570
+tests, 0 failures, 0 Checkstyle violations. Decisions per finding in design §21.6: R-08 `findOwn`
+removed, port shape and use case style accepted; R-09 `toString` fixed, the BR-41 insert guard
+closed by R-02; R-10 accepted (§16.3 Q1).
