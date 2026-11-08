@@ -1,6 +1,6 @@
 # submission-registration
 
-Stage: 3 · Status: **BLOCKED — both reviewers `[REJECTED — BLOCKER]` on the approval feature (2026-11-08)**
+Stage: 6 · Status: **blockers R-01 and R-02 fixed in revision 7; re-review `[CHANGES REQUIRED]` addressed (2026-11-08)**
 Updated: 2026-11-08
 
 The approval at `566b76e` covered registration and search only. Approval, latest state and the
@@ -629,3 +629,32 @@ first. Q15–Q17 remain with the product owner.
 
 Still open before the migration (V4) can be written: Q15 (which migration content each database
 has applied), Q16 (is removal in scope), Q17 (may a caller read a submission's history).
+
+## Revision 7 — 2026-11-08 (product owner: "no special characters", V4, no migration role, public adapters)
+
+| Commit | Stage | Content |
+|---|---|---|
+| `4bcb9d2` | 3 (RED, pinned) | spec BR-29/BR-30 rewritten, design section 21, catalogue rows, tests. Does not compile alone |
+| — | 4a | contract renames only; 63 tests failed against it, every NEW scenario among them |
+| `83fff51` | 4b (GREEN) | allow list, raw approval path (R-01), V4 triggers and `submission_current` (R-02, R-07), public adapters (G1) |
+| `6f13832` | 3 (review fixes, pinned) | SC-89 precise (42501 and 23503), rule C covers constructor references, gates frozen in green |
+| `37c5414` | 4 | V4 index for the new search order |
+
+Verified by the orchestrator, not taken on report: green gate run from the pinned baseline's copy,
+`clean verify` 544 tests, 0 failures, 0 Checkstyle violations. Deliberate breaks failed the build
+for rule C (a call and a `::new` reference) and for the append-only ArchUnit rule; the green gate
+failed on an edited `scripts/check-write-lock.sh`.
+
+Re-review of `4bcb9d2..83fff51` (code and security, read-only): `[CHANGES REQUIRED]`, no blocker.
+R-01, R-02, R-05, R-06, R-07 confirmed fixed by reading. Findings 1, 2, 4-8 fixed above. Open:
+
+| ID | Severity | Item |
+|---|---|---|
+| RR-3 | WARNING | 10 GAP scenarios remain (register/search HTTP edge SC-27..32, SC-51, SC-52; SC-66, SC-67); `trace` fails until they have tests. The renamed problem type `number-contains-character-not-allowed` has no HTTP test (SC-30) |
+| RR-T | unverified | R-01 on real Tomcat: only MockMvc ran. Servlet contract says `getRequestURI` keeps `;` undecoded; a `RANDOM_PORT` test would close it |
+| R-03 | accepted | the service owns the tables; an owner can disable the trigger. Separate migration role deferred until production |
+| R-08..R-10 | WARNING/LOW/INFO | unchanged from the first review |
+
+Q15 answered: not in production, so V2/V3 stay as they are and V4 builds on them. Q16, Q17 remain
+open (removal in scope; may a caller read history).
+
