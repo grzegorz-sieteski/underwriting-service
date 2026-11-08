@@ -46,6 +46,14 @@ CREATE TRIGGER submission_approvals_append_only
 -- row. The join matches on the tenant as well as the id, as the composite foreign key does.
 -- BR-47: no internal id. Search reads this view only, and orders by registered_at and then by
 -- submission_number, which is unique within a tenant and so makes the order total (BR-28).
+-- The search order is now registered_at DESC, submission_number DESC. The V2 index ends in
+-- id DESC, which no longer serves the tie-break, so the newest-first page would need a sort step.
+-- This one covers the tenant predicate, the order and its tie-break exactly. The V2 index is
+-- dropped rather than kept beside it: nothing orders by id any more.
+CREATE INDEX idx_submissions_tenant_registered_at_number
+    ON submissions (tenant_id, registered_at DESC, submission_number DESC);
+DROP INDEX idx_submissions_tenant_registered_at;
+
 CREATE VIEW submission_current AS
 SELECT s.tenant_id,
        s.submission_number,
