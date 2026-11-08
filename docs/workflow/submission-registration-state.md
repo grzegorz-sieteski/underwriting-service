@@ -576,3 +576,14 @@ again. Not fixed in this entry.
   identity), `403` for "approver registered this submission", `409` for "already approved".
 - **The `architect.agent.md` change is accepted.** It removes `query/` from the architect's
   rules to match design revision 4. It was not part of any brief, so this entry is its record.
+
+## Decisions on 2026-11-08 (product owner)
+
+- **Integration tests run in the `test` phase** (`./mvnw test`). The Failsafe phase is removed
+  from the build. Commits `7d9f206` and `17f378d` / `da50090` record this.
+- **Stubs and contracts for test-first work live only in `src/test`.** Nothing that is a stub
+  is placed in `src/main`. Consequence for the test designer: tests may reference only types that
+  already exist in `src/main`, or types the test tree itself defines.
+
+Still open before the migration (V4) can be written: Q15 (which migration content each database
+has applied), Q16 (is removal in scope), Q17 (may a caller read a submission's history).
