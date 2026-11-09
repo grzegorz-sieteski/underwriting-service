@@ -692,7 +692,7 @@ RED shown: exactly the two new rules failed (1 and 3 violations), everything els
 run from the pinned baseline's copy: `src/test`, docs and scripts untouched, `clean verify` 570
 tests, 0 failures, 0 Checkstyle violations. Decisions per finding in design §21.6: R-08 `findOwn`
 removed, port shape and use case style accepted; R-09 `toString` fixed, the BR-41 insert guard
-closed by R-02 (caveat R-03); R-10 proposed for acceptance, awaiting the product owner.
+closed by R-02 (caveat R-03); R-10 accepted by the product owner on 2026-11-09 (see below).
 
 Independent review of `7e12aa8..cce3987` (code and security, read-only): `[APPROVED]`, no blocker.
 Acted on: the adapter rule could be bypassed by a helper interface, a superclass or a class not
@@ -702,3 +702,9 @@ tightened (domain ports only, inherited methods, every public class of the packa
 on the adapter, a public class `RowPeek`, a `toString()` reading `insuredLimit`, one calling
 `approvedBy()`. A stale IT javadoc is fixed; §21.6 adds the R-03 caveat and records R-10 as not yet
 accepted.
+
+**R-10 accepted, 2026-11-09 (product owner).** Spring Security will own access: authentication in
+the filter chain, authorisation with `@PreAuthorize`. No code change now. Design §21.6 records the
+one case that keeps a `400` before `403` (an authenticated caller without the role sending an
+unreadable body, since `@PreAuthorize` runs after argument binding). Open review items: R-03 only
+(separate migration role, before production).
