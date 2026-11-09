@@ -56,9 +56,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       with "relation \\"submissions\\" does not exist". This is what runs V1 and V2.</li>
  *   <li><strong>{@code @Import(SubmissionCommandSqlAdapter.class)}.</strong> The adapter is a
  *       {@code @Component}, and a slice test's component scan is filtered down to Spring Data
- *       repositories, so it would not otherwise be a bean. Importing it by class also works
- *       because it is package-private and this test shares its package — which is the same reason
- *       the test can call {@code findOwn}.</li>
+ *       repositories, so it would not otherwise be a bean. The adapter is public (design
+ *       section 21.5), and the test uses only its port methods, {@code insert} and
+ *       {@code findOwnByNumber}.</li>
  *   <li><strong>{@code @ServiceConnection}.</strong> Wires the container to Spring with no
  *       {@code @DynamicPropertySource}.</li>
  * </ul>

@@ -692,4 +692,13 @@ RED shown: exactly the two new rules failed (1 and 3 violations), everything els
 run from the pinned baseline's copy: `src/test`, docs and scripts untouched, `clean verify` 570
 tests, 0 failures, 0 Checkstyle violations. Decisions per finding in design §21.6: R-08 `findOwn`
 removed, port shape and use case style accepted; R-09 `toString` fixed, the BR-41 insert guard
-closed by R-02; R-10 accepted (§16.3 Q1).
+closed by R-02 (caveat R-03); R-10 proposed for acceptance, awaiting the product owner.
+
+Independent review of `7e12aa8..cce3987` (code and security, read-only): `[APPROVED]`, no blocker.
+Acted on: the adapter rule could be bypassed by a helper interface, a superclass or a class not
+named `*SqlAdapter`, and the row rule did not look at what `toString()` prints. Both rules are
+tightened (domain ports only, inherited methods, every public class of the package; no read of
+`insuredLimit`, `registeredBy`, `approvedBy`). Deliberate breaks, each caught: a helper interface
+on the adapter, a public class `RowPeek`, a `toString()` reading `insuredLimit`, one calling
+`approvedBy()`. A stale IT javadoc is fixed; §21.6 adds the R-03 caveat and records R-10 as not yet
+accepted.

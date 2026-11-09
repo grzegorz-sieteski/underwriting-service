@@ -529,58 +529,87 @@ class ArchitectureRulesTest {
      * outbound adapter is the implementation of its port and nothing more: a public method the port
      * does not declare is either dead code or a back door around the port (here, around BR-47).
      * Tests read rows through the port or from the tables (Test contract TC6).
+     *
+     * Every public class of the persistence package is checked, whatever its name, and every public
+     * method it has, declared or inherited from a superclass or any interface. Only a method of a
+     * port in submission.domain counts as allowed, so neither a helper interface of the package nor a
+     * base class nor a class named otherwise is a way around it (re-review, 2026-11-08).
      */
     @ArchTest
     static final ArchRule persistence_adapters_offer_only_their_port =
             classes()
                     .that().resideInAPackage("..submission.adapters.persistence..")
-                    .and().haveSimpleNameEndingWith("SqlAdapter")
-                    .should(new ArchCondition<JavaClass>("declare no public method beyond the port it implements") {
+                    .and().arePublic()
+                    .should(new ArchCondition<JavaClass>("have no public method beyond the domain ports they implement") {
                         @Override
                         public void check(JavaClass adapter, ConditionEvents events) {
                             var portMethods = adapter.getAllRawInterfaces().stream()
-                                    .flatMap(port -> port.getMethods().stream())
+                                    .filter(port -> port.getPackageName().startsWith(DOMAIN_PACKAGE))
+                                    .flatMap(port -> port.getAllMethods().stream())
                                     .map(ArchitectureRulesTest::signature)
                                     .collect(java.util.stream.Collectors.toSet());
-                            adapter.getMethods().stream()
+                            adapter.getAllMethods().stream()
+                                    .filter(method -> !method.getOwner().isEquivalentTo(Object.class))
                                     .filter(method -> method.getModifiers().contains(JavaModifier.PUBLIC))
                                     .filter(method -> !method.getModifiers().contains(JavaModifier.SYNTHETIC)
                                             && !method.getModifiers().contains(JavaModifier.BRIDGE))
                                     .filter(method -> !portMethods.contains(signature(method)))
                                     .forEach(method -> events.add(SimpleConditionEvent.violated(method,
-                                            method.getFullName() + " is public but not declared by any port "
-                                                    + "of " + adapter.getSimpleName())));
+                                            method.getFullName() + " is public on " + adapter.getSimpleName()
+                                                    + " but declared by none of its domain ports")));
                         }
                     })
                     .because("an adapter is its port's implementation; a public extra is a way around the "
                             + "port, and a test-only one is production code that exists for tests");
+
+    private static final String DOMAIN_PACKAGE = "com.gs5.underwriting.submission.domain";
+
+    /** Components of a persistence row that are never printed (BR-22, BR-42, OPEN-01). */
+    private static final java.util.Set<String> NEVER_PRINTED =
+            java.util.Set.of("insuredLimit", "registeredBy", "approvedBy");
 
     /*
      * Review finding R-09: the JDBC rows hold the insured limit and the registering or approving
      * caller, and a record's generated toString() prints every component. Nothing logs them today;
      * this rule keeps that from being one log line away (BR-22, BR-42, OPEN-01).
      *
-     * How it tells the two apart: javac emits the generated record toString() as public FINAL with an
-     * invokedynamic body. A toString() written in the source is checked here only by being non-final;
-     * what it prints is the developer's and the reviewer's to get right. A hand-written FINAL
-     * toString() is refused too, which is a false alarm and not a hole.
+     * Two checks. First, the toString() is written in the source: javac emits the generated one as
+     * public FINAL with an invokedynamic body that reads every component, so a FINAL toString() is
+     * taken for the generated one (a hand-written FINAL one is a false alarm, not a hole). Second,
+     * what it prints: it neither reads a field nor calls an accessor named in NEVER_PRINTED. The
+     * records are package-private, so no test may call toString() on them (TestBoundaryRulesTest);
+     * this reads the bytecode instead (re-review, 2026-11-08).
      */
     @ArchTest
     static final ArchRule persistence_rows_do_not_print_their_components =
             classes()
                     .that().resideInAPackage("..submission.adapters.persistence..")
                     .and().areRecords()
-                    .should(new ArchCondition<JavaClass>("declare a toString() of their own") {
+                    .should(new ArchCondition<JavaClass>("declare a toString() that reads no amount and no caller") {
                         @Override
                         public void check(JavaClass row, ConditionEvents events) {
                             var written = row.getMethods().stream()
-                                    .anyMatch(method -> method.getName().equals("toString")
+                                    .filter(method -> method.getName().equals("toString")
                                             && method.getRawParameterTypes().isEmpty()
-                                            && !method.getModifiers().contains(JavaModifier.FINAL));
-                            if (!written) {
+                                            && !method.getModifiers().contains(JavaModifier.FINAL))
+                                    .findFirst();
+                            if (written.isEmpty()) {
                                 events.add(SimpleConditionEvent.violated(row, row.getName()
                                         + " keeps the generated toString(), which prints every component"));
+                                return;
                             }
+                            var toString = written.get();
+                            toString.getFieldAccesses().stream()
+                                    .map(access -> access.getTarget().getName())
+                                    .filter(NEVER_PRINTED::contains)
+                                    .forEach(name -> events.add(SimpleConditionEvent.violated(toString,
+                                            toString.getFullName() + " reads the field " + name)));
+                            toString.getMethodCallsFromSelf().stream()
+                                    .filter(call -> call.getTargetOwner().getName().equals(row.getName()))
+                                    .map(call -> call.getTarget().getName())
+                                    .filter(NEVER_PRINTED::contains)
+                                    .forEach(name -> events.add(SimpleConditionEvent.violated(toString,
+                                            toString.getFullName() + " calls the accessor " + name + "()")));
                         }
                     })
                     .because("a persistence row carries the insured limit and caller identities, which are "
