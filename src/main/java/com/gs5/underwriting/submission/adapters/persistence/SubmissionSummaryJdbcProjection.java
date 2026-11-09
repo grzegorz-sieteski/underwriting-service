@@ -12,4 +12,12 @@ record SubmissionSummaryJdbcProjection(String submissionNumber,
                                        BigDecimal insuredLimit,
                                        String registeredBy,
                                        Instant registeredAt,
-                                       boolean approved) { }
+                                       boolean approved) {
+
+    /** Names the row, never the amount or the registering caller (BR-22, OPEN-01). */
+    @Override
+    public String toString() {
+        return "SubmissionSummaryJdbcProjection[submissionNumber=" + submissionNumber
+                + ", registeredAt=" + registeredAt + ", approved=" + approved + "]";
+    }
+}

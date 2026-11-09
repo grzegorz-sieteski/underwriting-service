@@ -3656,6 +3656,16 @@ is also the executable record that R-03 is a real, accepted gap.
 and the Spring Data repositories stay package-private: they are the adapters' internals, and the
 Test contract still excludes them.
 
+### 21.6 The remaining review findings, R-08 to R-10 (2026-11-08)
+
+| Finding | Decision | What changed |
+|---|---|---|
+| R-08: public test-only `SubmissionCommandSqlAdapter.findOwn(UUID, UUID)` | **Removed.** A lookup by internal identity on a public class is a way around the port and BR-47, and production code that exists for tests | `findOwn` and its query are gone. The ITs read back through the port's `findOwnByNumber`. New rule `persistence_adapters_offer_only_their_port`: no public class of the persistence package has a public method, declared or inherited, that none of its `submission.domain` ports declares |
+| R-08: approval port shape differs from §19.5 (full `ApproveSubmissionError` as the error type, no `SubmissionApproval` record); imperative use case | **Accepted as built.** The port returns only `SubmissionAlreadyApproved`, which TC5 states; a wider declared type costs one unreachable branch and no behaviour. The use case reads as two guard clauses with early returns (not found, approver registered it) and then one `Result` chain, in the order TC4 states; every outcome has its own test. Neither is a defect, and changing them changes no rule | none; §19.5 is superseded by TC4 and TC5 here |
+| R-09: default `toString` on the JDBC records prints the amount and caller ids | **Fixed.** Nothing logs them today; one log line would | `SubmissionJdbcEntity`, `SubmissionApprovalJdbcEntity` and `SubmissionSummaryJdbcProjection` declare a `toString()` without the insured limit and without `registeredBy` / `approvedBy`. New rule `persistence_rows_do_not_print_their_components`: each persistence record writes its own `toString()`, and that method neither reads the field nor calls the accessor `insuredLimit`, `registeredBy` or `approvedBy` (checked in the bytecode, since no test may call these package-private records) |
+| R-09: BR-41 not re-asserted in the approval insert | **Closed by R-02.** The finding mattered only while a row could be rewritten. Since V4 no ordinary statement can change the registering caller of a submission, so the use case's check against it before the insert cannot be outdated. The caveat is R-03: the service connects as the table owner, who can drop the trigger | none |
+| R-10: register and search bind the body and typed query parameters before the access gate | **Proposed for acceptance, awaiting the product owner.** §16.3 lists it as residual and Q1 is still open, so this is not an earlier decision. An unreadable body or parameter is a framework `400` before `401`/`403`; it reveals nothing about any submission and runs no business code (E9) | none |
+
 ## Test contract
 
 Design mode, written against the code at HEAD (`bedd141`). This is the only surface a test may use.
@@ -3922,10 +3932,9 @@ The developer may rename, restructure or delete the following. No test may depen
   `SubmissionSummaryJdbcProjection`, the interfaces `SubmissionCommandJdbcRepository`,
   `SubmissionQueryJdbcRepository` and `SubmissionApprovalJdbcRepository` with their method names and
   SQL text, and the classes `SubmissionCommandSqlAdapter`, `SubmissionQuerySqlAdapter` and
-  `SubmissionApprovalSqlAdapter`. This includes the public method
-  `SubmissionCommandSqlAdapter.findOwn(UUID, UUID)`, which is not on the port and exists only for
-  round-trip checks: an IT that needs the stored row reads `submissions`. The index names are not
-  contract either.
+  `SubmissionApprovalSqlAdapter` beyond the ports they implement. (The former test-only
+  `SubmissionCommandSqlAdapter.findOwn(UUID, UUID)` is removed, §21.6: an IT reads back through
+  `findOwnByNumber` or from `submissions`.) The index names are not contract either.
 - **Web internals:** `ApproveRefusal`, the private `RawSearchRequest`, the private fold and helper
   methods, and the Java type names `RegisterSubmissionRequest`, `RegisteredSubmissionResponse` and
   `ApprovedSubmissionResponse`. Their JSON shape is contract, and their names are not. The wording of

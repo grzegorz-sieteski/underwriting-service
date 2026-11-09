@@ -54,12 +54,4 @@ public class SubmissionCommandSqlAdapter implements SubmissionCommandRepository 
         return repository.findOwnByNumber(tenantId, submissionNumber.value())
                 .map(SubmissionPersistenceMapper::toSnapshot);
     }
-
-    /**
-     * Reads one row back by its internal identity, for the snapshot round-trip checks. Not part of
-     * the port: no operation looks a submission up by identity (BR-47).
-     */
-    public Optional<SubmissionSnapshot> findOwn(UUID tenantId, UUID id) {
-        return repository.findOwn(tenantId, id).map(SubmissionPersistenceMapper::toSnapshot);
-    }
 }

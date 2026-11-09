@@ -1,6 +1,7 @@
 package com.gs5.underwriting.submission.adapters.persistence;
 
 import com.gs5.underwriting.shared.kernel.Result;
+import com.gs5.underwriting.submission.domain.SubmissionNumber;
 import com.gs5.underwriting.submission.domain.SubmissionSnapshot;
 import com.gs5.underwriting.submission.domain.SubmissionSearchCriteria;
 import org.junit.jupiter.api.AfterEach;
@@ -141,7 +142,7 @@ class SubmissionAdversarialPersistenceIT {
                 assertThat(inserted.isSuccess())
                         .describedAs("number %s is valid under BR-29 and must be storable", reference)
                         .isTrue();
-                assertThat(commandAdapter.findOwn(TENANT_A, id))
+                assertThat(commandAdapter.findOwnByNumber(TENANT_A, number(reference)))
                         .hasValueSatisfying(stored ->
                                 assertThat(stored.submissionNumber()).isEqualTo(reference));
             });
@@ -160,7 +161,7 @@ class SubmissionAdversarialPersistenceIT {
 
             // Then
             assertThat(result.isSuccess()).isTrue();
-            assertThat(commandAdapter.findOwn(TENANT_A, toInsert.id()))
+            assertThat(commandAdapter.findOwnByNumber(TENANT_A, number("HUGE-1")))
                     .get()
                     .satisfies(stored ->
                             assertThat(stored.insuredLimit()).isEqualTo(new BigDecimal(enormous)));
@@ -367,5 +368,10 @@ class SubmissionAdversarialPersistenceIT {
                     .isEqualTo(nonexistentCount)
                     .isZero();
         }
+    }
+
+    /** The number as the port takes it; the text is a valid number in every caller. */
+    private static SubmissionNumber number(String text) {
+        return SubmissionNumber.parse(text).toOptional().orElseThrow();
     }
 }

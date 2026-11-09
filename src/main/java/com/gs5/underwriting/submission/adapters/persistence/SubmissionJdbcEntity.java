@@ -26,4 +26,12 @@ record SubmissionJdbcEntity(
         @Column("insured_limit") BigDecimal insuredLimit,
         @Column("registered_by") String registeredBy,
         @Column("registered_at") Instant registeredAt,
-        @Version @Nullable Long version) { }
+        @Version @Nullable Long version) {
+
+    /** Names the row, never the amount or the registering caller (BR-22, OPEN-01). */
+    @Override
+    public String toString() {
+        return "SubmissionJdbcEntity[id=" + id + ", tenantId=" + tenantId
+                + ", submissionNumber=" + submissionNumber + ", version=" + version + "]";
+    }
+}

@@ -3,6 +3,7 @@ package com.gs5.underwriting.submission.adapters.persistence;
 import com.gs5.underwriting.submission.domain.RegisterSubmissionError;
 import com.gs5.underwriting.submission.domain.SubmissionId;
 import com.gs5.underwriting.submission.domain.SubmissionRoundTrip;
+import com.gs5.underwriting.submission.domain.SubmissionNumber;
 import com.gs5.underwriting.submission.domain.SubmissionSnapshot;
 import com.gs5.underwriting.shared.kernel.Result;
 import org.junit.jupiter.api.DisplayName;
@@ -55,9 +56,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       with "relation \\"submissions\\" does not exist". This is what runs V1 and V2.</li>
  *   <li><strong>{@code @Import(SubmissionCommandSqlAdapter.class)}.</strong> The adapter is a
  *       {@code @Component}, and a slice test's component scan is filtered down to Spring Data
- *       repositories, so it would not otherwise be a bean. Importing it by class also works
- *       because it is package-private and this test shares its package — which is the same reason
- *       the test can call {@code findOwn}.</li>
+ *       repositories, so it would not otherwise be a bean. The adapter is public (design
+ *       section 21.5), and the test uses only its port methods, {@code insert} and
+ *       {@code findOwnByNumber}.</li>
  *   <li><strong>{@code @ServiceConnection}.</strong> Wires the container to Spring with no
  *       {@code @DynamicPropertySource}.</li>
  * </ul>
@@ -156,7 +157,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(snapshot);
 
             // Then
-            assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored -> {
+            assertThat(adapter.findOwnByNumber(TENANT_A, number("ABC-1"))).hasValueSatisfying(stored -> {
                 assertThat(stored.id()).isEqualTo(id);
                 assertThat(stored.tenantId()).isEqualTo(TENANT_A);
                 assertThat(stored.submissionNumber()).isEqualTo("ABC-1");
@@ -182,7 +183,7 @@ class SubmissionCommandSqlAdapterIT {
 
             // Then
             assertThat(result.isSuccess()).isTrue();
-            assertThat(adapter.findOwn(TENANT_A, id)).hasValueSatisfying(stored ->
+            assertThat(adapter.findOwnByNumber(TENANT_A, number("-"))).hasValueSatisfying(stored ->
                     assertThat(stored.submissionNumber()).isEqualTo("-"));
         }
     }
@@ -200,7 +201,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
             // When
-            var loaded = adapter.findOwn(TENANT_A, id).orElseThrow();
+            var loaded = adapter.findOwnByNumber(TENANT_A, number("ABC-1")).orElseThrow();
             var reconstituted = SubmissionRoundTrip.reconstituteAndSnapshot(loaded);
 
             // Then
@@ -220,7 +221,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
             // When
-            var loaded = adapter.findOwn(TENANT_A, id).orElseThrow();
+            var loaded = adapter.findOwnByNumber(TENANT_A, number("ABC-1")).orElseThrow();
             var reconstituted = SubmissionRoundTrip.reconstituteAndSnapshot(loaded);
 
             // Then
@@ -237,7 +238,7 @@ class SubmissionCommandSqlAdapterIT {
             adapter.insert(newSnapshot(id, TENANT_A, "ABC-1", "1200.00"));
 
             // When
-            var result = adapter.findOwn(TENANT_B, id);
+            var result = adapter.findOwnByNumber(TENANT_B, number("ABC-1"));
 
             // Then
             assertThat(result).isEmpty();
@@ -273,13 +274,13 @@ class SubmissionCommandSqlAdapterIT {
             // Given
             var firstId = UUID.randomUUID();
             adapter.insert(newSnapshot(firstId, TENANT_A, "ABC-1", "1200.00"));
-            var before = adapter.findOwn(TENANT_A, firstId).orElseThrow();
+            var before = adapter.findOwnByNumber(TENANT_A, number("ABC-1")).orElseThrow();
 
             // When
             adapter.insert(newSnapshot(UUID.randomUUID(), TENANT_A, "ABC-1", "77.00"));
 
             // Then
-            assertThat(adapter.findOwn(TENANT_A, firstId)).hasValue(before);
+            assertThat(adapter.findOwnByNumber(TENANT_A, number("ABC-1"))).hasValue(before);
         }
 
         @Test
@@ -333,5 +334,10 @@ class SubmissionCommandSqlAdapterIT {
             assertThat(lowerCase.isSuccess()).isTrue();
             assertThat(rowCount()).isEqualTo(2);
         }
+    }
+
+    /** The number as the port takes it; the text is a valid number in every caller. */
+    private static SubmissionNumber number(String text) {
+        return SubmissionNumber.parse(text).toOptional().orElseThrow();
     }
 }
